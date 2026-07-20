@@ -4,6 +4,8 @@
 
 AmneziaWG 2.0 VPN-сервер с Laravel 12 API и админ-панелью на Quasar Vue. Все сервисы работают в Docker-контейнерах с префиксом `awggui`.
 
+**Лицензия:** [GPL-3.0-or-later](LICENSE) · сторонние компоненты: [NOTICE.md](NOTICE.md)
+
 ## Требования
 
 - Root / sudo на Linux
@@ -224,6 +226,8 @@ awg-gui-install.sh
 awg-gui-uninstall.sh
 build.sh
 VERSION
+LICENSE
+NOTICE.md
 README.md
 README.en.md
 dist/
@@ -275,3 +279,23 @@ curl -fsSL -o src/awg/vendor/sing-box-1.12.12-linux-amd64.tar.gz \
 ```
 
 Для ARM замените `amd64` на `arm64` или `armv7`.
+
+## Лицензия
+
+Проект **awg-gui** (исходники панели, скрипты установки, Docker-описания) распространяется под
+**[GNU General Public License v3.0 or later](LICENSE)** (GPL-3.0-or-later).
+
+Release-bundle (`.run`) и Docker-образы содержат сторонние программы с **другими**
+лицензиями — в том числе **GPL-2.0** (amneziawg-tools) и **GPL-3.0** (sing-box, MariaDB).
+Полный список, версии и ссылки на исходники: **[NOTICE.md](NOTICE.md)**.
+
+### sing-box и брендинг
+
+Резолвер использует [sing-box](https://github.com/SagerNet/sing-box) как компонент внутри
+контейнера AWG. **awg-gui не является официальным продуктом sing-box / SagerNet.**
+У sing-box есть дополнительное условие: производные работы не должны использовать имя
+sing-box или создавать впечатление аффилированности без согласия правообладателя.
+Подробности — в [NOTICE.md](NOTICE.md).
+
+При распространении `.run` или образов соблюдайте GPL: предоставляйте текст лицензии,
+`NOTICE.md` и возможность получить исходный код GPL-компонентов (см. NOTICE.md).

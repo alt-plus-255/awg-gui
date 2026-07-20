@@ -4,6 +4,8 @@
 
 AmneziaWG 2.0 VPN server with a Laravel 12 API and Quasar Vue admin panel, all in Docker containers prefixed with `awggui`.
 
+**License:** [GPL-3.0-or-later](LICENSE) · third-party components: [NOTICE.md](NOTICE.md)
+
 ## Requirements
 
 - Root / sudo on Linux
@@ -224,6 +226,8 @@ awg-gui-install.sh
 awg-gui-uninstall.sh
 build.sh
 VERSION
+LICENSE
+NOTICE.md
 README.md
 README.en.md
 dist/
@@ -275,3 +279,22 @@ curl -fsSL -o src/awg/vendor/sing-box-1.12.12-linux-amd64.tar.gz \
 ```
 
 For ARM replace `amd64` with `arm64` or `armv7`.
+
+## License
+
+The **awg-gui** project (panel source, install scripts, Docker definitions) is licensed under the
+**[GNU General Public License v3.0 or later](LICENSE)** (GPL-3.0-or-later).
+
+Release bundles (`.run`) and Docker images include **third-party** software under
+**other** licenses — including **GPL-2.0** (amneziawg-tools) and **GPL-3.0** (sing-box, MariaDB).
+See **[NOTICE.md](NOTICE.md)** for versions and source links.
+
+### sing-box and branding
+
+The resolver uses [sing-box](https://github.com/SagerNet/sing-box) as a component inside the AWG
+container. **awg-gui is not an official sing-box / SagerNet product.** sing-box includes an
+additional term: derivative works must not use the sing-box name or imply association without
+prior consent from the copyright holder. Details in [NOTICE.md](NOTICE.md).
+
+When redistributing `.run` files or images, comply with GPL obligations: include license text,
+`NOTICE.md`, and a way for recipients to obtain GPL source for bundled components (see NOTICE.md).

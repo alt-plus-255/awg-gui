@@ -1,6 +1,16 @@
 src/.env
+
+# ── dist/ ─────────────────────────────────────────────────────────────
+# В git коммитятся только маленькие prod-скрипты (install.sh, uninstall.sh).
+# Пользователь: sudo bash <(wget -O - .../dist/install.sh)
+# install.sh сам скачивает .run из GitHub Releases — не из git.
+#
+# НЕ игнорируем: dist/install.sh, dist/uninstall.sh
+
 dist/.staging/
 dist/*.run
 dist/*.run.sha256
 dist/images/
+
+# sing-box tarball только для локальной сборки образа (build.sh)
 src/awg/vendor/
