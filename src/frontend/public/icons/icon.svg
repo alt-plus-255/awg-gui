@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="AWG-GUI">
+  <defs>
+    <linearGradient id="awg" x1="6%" y1="12%" x2="94%" y2="92%">
+      <stop offset="0%" stop-color="#2ee6ff"/>
+      <stop offset="26%" stop-color="#3b6cff"/>
+      <stop offset="52%" stop-color="#b44dff"/>
+      <stop offset="76%" stop-color="#ff4d9a"/>
+      <stop offset="100%" stop-color="#ff9a2e"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="96" fill="#0d1117"/>
+  <g fill="none" stroke="url(#awg)" stroke-width="44" stroke-linecap="round" stroke-linejoin="round">
+    <!-- circle-A inspired by Amnezia mark -->
+    <path d="M118 250c0-78 62-142 138-142s138 64 138 142-62 142-138 142c-32 0-62-11-86-29"/>
+    <path d="M256 118 L162 390"/>
+    <path d="M256 118 L350 390"/>
+    <path d="M186 278 H330"/>
+  </g>
+</svg>

@@ -1,0 +1,31 @@
+:80 {
+	encode gzip
+
+	handle /ws* {
+		reverse_proxy awggui-app:8081
+	}
+
+	handle /api/* {
+		reverse_proxy awggui-app:8000 {
+			header_up Host {host}
+			header_up X-Real-IP {remote}
+			header_up X-Forwarded-For {remote}
+			header_up X-Forwarded-Proto {scheme}
+		}
+	}
+
+	handle /sanctum/* {
+		reverse_proxy awggui-app:8000 {
+			header_up Host {host}
+			header_up X-Real-IP {remote}
+			header_up X-Forwarded-For {remote}
+			header_up X-Forwarded-Proto {scheme}
+		}
+	}
+
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}

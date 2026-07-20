@@ -1,0 +1,16 @@
+# Keep caddy/frontend builds small on 15GB disks (context = src/)
+**/node_modules
+**/vendor
+**/.git
+**/dist
+**/.vite
+**/coverage
+**/*.md
+backend/storage/logs
+backend/storage/framework/cache
+backend/storage/framework/sessions
+backend/storage/framework/views
+awg
+*.log
+.env
+.env.*

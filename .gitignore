@@ -1,0 +1,6 @@
+src/.env
+dist/.staging/
+dist/*.run
+dist/*.run.sha256
+dist/images/
+src/awg/vendor/

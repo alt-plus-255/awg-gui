@@ -1,0 +1,499 @@
+#!/usr/bin/env bash
+# AmneziaWG GUI system control CLI
+set -euo pipefail
+
+CONF_FILE="${AWG_GUI_CONF:-/etc/awg-gui/awg-gui.conf}"
+WEBHOOK_FILE="${AWG_GUI_WEBHOOK:-/etc/awg-gui/webhook.conf}"
+
+if [[ -f "${CONF_FILE}" ]]; then
+  # shellcheck disable=SC1090
+  source "${CONF_FILE}"
+fi
+
+INSTALL_ROOT="${INSTALL_ROOT:-}"
+COMPOSE_FILE="${COMPOSE_FILE:-${INSTALL_ROOT}/src/docker-compose.yml}"
+ENV_FILE="${ENV_FILE:-${INSTALL_ROOT}/src/.env}"
+PROJECT_NAME="${PROJECT_NAME:-awggui}"
+EXPECTED_SERVICES=(caddy app db awg)
+
+log() { echo "[awg-gui] $*"; }
+err() { echo "[awg-gui] ERROR: $*" >&2; }
+
+env_set() {
+  local key="$1" val="$2" file="$3"
+  local tmp
+  tmp="$(mktemp)"
+  if grep -q "^${key}=" "${file}" 2>/dev/null; then
+    awk -v k="${key}" -v v="${val}" '
+      BEGIN { found=0 }
+      $0 ~ "^" k "=" { print k "=" v; found=1; next }
+      { print }
+      END { if (!found) print k "=" v }
+    ' "${file}" > "${tmp}"
+  else
+    cp "${file}" "${tmp}"
+    printf '%s=%s\n' "${key}" "${val}" >> "${tmp}"
+  fi
+  mv "${tmp}" "${file}"
+}
+
+sync_env_endpoint() {
+  local endpoint="$1"
+  local panel_port="${2:-8877}"
+  if [[ "${endpoint}" == "auto" ]]; then
+    return 0
+  fi
+  env_set "APP_URL" "http://${endpoint}:${panel_port}" "${ENV_FILE}"
+  env_set "SANCTUM_STATEFUL_DOMAINS" \
+    "${endpoint},${endpoint}:${panel_port},localhost,localhost:${panel_port},127.0.0.1,127.0.0.1:${panel_port}" \
+    "${ENV_FILE}"
+}
+
+require_root() {
+  if [[ "${EUID}" -ne 0 ]]; then
+    err "Run as root"
+    exit 1
+  fi
+}
+
+compose() {
+  docker compose -p "${PROJECT_NAME}" --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" "$@"
+}
+
+load_webhook() {
+  WEBHOOK_URL=""
+  PANEL_PORT="8877"
+  PANEL_HTTPS_PORT="7443"
+  SERVER_ENDPOINT=""
+  PANEL_DOMAIN=""
+  SSL_ENABLED="0"
+  if [[ -f "${WEBHOOK_FILE}" ]]; then
+    # shellcheck disable=SC1090
+    source "${WEBHOOK_FILE}" || true
+  fi
+  if [[ -f "${ENV_FILE}" ]]; then
+    # shellcheck disable=SC1090
+    set -a; source "${ENV_FILE}"; set +a || true
+  fi
+}
+
+panel_url() {
+  local host="${PANEL_DOMAIN:-}"
+  if [[ -z "${host}" ]]; then
+    host="${SERVER_ENDPOINT:-}"
+    if [[ -z "${host}" || "${host}" == "auto" ]]; then
+      host="$(hostname -I 2>/dev/null | awk '{print $1}')"
+      host="${host:-127.0.0.1}"
+    fi
+  fi
+  if [[ "${SSL_ENABLED:-0}" == "1" && -n "${PANEL_DOMAIN:-}" ]]; then
+    echo "https://${PANEL_DOMAIN}:${PANEL_HTTPS_PORT:-7443}"
+    return 0
+  fi
+  echo "http://${host}:${PANEL_PORT:-8877}"
+}
+
+send_failure_webhook() {
+  local code="$1"
+  local message="$2"
+  local details_json="${3:-{}}"
+  load_webhook
+  if [[ -z "${WEBHOOK_URL:-}" ]]; then
+    log "No webhook URL configured — skip notify (${code})"
+    return 0
+  fi
+  if ! command -v curl >/dev/null 2>&1; then
+    err "curl missing — cannot send webhook"
+    return 0
+  fi
+
+  local payload
+  if command -v jq >/dev/null 2>&1; then
+    payload="$(jq -n \
+      --arg code "${code}" \
+      --arg message "${message}" \
+      --arg hostname "$(hostname 2>/dev/null || echo unknown)" \
+      --arg panel "$(panel_url)" \
+      --arg project "${PROJECT_NAME}" \
+      --argjson details "${details_json}" \
+      '{
+        schema_version: "1.0",
+        event: "awg_gui.failure",
+        severity: "error",
+        source: "awg-gui",
+        project: $project,
+        hostname: $hostname,
+        timestamp: (now | todate),
+        code: $code,
+        message: $message,
+        panel_url: $panel,
+        details: $details
+      }')"
+  else
+    payload="{\"schema_version\":\"1.0\",\"event\":\"awg_gui.failure\",\"severity\":\"error\",\"source\":\"awg-gui\",\"project\":\"${PROJECT_NAME}\",\"hostname\":\"$(hostname)\",\"timestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"code\":\"${code}\",\"message\":\"${message}\",\"panel_url\":\"$(panel_url)\",\"details\":${details_json}}"
+  fi
+
+  log "Sending failure webhook (${code}) → ${WEBHOOK_URL}"
+  curl -sS -X POST \
+    -H "Content-Type: application/json" \
+    --data-binary "${payload}" \
+    --max-time 10 \
+    "${WEBHOOK_URL}" >/dev/null 2>&1 || log "Webhook curl failed (ignored)"
+}
+
+wait_docker() {
+  local timeout="${1:-90}"
+  local i=0
+  while (( i < timeout )); do
+    if docker info >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+    ((i++)) || true
+  done
+  return 1
+}
+
+services_running() {
+  local missing=0
+  local name state
+  for name in "${EXPECTED_SERVICES[@]}"; do
+    state="$(docker inspect -f '{{.State.Running}}' "awggui-${name}" 2>/dev/null || echo false)"
+    if [[ "${state}" != "true" ]]; then
+      missing=1
+      log "Service awggui-${name} not running"
+    fi
+  done
+  return ${missing}
+}
+
+cmd_help() {
+  cat <<'EOF'
+awg-gui — AmneziaWG GUI control
+
+Usage:
+  awg-gui help
+  awg-gui status
+  awg-gui ensure-up
+  awg-gui restart awg|panel|all
+  awg-gui password [--random] [--password=SECRET]
+  awg-gui 2fa status|disable [--username=NAME]
+  awg-gui endpoint [IP|HOST] [PORT]
+  awg-gui endpoint --show
+  awg-gui endpoint --ip=IP [--port=PORT]
+  awg-gui endpoint --auto
+
+Endpoint:
+  awg-gui endpoint                    Show current public IP/DNS and AWG UDP port
+  awg-gui endpoint 203.0.113.10       Set public endpoint (IP or hostname)
+  awg-gui endpoint 203.0.113.10 51821   Set endpoint and AWG UDP port
+  awg-gui endpoint --auto             Use auto-detect for public endpoint
+
+Password:
+  awg-gui password                  Generate a random admin password (default)
+  awg-gui password --random           Same as above (explicit)
+  awg-gui password --password=SECRET  Set a specific admin password
+
+2FA:
+  awg-gui 2fa status                  Show whether 2FA is enabled
+  awg-gui 2fa disable                 Disable 2FA for admin (recovery)
+
+Boot service:
+  systemctl status awg-gui
+EOF
+}
+
+cmd_status() {
+  require_root
+  compose ps
+}
+
+cmd_ensure_up() {
+  require_root
+  if [[ ! -f "${COMPOSE_FILE}" ]]; then
+    err "Compose file not found: ${COMPOSE_FILE}"
+    send_failure_webhook "compose_up_failed" "Compose file missing" "{\"path\":\"${COMPOSE_FILE}\"}"
+    return 1
+  fi
+
+  if ! wait_docker 90; then
+    err "Docker daemon not ready"
+    send_failure_webhook "docker_unavailable" "Docker daemon did not become ready within timeout" '{"timeout":90}'
+    return 1
+  fi
+
+  if services_running; then
+    log "All services already running"
+    return 0
+  fi
+
+  log "Starting stack..."
+  local out
+  if ! out="$(compose up -d 2>&1)"; then
+    err "compose up failed"
+    echo "${out}" >&2
+    send_failure_webhook "compose_up_failed" "docker compose up -d failed" \
+      "$(jq -n --arg s "${out}" '{stderr: $s}' 2>/dev/null || echo '{}')"
+    return 1
+  fi
+
+  sleep 3
+  if ! services_running; then
+    send_failure_webhook "service_unhealthy" "Services still not running after compose up" \
+      '{"services":["caddy","app","db","awg"]}'
+    return 1
+  fi
+
+  log "Stack is up"
+  return 0
+}
+
+cmd_restart() {
+  require_root
+  local target="${1:-}"
+  case "${target}" in
+    awg)
+      compose restart awg
+      ;;
+    panel)
+      compose restart caddy app
+      ;;
+    all)
+      compose restart
+      ;;
+    *)
+      err "Usage: awg-gui restart awg|panel|all"
+      return 1
+      ;;
+  esac
+  log "Restarted: ${target}"
+}
+
+cmd_password() {
+  require_root
+  local pass_arg=""
+  local random=0
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --random|-r) random=1 ;;
+      --password=*) pass_arg="${1#--password=}" ;;
+      --password)
+        shift
+        pass_arg="${1:-}"
+        if [[ -z "${pass_arg}" ]]; then
+          err "Missing value for --password"
+          return 1
+        fi
+        ;;
+      -h|--help)
+        cat <<'EOF'
+Usage:
+  awg-gui password [--random] [--password=SECRET]
+
+  awg-gui password                  Generate a random admin password (default)
+  awg-gui password --random           Same as above (explicit)
+  awg-gui password --password=SECRET  Set a specific admin password
+EOF
+        return 0
+        ;;
+      *)
+        err "Unknown option: $1 (try: awg-gui password --help)"
+        return 1
+        ;;
+    esac
+    shift
+  done
+
+  if [[ ${random} -eq 1 && -n "${pass_arg}" ]]; then
+    err "Use either --password or --random, not both."
+    return 1
+  fi
+
+  local artisan_args=(exec -T app php artisan admin:reset-password --no-interaction)
+  if [[ -n "${pass_arg}" ]]; then
+    artisan_args+=(--password="${pass_arg}")
+  fi
+  compose "${artisan_args[@]}"
+}
+
+cmd_endpoint() {
+  require_root
+  local show=0 auto=0
+  local ip_arg="" port_arg=""
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --show|-s) show=1 ;;
+      --auto) auto=1 ;;
+      --ip=*) ip_arg="${1#--ip=}" ;;
+      --ip)
+        shift
+        ip_arg="${1:-}"
+        if [[ -z "${ip_arg}" ]]; then
+          err "Missing value for --ip"
+          return 1
+        fi
+        ;;
+      --port=*) port_arg="${1#--port=}" ;;
+      --port)
+        shift
+        port_arg="${1:-}"
+        if [[ -z "${port_arg}" ]]; then
+          err "Missing value for --port"
+          return 1
+        fi
+        ;;
+      -h|--help)
+        cat <<'EOF'
+Usage:
+  awg-gui endpoint [IP|HOST] [PORT]
+  awg-gui endpoint --show
+  awg-gui endpoint --ip=IP [--port=PORT]
+  awg-gui endpoint --auto
+
+Show or set the public VPN endpoint used in client configs (Endpoint = IP:PORT).
+
+  awg-gui endpoint                    Show current values
+  awg-gui endpoint 203.0.113.10       Set public IP or hostname
+  awg-gui endpoint 203.0.113.10 51821 Set IP/hostname and AWG UDP port
+  awg-gui endpoint --auto             Reset endpoint to auto-detect
+EOF
+        return 0
+        ;;
+      -*)
+        err "Unknown option: $1 (try: awg-gui endpoint --help)"
+        return 1
+        ;;
+      *)
+        if [[ -z "${ip_arg}" && -z "${port_arg}" && ${auto} -eq 0 ]]; then
+          if [[ "$1" =~ ^[0-9]+$ ]]; then
+            port_arg="$1"
+          else
+            ip_arg="$1"
+          fi
+        elif [[ -z "${port_arg}" ]]; then
+          port_arg="$1"
+        else
+          err "Unexpected argument: $1"
+          return 1
+        fi
+        ;;
+    esac
+    shift
+  done
+
+  if [[ ${show} -eq 1 && ( -n "${ip_arg}" || -n "${port_arg}" || ${auto} -eq 1 ) ]]; then
+    err "Use --show alone, not with other options"
+    return 1
+  fi
+
+  if [[ ${auto} -eq 1 && -n "${ip_arg}" ]]; then
+    err "Use either --auto or an explicit IP/hostname, not both"
+    return 1
+  fi
+
+  if [[ ${auto} -eq 1 ]]; then
+    ip_arg="auto"
+  fi
+
+  if [[ ${show} -eq 1 || ( -z "${ip_arg}" && -z "${port_arg}" ) ]]; then
+    compose exec -T app php artisan awg:set-endpoint --show
+    return $?
+  fi
+
+  if [[ ! -f "${ENV_FILE}" ]]; then
+    err "Env file not found: ${ENV_FILE}"
+    return 1
+  fi
+
+  load_webhook
+
+  local artisan_args=(exec -T app php artisan awg:set-endpoint --no-interaction)
+  if [[ -n "${ip_arg}" ]]; then
+    env_set "SERVER_ENDPOINT" "${ip_arg}" "${ENV_FILE}"
+    sync_env_endpoint "${ip_arg}" "${PANEL_PORT:-8877}"
+    artisan_args+=(--endpoint="${ip_arg}")
+  fi
+  if [[ -n "${port_arg}" ]]; then
+    if ! [[ "${port_arg}" =~ ^[0-9]+$ ]]; then
+      err "Port must be a number (51820-51839)"
+      return 1
+    fi
+    env_set "AWG_PORT" "${port_arg}" "${ENV_FILE}"
+    artisan_args+=(--port="${port_arg}")
+  fi
+
+  compose "${artisan_args[@]}"
+}
+
+cmd_2fa() {
+  require_root
+  local action="${1:-}"
+  shift || true
+  local username="admin"
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --username=*) username="${1#--username=}" ;;
+      --username)
+        shift
+        username="${1:-}"
+        if [[ -z "${username}" ]]; then
+          err "Missing value for --username"
+          return 1
+        fi
+        ;;
+      -h|--help)
+        cat <<'EOF'
+Usage:
+  awg-gui 2fa status [--username=NAME]
+  awg-gui 2fa disable [--username=NAME]
+EOF
+        return 0
+        ;;
+      *)
+        err "Unknown option: $1 (try: awg-gui 2fa --help)"
+        return 1
+        ;;
+    esac
+    shift
+  done
+
+  case "${action}" in
+    status)
+      compose exec -T app php artisan admin:2fa-status --username="${username}" --no-interaction
+      ;;
+    disable)
+      compose exec -T app php artisan admin:disable-2fa --username="${username}" --no-interaction
+      ;;
+    ""|-h|--help)
+      cat <<'EOF'
+Usage:
+  awg-gui 2fa status [--username=NAME]
+  awg-gui 2fa disable [--username=NAME]
+EOF
+      return 0
+      ;;
+    *)
+      err "Unknown 2fa action: ${action} (use status|disable)"
+      return 1
+      ;;
+  esac
+}
+
+main() {
+  local cmd="${1:-help}"
+  shift || true
+  case "${cmd}" in
+    help|-h|--help) cmd_help ;;
+    status) cmd_status ;;
+    ensure-up) cmd_ensure_up ;;
+    restart) cmd_restart "$@" ;;
+    password) cmd_password "$@" ;;
+    2fa) cmd_2fa "$@" ;;
+    endpoint) cmd_endpoint "$@" ;;
+    *) err "Unknown command: ${cmd}"; cmd_help; exit 1 ;;
+  esac
+}
+
+main "$@"

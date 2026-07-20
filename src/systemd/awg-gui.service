@@ -1,0 +1,15 @@
+[Unit]
+Description=AmneziaWG GUI ensure-up on boot
+Documentation=file:///usr/local/bin/awg-gui
+After=docker.service network-online.target
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/awg-gui ensure-up
+TimeoutStartSec=180
+
+[Install]
+WantedBy=multi-user.target

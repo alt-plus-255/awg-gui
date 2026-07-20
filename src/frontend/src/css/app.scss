@@ -1,0 +1,732 @@
+:root {
+  --surface-bg: #0d1117;
+  --surface-panel: #161b22;
+  --surface-panel-alt: #1c2128;
+  --surface-hover: #21262d;
+  --surface-border: #30363d;
+  --surface-text: #e6edf3;
+  --surface-text-muted: #8b949e;
+  --surface-text-soft: #c9d1d9;
+  --surface-highlight: #79b8ff;
+  --surface-highlight-bg: rgba(33, 150, 243, 0.18);
+  --surface-warn-bg: #2a2010;
+  --surface-glow: transparent;
+  --surface-radius: 8px;
+  --theme-font: Roboto, Helvetica, Arial, sans-serif;
+  --theme-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --graph-server: #3d7bd9;
+  --graph-online: #21ba45;
+  --graph-offline: #6b7280;
+  --graph-disabled: #3a3f47;
+  --graph-peer-link: #39d0d8;
+  --graph-peer-link-hover: #5fe6ee;
+  --graph-tunnel-online: #2ea043;
+  --graph-tunnel-offline: #3d444d;
+  --graph-tunnel-disabled: #2a2f36;
+  --graph-label: #c9d1d9;
+}
+
+/* Style-specific fonts/radius only — colors come from JS (getStyle + scheme) */
+html[data-theme='crt'] {
+  font-size: 18px;
+  --theme-font: "VT323", monospace;
+  --theme-mono: "VT323", monospace;
+  --surface-radius: 0px;
+}
+
+html[data-theme='ds'] {
+  --theme-font: "Exo 2", Roboto, sans-serif;
+  --theme-mono: "Share Tech Mono", ui-monospace, monospace;
+  --surface-radius: 2px;
+}
+
+html[data-theme='sa'] {
+  --theme-font: "Oswald", Roboto, sans-serif;
+  --theme-mono: "Roboto Mono", ui-monospace, monospace;
+  --surface-radius: 4px;
+}
+
+body,
+#q-app,
+.q-layout,
+.q-page-container,
+.q-page,
+.q-drawer,
+.q-dialog,
+.q-menu,
+.q-card,
+.q-banner,
+.q-toolbar,
+.q-header,
+.q-footer,
+.q-list,
+.q-item,
+.q-table,
+.q-tab-panels,
+.q-tab-panel,
+.q-field,
+.q-markup-table,
+.q-expansion-item,
+.q-btn-dropdown {
+  color: var(--surface-text);
+}
+
+.text-h1, .text-h2, .text-h3, .text-h4,
+.text-h5, .text-h6,
+.text-subtitle1, .text-subtitle2,
+.text-body1, .text-body2 {
+  color: var(--surface-text);
+}
+
+.text-caption {
+  color: var(--surface-text-muted);
+}
+
+/* Override Quasar fixed greys (#e0e0e0 etc.) — must beat quasar.css !important */
+html .text-grey-1,
+html .text-grey-2,
+html .text-grey-3 { color: var(--surface-text-soft) !important; }
+html .text-grey-4,
+html .text-grey-5,
+html .text-grey-6,
+html .text-grey-7,
+html .text-grey-8,
+html .text-grey-9,
+html .text-grey-10,
+html .text-grey-11,
+html .text-grey-12,
+html .text-grey-13,
+html .text-grey-14 { color: var(--surface-text-muted) !important; }
+
+/* Quasar Dark plugin sets body { color: #fff } — override on light scheme */
+html[data-scheme='light'] body,
+html[data-scheme='light'] body.body--dark {
+  color: var(--surface-text) !important;
+  background: var(--surface-bg) !important;
+}
+
+.q-item__label {
+  color: var(--surface-text);
+}
+
+.q-item__label--caption,
+.q-field__label,
+.q-field__marginal,
+.q-field__bottom,
+.q-table__bottom,
+.q-table thead tr,
+.q-table tbody td,
+.q-table tbody th,
+.q-tab:not(.q-tab--active):not(.text-primary),
+.q-btn-dropdown__arrow-container {
+  color: var(--surface-text-muted);
+}
+
+.q-field__native,
+.q-field__input,
+.q-field__prefix,
+.q-field__suffix,
+.q-select__dropdown-icon {
+  color: var(--surface-text);
+}
+
+.q-table {
+  color: var(--surface-text);
+}
+
+.q-table thead tr th {
+  color: var(--surface-text-soft);
+}
+
+.q-table tbody tr:hover > td {
+  background: var(--surface-hover) !important;
+}
+
+.q-tab--active,
+.q-tab.text-primary,
+.text-primary {
+  color: var(--q-primary) !important;
+}
+
+.q-header,
+.q-toolbar {
+  color: var(--surface-text);
+}
+
+.q-separator {
+  background: var(--surface-border);
+}
+
+.bg-blue-grey-9,
+.bg-blue-grey-10 {
+  background: var(--surface-panel-alt) !important;
+  color: var(--surface-text-soft) !important;
+}
+
+.q-field--filled .q-field__control {
+  background: var(--surface-panel-alt);
+}
+
+.q-field--filled .q-field__control:before {
+  background: var(--surface-hover);
+}
+
+.q-checkbox__inner,
+.q-radio__inner {
+  color: var(--surface-text-muted);
+}
+
+.q-card__section,
+.q-dialog__title,
+.q-dialog__message {
+  color: var(--surface-text);
+}
+
+/* ── Header nav & tabs (theme-aware) ─────────────────────────────── */
+
+.app-header,
+.app-header .q-toolbar {
+  color: var(--surface-text) !important;
+}
+
+.app-header .q-tab.q-tab--inactive,
+.app-header .q-tab:not(.q-tab--active):not(.text-primary) {
+  color: var(--surface-text-muted) !important;
+}
+
+.app-header .q-tab.q-tab--active,
+.app-header .q-tab.text-primary,
+.app-header .text-primary {
+  color: var(--q-primary) !important;
+}
+
+.app-header .q-btn,
+.app-header .q-btn-dropdown,
+.app-header .q-btn .q-icon,
+.app-header .q-btn-dropdown .q-icon,
+.app-header .q-btn .q-btn__content,
+.app-header .q-btn-dropdown .q-btn__content {
+  color: var(--surface-text) !important;
+}
+
+.app-header .resolver-menu-btn:not(.resolver-menu-btn--active) {
+  color: var(--surface-text-muted) !important;
+}
+
+.app-header .text-caption,
+.app-header .text-grey-4,
+.app-header .text-grey-5 {
+  color: var(--surface-text-muted) !important;
+}
+
+.settings-tabs,
+.settings-tabs .q-tab.q-tab--inactive,
+.settings-tabs .q-tab:not(.q-tab--active):not(.text-primary) {
+  color: var(--surface-text-muted) !important;
+}
+
+.settings-tabs .q-tab.q-tab--active,
+.settings-tabs .q-tab.text-primary {
+  color: var(--q-primary) !important;
+}
+
+.q-tabs .q-tab.q-tab--inactive,
+.q-tabs .q-tab:not(.q-tab--active):not(.text-primary) {
+  color: var(--surface-text-muted) !important;
+}
+
+.q-tabs .q-tab.q-tab--active,
+.q-tabs .q-tab.text-primary {
+  color: var(--q-primary) !important;
+}
+
+/* Select / dropdown — fixed UI size (CRT rem scale makes these huge otherwise) */
+.q-menu,
+.q-menu .q-item,
+.q-menu .q-item__label,
+.q-menu .q-item-label,
+.q-menu .q-field,
+.q-menu .q-field__native,
+.q-menu .q-field__input,
+.q-menu .q-field__label {
+  font-size: 14px;
+  line-height: 1.43;
+}
+
+.q-menu .q-item-label {
+  font-size: 12px;
+  line-height: 1.33;
+}
+
+.q-select .q-field__native,
+.q-select .q-field__input,
+.q-select .q-field__label,
+.q-select .q-field__append,
+.q-select .q-field__prepend {
+  font-size: 14px;
+  line-height: 1.43;
+}
+
+.q-field--auto-height.q-select .q-field__control {
+  min-height: 40px;
+}
+
+.q-field--dense.q-select .q-field__native,
+.q-field--dense.q-select .q-field__input,
+.q-field--dense.q-select .q-field__label {
+  font-size: 13px;
+}
+
+html[data-theme='crt'] .q-menu,
+html[data-theme='crt'] .q-menu .q-item,
+html[data-theme='crt'] .q-menu .q-item__label,
+html[data-theme='crt'] .q-menu .q-item-label {
+  font-size: 14px;
+  line-height: 1.43;
+}
+
+html[data-theme='crt'] .q-select .q-field__native,
+html[data-theme='crt'] .q-select .q-field__input,
+html[data-theme='crt'] .q-select .q-field__label {
+  font-size: 14px;
+  line-height: 1.43;
+}
+
+body {
+  background: var(--surface-bg);
+  color: var(--surface-text);
+  font-family: var(--theme-font);
+}
+
+.page-wrap {
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+.mono {
+  font-family: var(--theme-mono);
+  font-size: 12px;
+}
+
+.surface-panel {
+  background: var(--surface-panel) !important;
+  color: var(--surface-text);
+}
+
+.surface-panel-alt {
+  background: var(--surface-panel-alt) !important;
+}
+
+.surface-bg {
+  background: var(--surface-bg) !important;
+}
+
+.surface-border {
+  border: 1px solid var(--surface-border) !important;
+}
+
+.surface-warn-bg {
+  background: var(--surface-warn-bg) !important;
+}
+
+.text-muted-theme {
+  color: var(--surface-text-muted) !important;
+}
+
+.text-soft-theme {
+  color: var(--surface-text-soft) !important;
+}
+
+.status-card {
+  background: var(--surface-panel) !important;
+  color: var(--surface-text);
+  border-color: var(--surface-border) !important;
+  border-radius: var(--surface-radius);
+}
+
+/* ── CRT chrome ──────────────────────────────────────────────────── */
+
+html[data-theme='crt'] body {
+  font-size: 1.25rem;
+  letter-spacing: 0.03em;
+  line-height: 1.35;
+}
+
+html[data-theme='crt'] .text-h4,
+html[data-theme='crt'] .text-h5,
+html[data-theme='crt'] .text-h6 {
+  letter-spacing: 0.04em;
+}
+
+/* Override global 12px .mono — VT323 is unreadable that small */
+html[data-theme='crt'] .mono {
+  font-size: 1rem;
+}
+
+html[data-theme='crt'] .q-card,
+html[data-theme='crt'] .q-btn,
+html[data-theme='crt'] .q-field__control,
+html[data-theme='crt'] .q-menu,
+html[data-theme='crt'] .q-dialog__inner > div,
+html[data-theme='crt'] .q-badge,
+html[data-theme='crt'] .q-banner {
+  border-radius: 0 !important;
+}
+
+html[data-theme='crt'] .q-card {
+  border: 2px solid var(--surface-border);
+  box-shadow: none;
+}
+
+html[data-theme='crt'] .q-btn--standard {
+  border: 2px solid var(--surface-border);
+  text-transform: none;
+  box-shadow: none;
+}
+
+/* Dark text on filled primary/positive — white on green was unreadable (dark scheme only) */
+html[data-scheme='dark'][data-theme='crt'] .q-btn--standard.bg-primary,
+html[data-scheme='dark'][data-theme='crt'] .q-btn--standard.bg-positive,
+html[data-scheme='dark'][data-theme='crt'] .q-btn.bg-primary:not(.q-btn--outline):not(.q-btn--flat),
+html[data-scheme='dark'][data-theme='crt'] .q-btn.bg-positive:not(.q-btn--outline):not(.q-btn--flat) {
+  color: #010a05 !important;
+  text-shadow: none;
+  box-shadow: 0 0 8px var(--surface-glow);
+}
+
+html[data-scheme='dark'][data-theme='crt'] .q-btn--standard.bg-primary .q-icon,
+html[data-scheme='dark'][data-theme='crt'] .q-btn--standard.bg-positive .q-icon,
+html[data-scheme='dark'][data-theme='crt'] .q-btn.bg-primary:not(.q-btn--outline):not(.q-btn--flat) .q-icon,
+html[data-scheme='dark'][data-theme='crt'] .q-btn.bg-positive:not(.q-btn--outline):not(.q-btn--flat) .q-icon {
+  color: #010a05 !important;
+}
+
+html[data-scheme='dark'][data-theme='crt'] .q-badge.bg-primary,
+html[data-scheme='dark'][data-theme='crt'] .q-badge.bg-positive {
+  color: #010a05 !important;
+}
+
+html[data-theme='crt'] .q-header {
+  box-shadow: none;
+  border-bottom: 2px solid var(--q-primary);
+}
+
+html[data-theme='crt'] .q-table__card {
+  box-shadow: none;
+  border: 1px solid var(--surface-border);
+  border-radius: 0;
+}
+
+html[data-theme='crt'] .q-field--filled .q-field__control {
+  border-radius: 0;
+}
+
+html[data-theme='crt'] .app-logo {
+  border-radius: 0 !important;
+  image-rendering: pixelated;
+}
+
+/* ── Death Stranding chrome ───────────────────────────────────────── */
+
+html[data-scheme='dark'][data-theme='ds'] body {
+  background:
+    radial-gradient(ellipse at 20% 0%, rgba(77, 184, 196, 0.06) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 100%, rgba(42, 50, 56, 0.4) 0%, transparent 50%),
+    linear-gradient(180deg, #0c0e10 0%, #101418 100%);
+  letter-spacing: 0.01em;
+}
+
+html[data-theme='ds'] body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9998;
+  opacity: 0.03;
+  background-image: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(255, 255, 255, 0.03) 2px,
+    rgba(255, 255, 255, 0.03) 3px
+  );
+}
+
+html[data-theme='ds'] .text-h4,
+html[data-theme='ds'] .text-h5,
+html[data-theme='ds'] .text-h6 {
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 500;
+}
+
+html[data-theme='ds'] .q-card,
+html[data-theme='ds'] .q-btn,
+html[data-theme='ds'] .q-field__control,
+html[data-theme='ds'] .q-menu,
+html[data-theme='ds'] .q-dialog__inner > div,
+html[data-theme='ds'] .q-badge,
+html[data-theme='ds'] .q-banner {
+  border-radius: var(--surface-radius) !important;
+}
+
+html[data-theme='ds'] .q-card {
+  border: 1px solid var(--surface-border);
+  box-shadow: 0 0 12px var(--surface-glow);
+}
+
+html[data-theme='ds'] .q-btn--standard.bg-primary,
+html[data-theme='ds'] .q-btn.bg-primary:not(.q-btn--outline):not(.q-btn--flat) {
+  letter-spacing: 0.02em;
+  box-shadow: 0 0 10px var(--surface-glow);
+}
+
+html[data-theme='ds'] .q-header {
+  box-shadow: 0 1px 12px var(--surface-glow);
+  border-bottom: 1px solid var(--q-primary);
+}
+
+html[data-theme='ds'] .q-table__card {
+  border: 1px solid var(--surface-border);
+  box-shadow: 0 0 12px var(--surface-glow);
+}
+
+/* ── GTA San Andreas chrome ──────────────────────────────────────── */
+
+html[data-scheme='dark'][data-theme='sa'] body {
+  background:
+    radial-gradient(ellipse at 50% 0%, rgba(255, 153, 51, 0.12) 0%, transparent 55%),
+    radial-gradient(ellipse at 80% 20%, rgba(153, 51, 204, 0.08) 0%, transparent 45%),
+    linear-gradient(180deg, #1a1008 0%, #0f0c08 40%, #0a0806 100%);
+  letter-spacing: 0.02em;
+}
+
+html[data-scheme='dark'][data-theme='sa'] .text-h4,
+html[data-scheme='dark'][data-theme='sa'] .text-h5,
+html[data-scheme='dark'][data-theme='sa'] .text-h6 {
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 500;
+  text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.8);
+}
+
+html[data-theme='sa'] .q-card,
+html[data-theme='sa'] .q-btn,
+html[data-theme='sa'] .q-field__control,
+html[data-theme='sa'] .q-menu,
+html[data-theme='sa'] .q-dialog__inner > div,
+html[data-theme='sa'] .q-badge,
+html[data-theme='sa'] .q-banner {
+  border-radius: var(--surface-radius) !important;
+}
+
+html[data-theme='sa'] .q-card {
+  border: 1px solid var(--surface-border);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+html[data-theme='sa'] .q-btn--standard.bg-primary,
+html[data-theme='sa'] .q-btn.bg-primary:not(.q-btn--outline):not(.q-btn--flat) {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 500;
+  text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.6);
+  box-shadow: 0 0 8px rgba(106, 191, 42, 0.35);
+}
+
+html[data-scheme='dark'][data-theme='sa'] .q-btn--standard.bg-primary,
+html[data-scheme='dark'][data-theme='sa'] .q-btn--standard.bg-positive,
+html[data-scheme='dark'][data-theme='sa'] .q-btn.bg-primary:not(.q-btn--outline):not(.q-btn--flat),
+html[data-scheme='dark'][data-theme='sa'] .q-btn.bg-positive:not(.q-btn--outline):not(.q-btn--flat) {
+  color: #0f0c08 !important;
+}
+
+html[data-scheme='dark'][data-theme='sa'] .q-btn--standard.bg-primary .q-icon,
+html[data-scheme='dark'][data-theme='sa'] .q-btn--standard.bg-positive .q-icon,
+html[data-scheme='dark'][data-theme='sa'] .q-btn.bg-primary:not(.q-btn--outline):not(.q-btn--flat) .q-icon,
+html[data-scheme='dark'][data-theme='sa'] .q-btn.bg-positive:not(.q-btn--outline):not(.q-btn--flat) .q-icon {
+  color: #0f0c08 !important;
+}
+
+html[data-theme='sa'] .q-header {
+  border-bottom: 2px solid var(--q-primary);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.6);
+}
+
+html[data-theme='sa'] .q-table__card {
+  border: 1px solid var(--surface-border);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+}
+
+html[data-theme='sa'] .mono {
+  text-shadow: 0 0 4px rgba(106, 191, 42, 0.3);
+}
+
+/* CRT scanlines + vignette */
+html.theme-scanlines body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9998;
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(0, 0, 0, 0.12) 0px,
+    rgba(0, 0, 0, 0.12) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+}
+
+html.theme-scanlines body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  background: radial-gradient(ellipse at center, transparent 55%, rgba(0, 0, 0, 0.45) 100%);
+}
+
+/* ── Light scheme adjustments ─────────────────────────────────────── */
+
+html[data-scheme='light'] body {
+  color: var(--surface-text);
+}
+
+html[data-scheme='light'][data-theme='ds'] body {
+  background:
+    radial-gradient(ellipse at 20% 0%, rgba(42, 138, 150, 0.08) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 100%, rgba(184, 197, 204, 0.35) 0%, transparent 50%),
+    linear-gradient(180deg, var(--surface-bg) 0%, var(--surface-panel) 100%);
+}
+
+html[data-scheme='light'][data-theme='ds'] body::before {
+  opacity: 0.015;
+}
+
+html[data-scheme='light'][data-theme='sa'] body {
+  background:
+    radial-gradient(ellipse at 50% 0%, rgba(230, 126, 34, 0.1) 0%, transparent 55%),
+    radial-gradient(ellipse at 80% 20%, rgba(90, 154, 34, 0.06) 0%, transparent 45%),
+    linear-gradient(180deg, var(--surface-bg) 0%, var(--surface-panel) 100%);
+}
+
+html[data-scheme='light'][data-theme='sa'] .text-h4,
+html[data-scheme='light'][data-theme='sa'] .text-h5,
+html[data-scheme='light'][data-theme='sa'] .text-h6 {
+  text-shadow: none;
+}
+
+html[data-scheme='light'][data-theme='sa'] .q-card {
+  box-shadow: 0 1px 4px rgba(42, 36, 24, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+
+html[data-scheme='light'][data-theme='sa'] .q-btn--standard.bg-primary,
+html[data-scheme='light'][data-theme='sa'] .q-btn--standard.bg-positive,
+html[data-scheme='light'][data-theme='sa'] .q-btn.bg-primary:not(.q-btn--outline):not(.q-btn--flat),
+html[data-scheme='light'][data-theme='sa'] .q-btn.bg-positive:not(.q-btn--outline):not(.q-btn--flat) {
+  color: #ffffff !important;
+}
+
+html[data-scheme='light'][data-theme='sa'] .q-btn--standard.bg-primary .q-icon,
+html[data-scheme='light'][data-theme='sa'] .q-btn--standard.bg-positive .q-icon,
+html[data-scheme='light'][data-theme='sa'] .q-btn.bg-primary:not(.q-btn--outline):not(.q-btn--flat) .q-icon,
+html[data-scheme='light'][data-theme='sa'] .q-btn.bg-positive:not(.q-btn--outline):not(.q-btn--flat) .q-icon {
+  color: #ffffff !important;
+}
+
+html[data-scheme='light'][data-theme='crt'] .q-btn--standard.bg-primary,
+html[data-scheme='light'][data-theme='crt'] .q-btn--standard.bg-positive,
+html[data-scheme='light'][data-theme='crt'] .q-btn.bg-primary:not(.q-btn--outline):not(.q-btn--flat),
+html[data-scheme='light'][data-theme='crt'] .q-btn.bg-positive:not(.q-btn--outline):not(.q-btn--flat) {
+  color: #ffffff !important;
+}
+
+html[data-scheme='light'][data-theme='crt'] .q-btn--standard.bg-primary .q-icon,
+html[data-scheme='light'][data-theme='crt'] .q-btn--standard.bg-positive .q-icon,
+html[data-scheme='light'][data-theme='crt'] .q-btn.bg-primary:not(.q-btn--outline):not(.q-btn--flat) .q-icon,
+html[data-scheme='light'][data-theme='crt'] .q-btn.bg-positive:not(.q-btn--outline):not(.q-btn--flat) .q-icon {
+  color: #ffffff !important;
+}
+
+html[data-scheme='light'][data-theme='crt'] .q-badge.bg-primary,
+html[data-scheme='light'][data-theme='crt'] .q-badge.bg-positive {
+  color: #ffffff !important;
+}
+
+html[data-scheme='light'].theme-scanlines body::before {
+  opacity: 0.04;
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(0, 0, 0, 0.06) 0px,
+    rgba(0, 0, 0, 0.06) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+}
+
+html[data-scheme='light'].theme-scanlines body::after {
+  background: radial-gradient(ellipse at center, transparent 70%, rgba(0, 0, 0, 0.08) 100%);
+}
+
+/* Mobile dialogs: fluid width, single-column fields, wrap actions (PC ≥1024px unchanged) */
+@media (max-width: 1023px) {
+  /* Non-fullscreen (e.g. $q.dialog confirms): keep fluid centered cards */
+  .q-dialog__inner:not(.fullscreen) > div,
+  .q-dialog__inner:not(.fullscreen) .q-card {
+    width: min(100%, 95vw) !important;
+    min-width: 0 !important;
+    max-width: 95vw !important;
+  }
+
+  /* Maximized content dialogs: true fullscreen (like graph) */
+  .q-dialog__inner.fullscreen > div,
+  .q-dialog__inner.fullscreen .q-card {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    height: 100% !important;
+    max-height: 100% !important;
+  }
+
+  .q-dialog__inner.fullscreen .dialog-card,
+  .q-dialog__inner.fullscreen .process-modal-card,
+  .q-dialog__inner.fullscreen .graph-dialog-card {
+    display: flex !important;
+    flex-direction: column !important;
+    flex-wrap: nowrap !important;
+    overflow: hidden !important;
+  }
+
+  .q-dialog__inner.fullscreen .dialog-scroll-body {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    overflow: auto !important;
+  }
+
+  .q-dialog__inner.fullscreen .process-modal-card {
+    min-width: 0 !important;
+  }
+
+  .q-dialog__inner.fullscreen .process-table {
+    max-height: none !important;
+  }
+
+  .q-dialog__inner.fullscreen .q-card-actions {
+    flex-shrink: 0;
+  }
+  .q-dialog .q-card-actions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 4px;
+  }
+
+  /* Stack breakpoint columns inside dialogs (col / col-auto stay intact) */
+  .q-dialog .row > [class*='col-sm-'],
+  .q-dialog .row > [class*='col-md-'],
+  .q-dialog .row > [class*='col-lg-'],
+  .q-dialog .row > [class*='col-xl-'] {
+    flex: 0 0 100% !important;
+    max-width: 100% !important;
+  }
+}

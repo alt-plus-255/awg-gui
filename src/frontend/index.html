@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0d1117" />
+    <title>AWG-GUI</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="preload"
+      as="style"
+      href="https://fonts.googleapis.com/css2?family=VT323&family=Exo+2:wght@400;500;600&family=Share+Tech+Mono&family=Oswald:wght@400;500;600&family=Roboto+Mono:wght@400;500&display=swap"
+      onload="this.onload=null;this.rel='stylesheet'"
+    />
+    <noscript>
+      <link
+        rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=VT323&family=Exo+2:wght@400;500;600&family=Share+Tech+Mono&family=Oswald:wght@400;500;600&family=Roboto+Mono:wght@400;500&display=swap"
+      />
+    </noscript>
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="icon" type="image/png" href="/favicon.png" sizes="32x32" />
+    <link rel="icon" type="image/png" href="/icons/icon-192.png" sizes="192x192" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <style>
+      html, body {
+        margin: 0;
+        background: #0d1117;
+        color: #e6edf3;
+      }
+    </style>
+    <script>
+      (function () {
+        try {
+          var validStyles = ['classic', 'crt', 'ds', 'sa']
+          var validModes = ['dark', 'light', 'system', 'auto']
+          var bgMap = {
+            classic: { dark: '#0d1117', light: '#ffffff' },
+            crt: { dark: '#010a05', light: '#f4fff7' },
+            ds: { dark: '#0c0e10', light: '#eef2f4' },
+            sa: { dark: '#0f0c08', light: '#faf8f4' }
+          }
+          var textMap = {
+            classic: { dark: '#e6edf3', light: '#1f2328' },
+            crt: { dark: '#b8ffc8', light: '#0a3d18' },
+            ds: { dark: '#d4cfc4', light: '#1a2228' },
+            sa: { dark: '#f0e6d0', light: '#2a2418' }
+          }
+
+          var styleId = localStorage.getItem('awg-style') || localStorage.getItem('awg-theme') || 'classic'
+          if (validStyles.indexOf(styleId) === -1) styleId = 'classic'
+          if (localStorage.getItem('awg-theme') && !localStorage.getItem('awg-style')) {
+            localStorage.setItem('awg-style', styleId)
+            localStorage.removeItem('awg-theme')
+          }
+
+          var colorMode = localStorage.getItem('awg-color-mode') || 'dark'
+          if (validModes.indexOf(colorMode) === -1) colorMode = 'dark'
+
+          var autoHours = { from: '07:00', to: '21:00' }
+          try {
+            var rawHours = localStorage.getItem('awg-auto-hours')
+            if (rawHours) {
+              var parsed = JSON.parse(rawHours)
+              if (parsed && parsed.from) autoHours.from = parsed.from
+              if (parsed && parsed.to) autoHours.to = parsed.to
+            }
+          } catch (e) {}
+
+          function parseMin (t) {
+            var p = String(t || '00:00').split(':')
+            return (parseInt(p[0], 10) || 0) * 60 + (parseInt(p[1], 10) || 0)
+          }
+
+          function resolveScheme () {
+            if (colorMode === 'dark') return 'dark'
+            if (colorMode === 'light') return 'light'
+            if (colorMode === 'system') {
+              return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+            }
+            if (colorMode === 'auto') {
+              var from = parseMin(autoHours.from)
+              var to = parseMin(autoHours.to)
+              var now = new Date()
+              var cur = now.getHours() * 60 + now.getMinutes()
+              if (from === to) return 'dark'
+              if (from < to) return cur >= from && cur < to ? 'light' : 'dark'
+              return cur >= from || cur < to ? 'light' : 'dark'
+            }
+            return 'dark'
+          }
+
+          var scheme = resolveScheme()
+          document.documentElement.setAttribute('data-theme', styleId)
+          document.documentElement.setAttribute('data-scheme', scheme)
+          if (styleId === 'crt') document.documentElement.classList.add('theme-scanlines')
+          var bg = (bgMap[styleId] && bgMap[styleId][scheme]) || bgMap.classic[scheme]
+          var text = (textMap[styleId] && textMap[styleId][scheme]) || textMap.classic[scheme]
+          document.documentElement.style.background = bg
+          document.documentElement.style.color = text
+          document.body.style.color = text
+          document.body.style.background = bg
+        } catch (e) {}
+      })()
+    </script>
+  </head>
+  <body>
+    <div id="q-app"></div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
