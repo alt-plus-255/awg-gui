@@ -54,7 +54,7 @@ app.use(Quasar, {
       warning: '#d29922'
     },
     notify: {
-      position: 'top-right'
+      position: 'bottom-left'
     }
   }
 })

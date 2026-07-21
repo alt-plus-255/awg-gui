@@ -12,12 +12,6 @@ return new class extends Migration
             $table->id();
             $table->string('name');
             $table->string('comment')->nullable();
-            $table->boolean('enabled')->default(true);
-            $table->string('private_key');
-            $table->string('public_key');
-            $table->string('preshared_key')->nullable();
-            $table->string('address'); // e.g. 10.66.66.2/32
-            $table->unsignedInteger('keepalive')->nullable();
             $table->timestamps();
         });
     }

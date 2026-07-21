@@ -52,8 +52,9 @@ confirm_uninstall() {
     return 0
   fi
   if [[ ! -t 0 ]]; then
-    die "No interactive terminal for confirmation. Re-run with --yes, for example:
-  curl -fsSL .../dist/uninstall.sh | sudo bash -s -- --yes"
+    log "Non-interactive shell — skipping confirmation (--yes implied)"
+    YES=1
+    return 0
   fi
   local ans=""
   read -r -p "Remove awggui containers, volumes, CLI and systemd unit? [y/N]: " ans

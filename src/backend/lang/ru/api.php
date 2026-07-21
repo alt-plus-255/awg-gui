@@ -7,5 +7,6 @@ return [
     'awg_restart_failed' => 'Не удалось перезапустить контейнер AmneziaWG',
     'awg_restart_ok' => 'Контейнер AmneziaWG перезапущен, конфиги применены',
     'error' => 'Ошибка',
+    'server_error' => 'Произошла ошибка на стороне сервера',
     'custom_list_suffix' => '(свой)',
 ];

@@ -7,13 +7,26 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
+    /** @var list<string> */
+    private array $legacyVpnClientColumns = [
+        'enabled',
+        'private_key',
+        'public_key',
+        'preshared_key',
+        'address',
+        'extra_allowed_ips',
+        'keepalive',
+    ];
+
     public function up(): void
     {
-        if (! Schema::hasTable('awg_configs') || ! Schema::hasTable('awg_config_peers')) {
+        if (! Schema::hasTable('awg_configs') || ! Schema::hasTable('awg_config_peers') || ! Schema::hasTable('vpn_clients')) {
             return;
         }
 
         if (DB::table('awg_configs')->exists()) {
+            $this->dropLegacyVpnClientColumns();
+
             return;
         }
 
@@ -21,6 +34,8 @@ return new class extends Migration
 
         // Fresh installs: default config is created by awg:bootstrap with random obfuscation.
         if (trim((string) ($settings['server_private_key'] ?? '')) === '') {
+            $this->dropLegacyVpnClientColumns();
+
             return;
         }
 
@@ -79,17 +94,7 @@ return new class extends Migration
             ]);
         }
 
-        Schema::table('vpn_clients', function (Blueprint $table) {
-            $table->dropColumn([
-                'enabled',
-                'private_key',
-                'public_key',
-                'preshared_key',
-                'address',
-                'extra_allowed_ips',
-                'keepalive',
-            ]);
-        });
+        $this->dropLegacyVpnClientColumns();
 
         $removeKeys = [
             'awg_port', 'internal_subnet', 'server_address', 'server_private_key',
@@ -98,6 +103,22 @@ return new class extends Migration
             'i1', 'i2', 'i3', 'i4', 'i5',
         ];
         DB::table('settings')->whereIn('key', $removeKeys)->delete();
+    }
+
+    private function dropLegacyVpnClientColumns(): void
+    {
+        $toDrop = array_values(array_filter(
+            $this->legacyVpnClientColumns,
+            fn (string $column) => Schema::hasColumn('vpn_clients', $column)
+        ));
+
+        if ($toDrop === []) {
+            return;
+        }
+
+        Schema::table('vpn_clients', function (Blueprint $table) use ($toDrop) {
+            $table->dropColumn($toDrop);
+        });
     }
 
     public function down(): void

@@ -24,6 +24,20 @@ function findInteractive (target) {
   return target.closest(CLICK_SELECTOR)
 }
 
+const MOBILE_MAX_WIDTH = 1023
+
+function getNotifyPosition () {
+  return window.matchMedia(`(max-width: ${MOBILE_MAX_WIDTH}px)`).matches
+    ? 'bottom'
+    : 'bottom-left'
+}
+
+function normalizeNotifyOpts (opts) {
+  const base = typeof opts === 'string' ? { message: opts } : { ...opts }
+  base.position = getNotifyPosition()
+  return base
+}
+
 /**
  * @param {{ router: import('vue-router').Router, Notify: { create: Function } }} opts
  */
@@ -63,9 +77,10 @@ export function installUiSounds ({ router, Notify }) {
 
   const originalCreate = Notify.create.bind(Notify)
   Notify.create = (opts) => {
-    const type = typeof opts === 'string' ? 'info' : opts?.type
+    const normalized = normalizeNotifyOpts(opts)
+    const type = normalized.type || 'info'
     if (type === 'positive') play('success')
     else if (type === 'negative') play('error')
-    return originalCreate(opts)
+    return originalCreate(normalized)
   }
 }

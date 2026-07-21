@@ -20,6 +20,11 @@ docker cp "${ROOT}/backend/bootstrap/app.php" "${APP_CONTAINER}:/var/www/html/bo
 echo "==> Backend routes -> ${APP_CONTAINER}"
 docker cp "${ROOT}/backend/routes/." "${APP_CONTAINER}:/var/www/html/routes/"
 
+if [[ -d "${ROOT}/backend/database/migrations" ]]; then
+  echo "==> Backend database/migrations -> ${APP_CONTAINER}"
+  docker cp "${ROOT}/backend/database/migrations/." "${APP_CONTAINER}:/var/www/html/database/migrations/"
+fi
+
 echo "==> Laravel cache clear"
 docker exec "${APP_CONTAINER}" php artisan config:clear --ansi 2>/dev/null || true
 docker exec "${APP_CONTAINER}" php artisan route:clear --ansi 2>/dev/null || true

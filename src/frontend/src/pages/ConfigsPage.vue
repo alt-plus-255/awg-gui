@@ -672,6 +672,7 @@ import {
 import { useI18n } from 'vue-i18n'
 import { useQuasar } from 'quasar'
 import api from '@/boot/axios'
+import { apiErrorMessage } from '@/utils/apiError'
 import { copyText } from '@/utils/clipboard'
 import PeerShareDialog from '@/components/PeerShareDialog.vue'
 import DialogHeader from '@/components/DialogHeader.vue'
@@ -1484,7 +1485,7 @@ async function savePeer () {
     }
     await Promise.all(tasks)
   } catch (e) {
-    $q.notify({ type: 'negative', message: e?.response?.data?.message || t('common.error') })
+    $q.notify({ type: 'negative', message: apiErrorMessage(e, t('common.serverError')) })
   } finally {
     peerSaving.value = false
   }

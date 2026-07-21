@@ -7,5 +7,6 @@ return [
     'awg_restart_failed' => 'Failed to restart the AmneziaWG container',
     'awg_restart_ok' => 'AmneziaWG container restarted, configs applied',
     'error' => 'Error',
+    'server_error' => 'A server error occurred',
     'custom_list_suffix' => '(custom)',
 ];

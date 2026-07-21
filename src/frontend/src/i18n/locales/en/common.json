@@ -23,6 +23,7 @@
   "offline": "offline",
   "offlineAlt": "offline",
   "error": "Error",
+  "serverError": "A server error occurred",
   "done": "Done",
   "copied": "Copied",
   "copyFailed": "Failed to copy",

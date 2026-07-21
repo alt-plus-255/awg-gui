@@ -1,5 +1,6 @@
 import axios from 'axios'
 import { DEFAULT_LOCALE, LOCALE_STORAGE_KEY, isValidLocale } from '@/i18n'
+import { logApiErrorDebug } from '@/utils/apiError'
 
 const api = axios.create({
   baseURL: '/',
@@ -63,6 +64,10 @@ api.interceptors.response.use(
           })
         }
       }
+    }
+
+    if (status >= 500) {
+      logApiErrorDebug(error)
     }
 
     return Promise.reject(error)

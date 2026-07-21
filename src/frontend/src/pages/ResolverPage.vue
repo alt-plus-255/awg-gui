@@ -23,52 +23,7 @@
             :to="{ name: 'resolver-settings' }"
           />
         </div>
-        <div class="text-body2 text-grey-5 resolver-header__desc">
-          {{ t('resolver.headerDesc') }}
-        </div>
       </div>
-
-      <q-banner
-        rounded
-        class="q-mb-md surface-panel-alt surface-border"
-      >
-        <template #avatar>
-          <q-icon name="info" color="warning" />
-        </template>
-        <div class="text-body2">
-          <div class="q-mb-xs">
-            <strong>{{ t('resolver.afterEnableTitle') }}</strong> {{ t('resolver.afterEnableStep1') }}
-          </div>
-          <div class="q-mb-xs text-caption text-grey-4">
-            {{ t('resolver.afterEnableStep2') }}
-          </div>
-          <div class="q-mb-xs">
-            {{ t('resolver.phoneHint2ip') }}
-          </div>
-          <div class="q-mb-xs">
-            {{ t('resolver.phoneHintRelay') }}
-          </div>
-          <div>
-            {{ t('resolver.communityListsHint') }}
-          </div>
-        </div>
-      </q-banner>
-
-      <q-card class="q-pa-md q-mb-md status-card" flat bordered>
-        <div class="text-subtitle2 q-mb-sm">{{ t('resolver.checkOnPhone') }}</div>
-        <ul class="q-my-none text-body2 text-grey-4 client-checklist">
-          <li>{{ t('resolver.checkDeletedReimported') }}</li>
-          <li>
-            <span class="mono">DNS</span> = gateway
-            <span v-if="firstEnabledGateway" class="text-grey-5">({{ firstEnabledGateway }})</span>
-          </li>
-          <li>{{ t('resolver.checkAllowedIps') }}</li>
-          <li>{{ t('resolver.checkAllowedIpsSplit') }}</li>
-          <li>{{ t('resolver.checkPrivateDns') }}</li>
-          <li>{{ t('resolver.check2ip') }}</li>
-          <li>{{ t('resolver.check2ipSplit') }}</li>
-        </ul>
-      </q-card>
 
       <q-card class="q-pa-md q-mb-md status-card" flat bordered>
         <div class="row items-center q-col-gutter-md">
@@ -158,7 +113,6 @@
 
                   :clearable="!forms[props.row.id].resolver_enabled"
                   class="q-mb-md"
-                  :hint="connectionHint(props.row.id)"
                   :disable="!connectionOptions.length"
                   :rules="forms[props.row.id].resolver_enabled
                     ? [v => !!v || t('resolver.selectConnection')]
@@ -183,24 +137,10 @@
                   class="q-mb-sm"
                   :disable="!forms[props.row.id].resolver_enabled"
                 />
-                <div class="text-caption text-grey-5 q-mb-md">
-                  {{ forms[props.row.id].resolver_routing_mode === 'client_split'
-                    ? t('resolver.modeClientSplitHint')
-                    : t('resolver.modeVdsSplitHint') }}
-                </div>
-                <q-banner
-                  v-if="forms[props.row.id].resolver_enabled && forms[props.row.id].resolver_routing_mode === 'client_split'"
-                  dense
-                  rounded
-                  class="q-mb-md surface-panel-alt surface-border"
-                >
-                  {{ t('resolver.modeClientSplitCidrWarning') }}
-                </q-banner>
 
                 <q-input
                   v-model="forms[props.row.id].resolver_dns"
                   label="DNS (sing-box / upstream)"
-                  :hint="t('resolver.fakeIpHint')"
                   filled
 
                   dense
@@ -215,11 +155,7 @@
 
                   class="q-mb-md"
                 />
-                <div class="text-caption text-grey-5 q-mb-md" style="margin-top: -8px">
-                  {{ t('resolver.blockQuicHint') }}
-                </div>
 
-                <div class="text-caption text-grey-5 q-mb-xs">{{ t('resolver.listsCommunityCustom') }}</div>
                 <div class="row q-col-gutter-sm q-mb-md">
                   <div
                     v-for="item in selectableLists"
@@ -244,7 +180,6 @@
                       v-model="forms[props.row.id].user_domains"
                       :label="t('resolver.customDomains')"
                       placeholder="example.com"
-                      :hint="t('resolver.domainsHint')"
                       :empty-hint="t('resolver.noDomains')"
                       :normalize="normalizeDomain"
                       :validate="validateDomain"
@@ -255,7 +190,6 @@
                       v-model="forms[props.row.id].user_subnets"
                       :label="t('resolver.customSubnets')"
                       :placeholder="t('resolver.subnetsPlaceholder')"
-                      :hint="t('resolver.subnetsHint')"
                       :empty-hint="t('resolver.noSubnets')"
                       :normalize="normalizeSubnet"
                       :validate="validateSubnet"
@@ -284,6 +218,175 @@
           </q-tr>
         </template>
       </q-table>
+
+      <div class="q-mt-lg faq-block surface-panel-alt surface-border rounded-borders">
+        <div class="text-subtitle1 q-pa-md q-pb-sm">{{ t('resolver.faqTitle') }}</div>
+        <q-list bordered separator class="rounded-borders">
+          <q-expansion-item
+            group="resolver-faq"
+            expand-separator
+            icon="help_outline"
+            :label="t('resolver.faqSectionOverview')"
+            header-class="text-body2 faq-expansion-header"
+          >
+            <q-card flat class="faq-section-body">
+              <q-card-section class="text-body2 text-grey-4">
+                {{ t('resolver.headerDesc') }}
+              </q-card-section>
+            </q-card>
+          </q-expansion-item>
+
+          <q-expansion-item
+            group="resolver-faq"
+            expand-separator
+            icon="sync"
+            :label="t('resolver.faqSectionAfterEnable')"
+            header-class="text-body2 faq-expansion-header"
+          >
+            <q-card flat class="faq-section-body">
+              <q-card-section class="text-body2 text-grey-4">
+                <div class="q-mb-sm">
+                  <strong>{{ t('resolver.afterEnableTitle') }}</strong> {{ t('resolver.afterEnableStep1') }}
+                </div>
+                <div>{{ t('resolver.afterEnableStep2') }}</div>
+              </q-card-section>
+            </q-card>
+          </q-expansion-item>
+
+          <q-expansion-item
+            group="resolver-faq"
+            expand-separator
+            icon="phone_iphone"
+            :label="t('resolver.faqSectionPhoneCheck')"
+            header-class="text-body2 faq-expansion-header"
+          >
+            <q-card flat class="faq-section-body">
+              <q-card-section class="text-body2 text-grey-4">
+                <ul class="q-my-none client-checklist">
+                  <li>{{ t('resolver.checkDeletedReimported') }}</li>
+                  <li>
+                    <span class="mono">DNS</span> = gateway
+                    <span v-if="firstEnabledGateway" class="text-grey-5">({{ firstEnabledGateway }})</span>
+                  </li>
+                  <li>{{ t('resolver.checkAllowedIps') }}</li>
+                  <li>{{ t('resolver.checkAllowedIpsSplit') }}</li>
+                  <li>{{ t('resolver.checkPrivateDns') }}</li>
+                  <li>{{ t('resolver.check2ip') }}</li>
+                  <li>{{ t('resolver.check2ipSplit') }}</li>
+                </ul>
+              </q-card-section>
+            </q-card>
+          </q-expansion-item>
+
+          <q-expansion-item
+            group="resolver-faq"
+            expand-separator
+            icon="alt_route"
+            :label="t('resolver.faqSectionRouting')"
+            header-class="text-body2 faq-expansion-header"
+          >
+            <q-card flat class="faq-section-body">
+              <q-card-section class="text-body2 text-grey-4">
+                <div class="q-mb-sm">{{ t('resolver.modeVdsSplitHint') }}</div>
+                <div class="q-mb-sm">{{ t('resolver.modeClientSplitHint') }}</div>
+                <div>{{ t('resolver.modeClientSplitCidrWarning') }}</div>
+              </q-card-section>
+            </q-card>
+          </q-expansion-item>
+
+          <q-expansion-item
+            group="resolver-faq"
+            expand-separator
+            icon="public"
+            :label="t('resolver.faqSection2ip')"
+            header-class="text-body2 faq-expansion-header"
+          >
+            <q-card flat class="faq-section-body">
+              <q-card-section class="text-body2 text-grey-4">
+                {{ t('resolver.phoneHint2ip') }}
+              </q-card-section>
+            </q-card>
+          </q-expansion-item>
+
+          <q-expansion-item
+            group="resolver-faq"
+            expand-separator
+            icon="smartphone"
+            :label="t('resolver.faqSectionMobile')"
+            header-class="text-body2 faq-expansion-header"
+          >
+            <q-card flat class="faq-section-body">
+              <q-card-section class="text-body2 text-grey-4">
+                <div class="q-mb-sm">{{ t('resolver.phoneHintRelay') }}</div>
+                <div>{{ t('resolver.checkPrivateDns') }}</div>
+              </q-card-section>
+            </q-card>
+          </q-expansion-item>
+
+          <q-expansion-item
+            group="resolver-faq"
+            expand-separator
+            icon="cable"
+            :label="t('resolver.faqSectionConnection')"
+            header-class="text-body2 faq-expansion-header"
+          >
+            <q-card flat class="faq-section-body">
+              <q-card-section class="text-body2 text-grey-4">
+                <ul class="q-my-none client-checklist">
+                  <li>{{ t('resolver.requiredWhenEnabled') }}</li>
+                  <li>{{ t('resolver.optionalWhenDisabled') }}</li>
+                  <li>{{ t('resolver.createConnectionFirst') }}</li>
+                </ul>
+              </q-card-section>
+            </q-card>
+          </q-expansion-item>
+
+          <q-expansion-item
+            group="resolver-faq"
+            expand-separator
+            icon="dns"
+            :label="t('resolver.faqSectionDns')"
+            header-class="text-body2 faq-expansion-header"
+          >
+            <q-card flat class="faq-section-body">
+              <q-card-section class="text-body2 text-grey-4">
+                {{ t('resolver.fakeIpHint') }}
+              </q-card-section>
+            </q-card>
+          </q-expansion-item>
+
+          <q-expansion-item
+            group="resolver-faq"
+            expand-separator
+            icon="block"
+            :label="t('resolver.faqSectionQuic')"
+            header-class="text-body2 faq-expansion-header"
+          >
+            <q-card flat class="faq-section-body">
+              <q-card-section class="text-body2 text-grey-4">
+                {{ t('resolver.blockQuicHint') }}
+              </q-card-section>
+            </q-card>
+          </q-expansion-item>
+
+          <q-expansion-item
+            group="resolver-faq"
+            expand-separator
+            icon="list"
+            :label="t('resolver.faqSectionLists')"
+            header-class="text-body2 faq-expansion-header"
+          >
+            <q-card flat class="faq-section-body">
+              <q-card-section class="text-body2 text-grey-4">
+                <div class="q-mb-sm">{{ t('resolver.communityListsHint') }}</div>
+                <div class="q-mb-sm">{{ t('resolver.listsCommunityCustom') }}</div>
+                <div class="q-mb-sm">{{ t('resolver.domainsHint') }}</div>
+                <div>{{ t('resolver.subnetsHint') }}</div>
+              </q-card-section>
+            </q-card>
+          </q-expansion-item>
+        </q-list>
+      </div>
 
       <div v-if="vnConfigs.length" class="text-caption text-grey-6 q-mt-md">
         {{ t('resolver.virtualNetworksHidden') }}
@@ -494,13 +597,6 @@ function previewAllowed (configId) {
   return '0.0.0.0/0, ::/0'
 }
 
-function connectionHint (configId) {
-  if (!connectionOptions.value.length) return t('resolver.createConnectionFirst')
-  const form = forms[configId]
-  if (form?.resolver_enabled) return t('resolver.requiredWhenEnabled')
-  return t('resolver.optionalWhenDisabled')
-}
-
 async function load () {
   loading.value = true
   try {
@@ -569,8 +665,7 @@ onMounted(load)
   display: grid;
   grid-template-columns: 1fr auto;
   grid-template-areas:
-    'title actions'
-    'desc actions';
+    'title actions';
   column-gap: 16px;
   row-gap: 4px;
   align-items: start;
@@ -587,17 +682,12 @@ onMounted(load)
   gap: 8px;
 }
 
-.resolver-header__desc {
-  grid-area: desc;
-}
-
 @media (max-width: 1023px) {
   .resolver-header {
     grid-template-columns: 1fr;
     grid-template-areas:
       'title'
-      'actions'
-      'desc';
+      'actions';
     row-gap: 12px;
   }
 
@@ -647,5 +737,17 @@ onMounted(load)
 .client-checklist {
   padding-left: 1.25rem;
   line-height: 1.6;
+}
+.faq-block {
+  overflow: hidden;
+}
+.faq-section-body {
+  background: transparent;
+}
+.faq-expansion-header {
+  white-space: normal;
+}
+:deep(.faq-block .q-item__label) {
+  white-space: normal;
 }
 </style>
