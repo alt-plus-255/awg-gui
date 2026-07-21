@@ -19,8 +19,8 @@ die() { echo -e "${RED}[error]${NC} $*" >&2; exit 1; }
 usage() {
   cat <<EOF
 Usage:
-  sudo bash <(wget -O - https://raw.githubusercontent.com/alt-plus-255/awg-gui/refs/heads/main/dist/uninstall.sh)
-  sudo bash <(wget -O - .../dist/uninstall.sh) --yes --images
+  curl -fsSL https://raw.githubusercontent.com/alt-plus-255/awg-gui/refs/heads/main/dist/uninstall.sh | sudo bash
+  curl -fsSL .../dist/uninstall.sh | sudo bash -s -- --yes --images
 
 Options:
   --yes      Skip confirmation
@@ -40,7 +40,7 @@ for arg in "$@"; do
   esac
 done
 
-[[ "$(id -u)" -eq 0 ]] || die "Run as root: sudo bash <(wget -O - .../dist/uninstall.sh)"
+[[ "$(id -u)" -eq 0 ]] || die "Run as root: curl -fsSL .../dist/uninstall.sh | sudo bash"
 
 ARGS=()
 [[ "${YES}" -eq 1 ]] && ARGS+=(--yes)

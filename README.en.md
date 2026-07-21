@@ -17,19 +17,26 @@ AmneziaWG 2.0 VPN server with a Laravel 12 API and Quasar Vue admin panel, all i
 Downloads a pre-built release bundle from GitHub Releases. No source checkout, `node_modules`, or local image build required.
 
 ```bash
-sudo bash <(wget -O - https://raw.githubusercontent.com/alt-plus-255/awg-gui/refs/heads/main/dist/install.sh)
+curl -fsSL https://raw.githubusercontent.com/alt-plus-255/awg-gui/refs/heads/main/dist/install.sh | sudo bash
 ```
 
 Non-interactive (panel port **8877**, upgrade if already installed):
 
 ```bash
-sudo bash <(wget -O - https://raw.githubusercontent.com/alt-plus-255/awg-gui/refs/heads/main/dist/install.sh) --yes
+curl -fsSL https://raw.githubusercontent.com/alt-plus-255/awg-gui/refs/heads/main/dist/install.sh | sudo bash -s -- --yes
 ```
 
 Specific version:
 
 ```bash
-sudo AWG_GUI_VERSION=1.0.0 bash <(wget -O - https://raw.githubusercontent.com/alt-plus-255/awg-gui/refs/heads/main/dist/install.sh) --yes
+curl -fsSL https://raw.githubusercontent.com/alt-plus-255/awg-gui/refs/heads/main/dist/install.sh | sudo AWG_GUI_VERSION=1.0.0 bash -s -- --yes
+```
+
+If `curl` is unavailable, download the script and run it:
+
+```bash
+wget --no-config -O /tmp/awg-gui-install.sh https://raw.githubusercontent.com/alt-plus-255/awg-gui/refs/heads/main/dist/install.sh
+sudo bash /tmp/awg-gui-install.sh --yes
 ```
 
 ## Features

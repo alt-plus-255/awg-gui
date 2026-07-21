@@ -20,9 +20,10 @@ die() { echo -e "${RED}[error]${NC} $*" >&2; exit 1; }
 usage() {
   cat <<EOF
 Usage:
-  sudo bash <(wget -O - https://raw.githubusercontent.com/${GITHUB_REPO}/refs/heads/main/dist/install.sh)
-  sudo bash <(wget -O - .../dist/install.sh) --yes
-  sudo AWG_GUI_VERSION=1.0.0 bash <(wget -O - .../dist/install.sh) --yes
+  curl -fsSL https://raw.githubusercontent.com/${GITHUB_REPO}/refs/heads/main/dist/install.sh | sudo bash
+  curl -fsSL .../dist/install.sh | sudo bash -s -- --yes
+  curl -fsSL .../dist/install.sh | sudo AWG_GUI_VERSION=1.0.0 bash -s -- --yes
+  wget --no-config -O /tmp/awg-gui-install.sh .../dist/install.sh && sudo bash /tmp/awg-gui-install.sh --yes
 
 Options:
   --yes              Non-interactive install
@@ -46,7 +47,7 @@ for arg in "$@"; do
   esac
 done
 
-[[ "$(id -u)" -eq 0 ]] || die "Run as root: sudo bash <(wget -O - .../dist/install.sh)"
+[[ "$(id -u)" -eq 0 ]] || die "Run as root: curl -fsSL .../dist/install.sh | sudo bash"
 
 detect_arch() {
   case "$(uname -m)" in

@@ -4,7 +4,7 @@
 
 | Файл | Назначение |
 |------|------------|
-| `install.sh` | Online-установка: `sudo bash <(wget -O - .../dist/install.sh)` |
+| `install.sh` | Online-установка: `curl -fsSL .../dist/install.sh \| sudo bash` |
 | `uninstall.sh` | Online-удаление |
 
 ## Не в git (GitHub Releases)
