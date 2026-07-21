@@ -2,11 +2,11 @@
   <q-page padding>
     <div class="page-wrap">
       <div class="row items-center q-mb-md">
-        <div class="text-h5 col">Настройки</div>
+        <div class="text-h5 col">{{ t('settings.title') }}</div>
         <q-btn
           v-if="isDirty"
           color="primary"
-          label="Сохранить"
+          :label="t('common.save')"
           :loading="saving"
           @click="save"
         />
@@ -23,8 +23,8 @@
           outside-arrows
           mobile-arrows
         >
-          <q-tab name="general" label="Общее" />
-          <q-tab name="panel" label="Панель" />
+          <q-tab name="general" :label="t('settings.tabGeneral')" />
+          <q-tab name="panel" :label="t('settings.tabPanel')" />
           <q-tab v-if="hasDomain" name="https" label="HTTPS" />
           <q-tab name="twofa" label="2FA" />
         </q-tabs>
@@ -34,12 +34,12 @@
         <q-form>
           <q-tab-panels v-model="activeTab" animated class="settings-panels">
             <q-tab-panel name="general" class="q-pa-md">
-              <div class="text-subtitle2 q-mb-sm">Оформление</div>
+              <div class="text-subtitle2 q-mb-sm">{{ t('settings.appearance') }}</div>
 
-              <div class="text-caption text-soft-theme q-mb-xs">Тема</div>
+              <div class="text-caption text-soft-theme q-mb-xs">{{ t('theme.theme') }}</div>
               <q-option-group
                 :model-value="theme.colorMode"
-                :options="theme.colorModeOptionList"
+                :options="colorModeOptions"
                 type="radio"
                 color="primary"
                 @update:model-value="theme.setColorMode"
@@ -50,7 +50,7 @@
                   <q-input
                     :model-value="theme.autoHours.from"
                     type="time"
-                    label="Светлая с"
+                    :label="t('theme.lightFrom')"
                     filled
                     @update:model-value="onAutoFrom"
                   />
@@ -59,14 +59,14 @@
                   <q-input
                     :model-value="theme.autoHours.to"
                     type="time"
-                    label="до"
+                    :label="t('theme.lightUntil')"
                     filled
                     @update:model-value="onAutoTo"
                   />
                 </div>
               </div>
 
-              <div class="text-caption text-soft-theme q-mb-xs q-mt-md">Стиль</div>
+              <div class="text-caption text-soft-theme q-mb-xs q-mt-md">{{ t('theme.style') }}</div>
               <q-option-group
                 :model-value="theme.styleId"
                 :options="theme.styleOptions"
@@ -75,12 +75,21 @@
                 @update:model-value="theme.setStyle"
               />
 
+              <div class="text-caption text-soft-theme q-mb-xs q-mt-md">{{ t('theme.language') }}</div>
+              <q-option-group
+                :model-value="localeStore.locale"
+                :options="localeStore.localeOptions"
+                type="radio"
+                color="primary"
+                @update:model-value="localeStore.setLocale"
+              />
+
               <q-separator class="q-my-md" />
 
-              <div class="text-subtitle2 q-mb-sm">Звуки</div>
+              <div class="text-subtitle2 q-mb-sm">{{ t('settings.sounds') }}</div>
               <q-toggle
                 :model-value="sounds.enabled"
-                label="Звуки интерфейса"
+                :label="t('settings.uiSounds')"
                 color="primary"
 
                 @update:model-value="sounds.setEnabled"
@@ -88,18 +97,18 @@
 
               <q-separator class="q-my-md" />
 
-              <div class="text-subtitle2 q-mb-sm">Оповещение о сбое</div>
+              <div class="text-subtitle2 q-mb-sm">{{ t('settings.failureAlert') }}</div>
               <q-input
                 v-model="form.failure_webhook_url"
-                label="URL webhook при сбое"
-                hint="POST JSON при сбое загрузки/ensure"
+                :label="t('settings.webhookUrl')"
+                :hint="t('settings.webhookUrlHint')"
 
                 filled
                 class="q-mb-md"
               />
               <div class="row q-gutter-sm">
-                <q-btn outline color="accent" label="JSON-схема" @click="schemaOpen = true" />
-                <q-btn outline color="primary" label="Отправить тест" :loading="testing" @click="testWebhook" />
+                <q-btn outline color="accent" :label="t('settings.jsonSchema')" @click="schemaOpen = true" />
+                <q-btn outline color="primary" :label="t('settings.sendTest')" :loading="testing" @click="testWebhook" />
               </div>
             </q-tab-panel>
 
@@ -108,8 +117,8 @@
                 <div class="col-12 col-md-6">
                   <q-input
                     v-model="form.server_endpoint"
-                    label="Публичный IP сервера"
-                    hint="IPv4 панели; используется в VPN Endpoint, если не выбран домен"
+                    :label="t('settings.publicIp')"
+                    :hint="t('settings.publicIpHint')"
 
                     filled
                   />
@@ -117,7 +126,7 @@
                 <div class="col-12 col-md-6">
                   <q-input
                     v-model="form.panel_domain"
-                    label="Домен панели (необязательно)"
+                    :label="t('settings.panelDomain')"
                     :hint="domainHint"
 
                     filled
@@ -130,8 +139,8 @@
                 <div class="col-12 col-md-6">
                   <q-input
                     v-model="form.panel_port"
-                    label="Порт HTTP панели"
-                    hint="По умолчанию 8877"
+                    :label="t('settings.httpPort')"
+                    :hint="t('settings.httpPortHint')"
 
                     filled
                   />
@@ -139,8 +148,8 @@
                 <div class="col-12 col-md-6">
                   <q-input
                     v-model="form.panel_https_port"
-                    label="Порт HTTPS панели"
-                    hint="По умолчанию 7443; используется после выпуска сертификата"
+                    :label="t('settings.httpsPort')"
+                    :hint="t('settings.httpsPortHint')"
 
                     filled
                   />
@@ -149,8 +158,8 @@
                   <q-select
                     v-model="form.timezone"
                     :options="timezoneOptions"
-                    label="Временная зона"
-                    hint="Используется для дат и webhook timestamp в панели"
+                    :label="t('settings.timezone')"
+                    :hint="t('settings.timezoneHint')"
 
                     filled
                     use-input
@@ -165,21 +174,21 @@
                 <div v-if="hasDomain" class="col-12">
                   <q-toggle
                     v-model="form.endpoint_use_domain"
-                    label="В Endpoint VPN-конфигов подставлять домен вместо IP"
+                    :label="t('settings.useDomainInEndpoint')"
                     color="primary"
 
                   />
                   <div class="text-caption text-grey-5 q-mt-xs">
-                    В клиентских конфигах:
+                    {{ t('settings.inClientConfigs') }}
                     <span class="mono">Endpoint = {{ endpointHostPreview }}:&lt;listen_port&gt;</span>
                   </div>
                 </div>
               </div>
               <div class="text-caption text-grey-5 q-mt-sm">
-                URL панели: <span class="mono">{{ panelUrl || '—' }}</span>
+                {{ t('settings.panelUrl') }} <span class="mono">{{ panelUrl || '—' }}</span>
               </div>
               <div class="text-caption text-grey-5 q-mt-xs">
-                AWG-конфиги, ключи сервера и подсети настраиваются на странице «Конфиги».
+                {{ t('settings.awgConfigsHint') }}
               </div>
             </q-tab-panel>
 
@@ -192,8 +201,8 @@
                 <div class="col-12 col-md-6">
                   <q-input
                     v-model="sslEmail"
-                    label="Email для Let's Encrypt"
-                    hint="Нужен при выпуске и обновлении сертификата"
+                    :label="t('settings.letsEncryptEmail')"
+                    :hint="t('settings.letsEncryptEmailHint')"
 
                     filled
                     type="email"
@@ -201,10 +210,10 @@
                   />
                 </div>
                 <div class="col-12 col-md-6">
-                  <div class="text-caption text-grey-5">Статус</div>
+                  <div class="text-caption text-grey-5">{{ t('settings.certStatus') }}</div>
                   <div class="text-body2">{{ sslStatusLabel }}</div>
                   <div v-if="ssl.expires_at" class="text-caption text-grey-5 q-mt-xs">
-                    Действует до: <span class="mono">{{ ssl.expires_at }}</span>
+                    {{ t('settings.validUntil') }} <span class="mono">{{ ssl.expires_at }}</span>
                   </div>
                   <div v-if="ssl.error" class="text-negative text-caption q-mt-xs">
                     {{ ssl.error }}
@@ -213,15 +222,15 @@
               </div>
 
               <div v-if="activeChallenge" class="challenge-box q-mb-md">
-                <div class="text-subtitle2 q-mb-sm">Добавьте TXT-запись в DNS</div>
-                <div class="text-caption text-grey-5 q-mb-xs">Имя:</div>
+                <div class="text-subtitle2 q-mb-sm">{{ t('settings.addTxtRecord') }}</div>
+                <div class="text-caption text-grey-5 q-mb-xs">{{ t('settings.txtName') }}</div>
                 <div class="mono q-mb-sm">{{ activeChallenge.txt_name }}</div>
-                <div class="text-caption text-grey-5 q-mb-xs">Значение:</div>
+                <div class="text-caption text-grey-5 q-mb-xs">{{ t('settings.txtValue') }}</div>
                 <div class="mono q-mb-md" style="word-break: break-all;">{{ activeChallenge.txt_value }}</div>
                 <div class="row q-gutter-sm">
                   <q-btn
                     color="primary"
-                    label="Продолжить после добавления TXT"
+                    :label="t('settings.continueAfterTxt')"
                     :loading="sslCompleting"
                     :disable="sslBusy && !sslCompleting"
                     @click="completeSsl"
@@ -229,7 +238,7 @@
                   <q-btn
                     flat
                     color="grey-5"
-                    label="Отменить"
+                    :label="t('settings.abort')"
                     :disable="sslBusy && !sslIssuing"
                     @click="abortSsl"
                   />
@@ -240,7 +249,7 @@
                 <q-btn
                   v-if="!ssl.enabled"
                   color="primary"
-                  label="Выпустить сертификат"
+                  :label="t('settings.issueCert')"
                   :loading="sslIssuing"
                   :disable="sslBusy || !!activeChallenge"
                   @click="issueSsl(false)"
@@ -249,7 +258,7 @@
                   v-if="ssl.enabled"
                   outline
                   color="primary"
-                  label="Обновить сертификат"
+                  :label="t('settings.renewCert')"
                   :loading="sslIssuing"
                   :disable="sslBusy || !!activeChallenge"
                   @click="issueSsl(true)"
@@ -258,7 +267,7 @@
                   v-if="ssl.enabled"
                   outline
                   color="negative"
-                  label="Отключить HTTPS"
+                  :label="t('settings.disableHttps')"
                   :loading="sslDisabling"
                   :disable="sslBusy"
                   @click="disableSsl"
@@ -268,13 +277,13 @@
 
             <q-tab-panel name="twofa" class="q-pa-md">
               <div class="text-caption text-grey-5 q-mb-md">
-                Дополнительный код из приложения (Google Authenticator, Aegis и т.п.) при входе.
-                При потере доступа: <span class="mono">awg-gui 2fa disable</span>
+                {{ t('settings.twoFactorHint') }}
+                 <span class="mono">awg-gui 2fa disable</span>
               </div>
 
               <div class="row items-center q-gutter-sm q-mb-md">
                 <q-badge :color="twoFactorEnabled ? 'positive' : 'grey-7'">
-                  {{ twoFactorEnabled ? 'Включена' : 'Выключена' }}
+                  {{ twoFactorEnabled ? t('settings.twoFactorOn') : t('settings.twoFactorOff') }}
                 </q-badge>
                 <q-spinner v-if="twoFactorLoading" size="20px" color="primary" />
               </div>
@@ -282,7 +291,7 @@
               <div v-if="!twoFactorEnabled && !twoFactorSetup" class="row q-gutter-sm">
                 <q-btn
                   color="primary"
-                  label="Включить 2FA"
+                  :label="t('settings.enable2fa')"
                   :loading="twoFactorBusy"
                   @click="startTwoFactorSetup"
                 />
@@ -290,18 +299,18 @@
 
               <div v-if="twoFactorSetup" class="q-mb-md">
                 <div class="text-caption text-grey-5 q-mb-sm">
-                  Отсканируйте QR в приложении или введите секрет вручную, затем подтвердите кодом.
+                  {{ t('settings.scanQrHint') }}
                 </div>
                 <div class="row q-gutter-md items-start q-mb-md">
                   <img v-if="twoFactorQr" :src="twoFactorQr" alt="QR 2FA" class="twofa-qr" />
                   <div class="col">
-                    <div class="text-caption text-grey-5">Секрет</div>
+                    <div class="text-caption text-grey-5">{{ t('settings.secret') }}</div>
                     <div class="mono q-mb-sm" style="word-break: break-all;">{{ twoFactorSecret }}</div>
                   </div>
                 </div>
                 <q-input
                   v-model="twoFactorConfirmCode"
-                  label="Код подтверждения"
+                  :label="t('settings.confirmCode')"
 
                   filled
                   maxlength="6"
@@ -312,11 +321,11 @@
                 <div class="row q-gutter-sm">
                   <q-btn
                     color="primary"
-                    label="Подтвердить"
+                    :label="t('settings.confirm')"
                     :loading="twoFactorBusy"
                     @click="confirmTwoFactor"
                   />
-                  <q-btn flat color="grey-5" label="Отмена" :disable="twoFactorBusy" @click="cancelTwoFactorSetup" />
+                  <q-btn flat color="grey-5" :label="t('common.cancel')" :disable="twoFactorBusy" @click="cancelTwoFactorSetup" />
                 </div>
               </div>
 
@@ -324,7 +333,7 @@
                 <q-btn
                   outline
                   color="negative"
-                  label="Отключить 2FA"
+                  :label="t('settings.disable2fa')"
                   :disable="twoFactorBusy"
                   @click="openDisableTwoFactor"
                 />
@@ -338,15 +347,14 @@
 
     <q-dialog v-model="twoFactorDisableOpen" v-bind="mobileDialog" persistent>
       <q-card style="width: min(420px, 95vw);" class="surface-panel dialog-card column no-wrap">
-        <q-card-section class="text-h6">Отключить 2FA</q-card-section>
+        <q-card-section class="text-h6">{{ t('settings.disable2fa') }}</q-card-section>
         <q-card-section class="col dialog-scroll-body">
           <div class="text-caption text-grey-5 q-mb-md">
-            Нужны пароль аккаунта и код из приложения — чтобы злоумышленник с открытой сессией
-            не смог снять защиту одним кликом. Без этого отключение 2FA теряет смысл.
+            {{ t('settings.disable2faHint') }}
           </div>
           <q-input
             v-model="twoFactorDisablePassword"
-            label="Пароль"
+            :label="t('settings.password')"
             type="password"
 
             filled
@@ -356,7 +364,7 @@
           />
           <q-input
             v-model="twoFactorDisableCode"
-            label="Код 2FA"
+            :label="t('settings.twoFactorCode')"
 
             filled
             maxlength="6"
@@ -367,10 +375,10 @@
           />
         </q-card-section>
         <q-card-actions align="right">
-          <q-btn flat label="Отмена" color="grey-5" :disable="twoFactorBusy" v-close-popup />
+          <q-btn flat :label="t('common.cancel')" color="grey-5" :disable="twoFactorBusy" v-close-popup />
           <q-btn
             color="negative"
-            label="Отключить"
+            :label="t('settings.disable')"
             :loading="twoFactorBusy"
             @click="disableTwoFactor"
           />
@@ -380,13 +388,13 @@
 
     <q-dialog v-model="schemaOpen" v-bind="mobileDialog">
       <q-card style="width: min(720px, 95vw); max-width: 95vw;" class="surface-panel dialog-card column no-wrap">
-        <q-card-section class="text-h6">JSON-схема Failure webhook 1.0</q-card-section>
+        <q-card-section class="text-h6">{{ t('settings.webhookSchemaTitle') }}</q-card-section>
         <q-card-section class="col dialog-scroll-body">
           <q-markup-table flat dense class="q-mb-md">
             <thead>
               <tr>
-                <th class="text-left">Поле</th>
-                <th class="text-left">Описание</th>
+                <th class="text-left">{{ t('settings.field') }}</th>
+                <th class="text-left">{{ t('settings.description') }}</th>
               </tr>
             </thead>
             <tbody>
@@ -396,11 +404,11 @@
               </tr>
             </tbody>
           </q-markup-table>
-          <div class="text-caption q-mb-sm">Пример payload:</div>
+          <div class="text-caption q-mb-sm">{{ t('settings.payloadExample') }}</div>
           <pre class="mono schema-pre">{{ JSON.stringify(schema.example || {}, null, 2) }}</pre>
         </q-card-section>
         <q-card-actions align="right">
-          <q-btn flat label="Закрыть" v-close-popup />
+          <q-btn flat :label="t('common.close')" v-close-popup />
         </q-card-actions>
       </q-card>
     </q-dialog>
@@ -409,17 +417,26 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useQuasar } from 'quasar'
 import api from '@/boot/axios'
 import { useThemeStore } from '@/stores/theme'
+import { useLocaleStore } from '@/stores/locale'
 import { useSettingsStore } from '@/stores/settings'
 import { useSoundStore } from '@/sounds/store'
 import { useMobileDialog } from '@/composables/useMobileDialog'
+import { COLOR_MODES } from '@/themes/themes'
 
 const $q = useQuasar()
+const { t } = useI18n()
 const mobileDialog = useMobileDialog()
 const theme = useThemeStore()
+const localeStore = useLocaleStore()
 const sounds = useSoundStore()
+
+const colorModeOptions = computed(() =>
+  COLOR_MODES.map((value) => ({ value, label: t(`theme.${value}`) }))
+)
 
 function onAutoFrom (value) {
   theme.setAutoHours({ ...theme.autoHours, from: value })
@@ -471,24 +488,23 @@ const sslBusy = computed(() => sslIssuing.value || sslCompleting.value || sslDis
 
 const domainHint = computed(() => {
   if (!hasDomain.value) {
-    return 'Например: vpn.example.com — A-запись должна указывать на публичный IP'
+    return t('settings.panelDomainHint')
   }
-  return 'A-запись на IP панели. Для HTTPS позже потребуется дополнительная TXT-запись _acme-challenge в DNS (не только A).'
+  return t('settings.panelDomainDnsHint')
 })
 
 const sslHint = computed(() => {
   const port = String(form.panel_https_port || ssl.value.https_port || '7443').trim() || '7443'
-  const base = ssl.value.hint
-    || 'Для выпуска и обновления сертификата Let\'s Encrypt недостаточно A-записи на IP панели. В DNS домена нужно будет дополнительно создать TXT-запись _acme-challenge (имя и значение покажем после нажатия «Выпустить» / «Обновить»). После добавления записи подтвердите выпуск в панели.'
-  return `${base} Доступ: https://ваш-домен:${port} (порт можно сменить во вкладке «Панель»).`
+  const base = ssl.value.hint || t('settings.acmeTxtHint')
+  return `${base} ${t('settings.httpsAccessHint', { port })}`
 })
 
 const sslStatusLabel = computed(() => {
   const map = {
-    disabled: 'Выключен',
-    pending: 'Ожидание TXT в DNS',
-    active: 'Активен',
-    error: 'Ошибка'
+    disabled: t('settings.httpsDisabled'),
+    pending: t('settings.waitingTxt'),
+    active: t('settings.httpsActive'),
+    error: t('settings.httpsError')
   }
   return map[ssl.value.status] || ssl.value.status || '—'
 })
@@ -612,7 +628,7 @@ async function startTwoFactorSetup () {
     $q.notify({
       type: 'negative',
       position: 'top-right',
-      message: e?.response?.data?.message || 'Не удалось начать настройку 2FA'
+      message: e?.response?.data?.message || t('settings.twoFactorSetupError')
     })
   } finally {
     twoFactorBusy.value = false
@@ -628,9 +644,9 @@ async function confirmTwoFactor () {
     twoFactorQr.value = ''
     twoFactorSecret.value = ''
     twoFactorConfirmCode.value = ''
-    $q.notify({ type: 'positive', position: 'top-right', message: '2FA включена' })
+    $q.notify({ type: 'positive', position: 'top-right', message: t('settings.twoFactorEnabled') })
   } catch (e) {
-    const msg = e?.response?.data?.errors?.code?.[0] || e?.response?.data?.message || 'Неверный код'
+    const msg = e?.response?.data?.errors?.code?.[0] || e?.response?.data?.message || t('settings.invalidCode')
     $q.notify({ type: 'negative', position: 'top-right', message: msg })
   } finally {
     twoFactorBusy.value = false
@@ -663,10 +679,10 @@ async function disableTwoFactor () {
     twoFactorDisableOpen.value = false
     twoFactorDisablePassword.value = ''
     twoFactorDisableCode.value = ''
-    $q.notify({ type: 'positive', position: 'top-right', message: '2FA отключена' })
+    $q.notify({ type: 'positive', position: 'top-right', message: t('settings.twoFactorDisabled') })
   } catch (e) {
     const errors = e?.response?.data?.errors
-    const msg = errors?.password?.[0] || errors?.code?.[0] || e?.response?.data?.message || 'Не удалось отключить'
+    const msg = errors?.password?.[0] || errors?.code?.[0] || e?.response?.data?.message || t('settings.disableFailed')
     $q.notify({ type: 'negative', position: 'top-right', message: msg })
   } finally {
     twoFactorBusy.value = false
@@ -695,7 +711,7 @@ async function save () {
     const { data } = await api.put('/api/settings', payload)
     settingsStore.applyResponse(data)
     applySettings(data.settings || {})
-    $q.notify({ type: 'positive', position: 'top-right', message: 'Настройки сохранены' })
+    $q.notify({ type: 'positive', position: 'top-right', message: t('settings.settingsSaved') })
   } catch (e) {
     const errors = e?.response?.data?.errors
     const panelDomainMsg = errors?.panel_domain?.[0]
@@ -708,7 +724,7 @@ async function save () {
     $q.notify({
       type: 'negative',
       position: 'top-right',
-      message: firstError || e?.response?.data?.message || 'Ошибка сохранения'
+      message: firstError || e?.response?.data?.message || t('settings.saveError')
     })
   } finally {
     saving.value = false
@@ -722,7 +738,7 @@ async function redirectToHttpsPanel (panelUrl) {
   $q.notify({
     type: 'positive',
     position: 'top-right',
-    message: 'Переход на HTTPS…',
+    message: t('settings.switchingToHttps'),
     timeout: 1500
   })
   const path = window.location.pathname + window.location.search + window.location.hash
@@ -737,7 +753,7 @@ async function tryRecoverSslAndRedirect () {
       $q.notify({
         type: 'positive',
         position: 'top-right',
-        message: data.message || 'Сертификат подхвачен'
+        message: data.message || t('settings.certPickedUp')
       })
       await redirectToHttpsPanel(data.panel_url)
       return true
@@ -751,7 +767,7 @@ async function tryRecoverSslAndRedirect () {
 async function issueSsl (renew) {
   const email = String(sslEmail.value || '').trim()
   if (!email) {
-    $q.notify({ type: 'warning', position: 'top-right', message: 'Укажите email для Let\'s Encrypt' })
+    $q.notify({ type: 'warning', position: 'top-right', message: t('settings.specifyLetsEncryptEmail') })
     return
   }
   sslIssuing.value = true
@@ -761,7 +777,7 @@ async function issueSsl (renew) {
       $q.notify({
         type: 'positive',
         position: 'top-right',
-        message: data.message || 'HTTPS включён'
+        message: data.message || t('settings.httpsEnabledNotify')
       })
       await redirectToHttpsPanel(data.panel_url)
       return
@@ -769,7 +785,7 @@ async function issueSsl (renew) {
     $q.notify({
       type: 'info',
       position: 'top-right',
-      message: data.message || 'Добавьте TXT-запись в DNS'
+      message: data.message || t('settings.addTxtNotify')
     })
   } catch (e) {
     const msg = e?.response?.data?.message || ''
@@ -785,7 +801,7 @@ async function issueSsl (renew) {
     $q.notify({
       type: 'negative',
       position: 'top-right',
-      message: msg || 'Не удалось начать выпуск сертификата'
+      message: msg || t('settings.certIssueStartError')
     })
   } finally {
     sslIssuing.value = false
@@ -799,7 +815,7 @@ async function completeSsl () {
     $q.notify({
       type: 'positive',
       position: 'top-right',
-      message: data.message || 'Сертификат выпущен'
+      message: data.message || t('settings.certIssued')
     })
     if (data?.redirect !== false) {
       await redirectToHttpsPanel(data.panel_url)
@@ -811,7 +827,7 @@ async function completeSsl () {
       $q.notify({
         type: 'positive',
         position: 'top-right',
-        message: body.message || 'Сертификат подхвачен'
+        message: body.message || t('settings.certPickedUp')
       })
       await redirectToHttpsPanel(body.panel_url)
       return
@@ -820,7 +836,7 @@ async function completeSsl () {
     $q.notify({
       type: 'negative',
       position: 'top-right',
-      message: body?.message || 'Не удалось завершить выпуск'
+      message: body?.message || t('settings.certFinishError')
     })
   } finally {
     sslCompleting.value = false
@@ -830,12 +846,12 @@ async function completeSsl () {
 async function abortSsl () {
   try {
     await settingsStore.sslAbort()
-    $q.notify({ type: 'info', position: 'top-right', message: 'Выпуск отменён' })
+    $q.notify({ type: 'info', position: 'top-right', message: t('settings.issueCancelled') })
   } catch (e) {
     $q.notify({
       type: 'negative',
       position: 'top-right',
-      message: e?.response?.data?.message || 'Не удалось отменить'
+      message: e?.response?.data?.message || t('settings.cancelFailed')
     })
   }
 }
@@ -847,13 +863,13 @@ async function disableSsl () {
     $q.notify({
       type: 'positive',
       position: 'top-right',
-      message: data.message || 'HTTPS отключён'
+      message: data.message || t('settings.httpsDisabledNotify')
     })
   } catch (e) {
     $q.notify({
       type: 'negative',
       position: 'top-right',
-      message: e?.response?.data?.message || 'Не удалось отключить HTTPS'
+      message: e?.response?.data?.message || t('settings.disableHttpsError')
     })
   } finally {
     sslDisabling.value = false
@@ -867,13 +883,13 @@ async function testWebhook () {
     $q.notify({
       type: data.ok ? 'positive' : 'warning',
       position: 'top-right',
-      message: data.ok ? 'Тестовый webhook отправлен' : `Webhook не удался (код ${data.exit_code})`
+      message: data.ok ? t('settings.webhookTestSent') : t('settings.webhookTestFailedCode', { code: data.exit_code })
     })
   } catch (e) {
     $q.notify({
       type: 'negative',
       position: 'top-right',
-      message: e?.response?.data?.message || 'Тест не удался'
+      message: e?.response?.data?.message || t('settings.testFailed')
     })
   } finally {
     testing.value = false

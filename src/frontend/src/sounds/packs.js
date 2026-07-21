@@ -170,11 +170,91 @@ const sa = {
   }
 }
 
+/** Neon cyber UI — CK-inspired (original synthesis, no game samples) */
+const ck = {
+  click (ctx) {
+    tone(ctx, { type: 'square', freq: 980, duration: 0.035, gain: 0.055, attack: 0.001, decay: 0.025 })
+    tone(ctx, { type: 'triangle', freq: 1960, duration: 0.03, gain: 0.025, attack: 0.001, decay: 0.02, delay: 0.012 })
+  },
+  navigate (ctx) {
+    tone(ctx, { type: 'sawtooth', freq: 420, duration: 0.07, gain: 0.045, attack: 0.001, decay: 0.055, freqEnd: 720 })
+    tone(ctx, { type: 'sine', freq: 720, duration: 0.08, gain: 0.04, decay: 0.06, delay: 0.05 })
+  },
+  success (ctx) {
+    ;[554, 698, 880, 1108].forEach((f, i) => {
+      tone(ctx, {
+        type: i % 2 === 0 ? 'triangle' : 'sine',
+        freq: f,
+        duration: 0.07,
+        gain: 0.05,
+        attack: 0.001,
+        decay: 0.05,
+        delay: i * 0.05
+      })
+    })
+  },
+  error (ctx) {
+    noiseBurst(ctx, { duration: 0.05, gain: 0.04 })
+    tone(ctx, { type: 'sawtooth', freq: 280, duration: 0.14, gain: 0.07, attack: 0.001, decay: 0.12, freqEnd: 110, delay: 0.02 })
+  },
+  toggle (ctx) {
+    tone(ctx, { type: 'square', freq: 1200, duration: 0.03, gain: 0.05, attack: 0.001, decay: 0.022 })
+    tone(ctx, { type: 'sine', freq: 600, duration: 0.04, gain: 0.035, decay: 0.03, delay: 0.02 })
+  },
+  theme (ctx) {
+    ;[330, 415, 554, 698, 880].forEach((f, i) => {
+      tone(ctx, {
+        type: i % 2 === 0 ? 'sawtooth' : 'triangle',
+        freq: f,
+        duration: 0.065,
+        gain: 0.045,
+        attack: 0.001,
+        decay: 0.05,
+        delay: i * 0.05
+      })
+    })
+  }
+}
+
+/** Retro-industrial / mechanical — AH-inspired (original synthesis) */
+const ah = {
+  click (ctx) {
+    tone(ctx, { type: 'sine', freq: 190, duration: 0.06, gain: 0.08, decay: 0.05 })
+    tone(ctx, { type: 'triangle', freq: 760, duration: 0.035, gain: 0.03, decay: 0.025, delay: 0.015 })
+  },
+  navigate (ctx) {
+    tone(ctx, { type: 'square', freq: 340, duration: 0.045, gain: 0.05, attack: 0.001, decay: 0.035 })
+    noiseBurst(ctx, { duration: 0.025, gain: 0.02, delay: 0.03 })
+    tone(ctx, { type: 'sine', freq: 480, duration: 0.06, gain: 0.04, decay: 0.05, delay: 0.04 })
+  },
+  success (ctx) {
+    tone(ctx, { type: 'sine', freq: 392, duration: 0.1, gain: 0.07, decay: 0.08 })
+    tone(ctx, { type: 'sine', freq: 523, duration: 0.12, gain: 0.06, decay: 0.1, delay: 0.08 })
+    tone(ctx, { type: 'triangle', freq: 784, duration: 0.1, gain: 0.04, decay: 0.08, delay: 0.16 })
+  },
+  error (ctx) {
+    tone(ctx, { type: 'sawtooth', freq: 140, duration: 0.16, gain: 0.08, attack: 0.002, decay: 0.14, freqEnd: 85 })
+    noiseBurst(ctx, { duration: 0.07, gain: 0.03, delay: 0.03 })
+  },
+  toggle (ctx) {
+    tone(ctx, { type: 'square', freq: 280, duration: 0.04, gain: 0.06, attack: 0.001, decay: 0.03 })
+    tone(ctx, { type: 'triangle', freq: 420, duration: 0.05, gain: 0.04, decay: 0.04, delay: 0.035 })
+  },
+  theme (ctx) {
+    tone(ctx, { type: 'sine', freq: 220, duration: 0.1, gain: 0.07, decay: 0.08 })
+    tone(ctx, { type: 'triangle', freq: 330, duration: 0.1, gain: 0.055, decay: 0.08, delay: 0.09 })
+    tone(ctx, { type: 'sine', freq: 440, duration: 0.12, gain: 0.05, decay: 0.1, delay: 0.18 })
+    tone(ctx, { type: 'triangle', freq: 554, duration: 0.1, gain: 0.035, decay: 0.08, delay: 0.28 })
+  }
+}
+
 export const SOUND_PACKS = {
   classic,
   crt,
   ds,
-  sa
+  sa,
+  ck,
+  ah
 }
 
 export function getSoundPack (themeId) {

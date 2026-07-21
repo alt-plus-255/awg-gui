@@ -2,7 +2,7 @@
   <q-page padding>
     <div class="page-wrap">
       <div class="resolver-header q-mb-md">
-        <div class="text-h5 resolver-header__title">Резолвер</div>
+        <div class="text-h5 resolver-header__title">{{ t('resolver.title') }}</div>
         <div class="resolver-header__actions">
           <q-btn
             flat
@@ -10,7 +10,7 @@
             no-wrap
             color="primary"
             icon="cable"
-            label="Подключения"
+            :label="t('resolver.connectionsLink')"
             :to="{ name: 'resolver-connections' }"
           />
           <q-btn
@@ -19,13 +19,12 @@
             no-wrap
             color="primary"
             icon="tune"
-            label="Настройки списков"
+            :label="t('resolver.listSettingsLink')"
             :to="{ name: 'resolver-settings' }"
           />
         </div>
         <div class="text-body2 text-grey-5 resolver-header__desc">
-          Полный туннель на VDS: домены из списков — через выбранное подключение (FakeIP),
-          остальной трафик (2ip.ru и т.п.) — с IP сервера VDS.
+          {{ t('resolver.headerDesc') }}
         </div>
       </div>
 
@@ -38,43 +37,36 @@
         </template>
         <div class="text-body2">
           <div class="q-mb-xs">
-            <strong>Обязательно после включения/изменения резолвера:</strong> удалите сервер в AmneziaWG
-            и <strong>заново импортируйте</strong> QR / .conf на <strong>iPhone и Android</strong>.
+            <strong>{{ t('resolver.afterEnableTitle') }}</strong> {{ t('resolver.afterEnableStep1') }}
           </div>
           <div class="q-mb-xs text-caption text-grey-4">
-            В .conf должны быть <span class="mono">DNS = gateway</span> и
-            <span class="mono">AllowedIPs = 0.0.0.0/0</span> (полный туннель).
-            Без переимпорта списки и IP VDS на 2ip.ru не заработают.
+            {{ t('resolver.afterEnableStep2') }}
           </div>
           <div class="q-mb-xs">
-            <strong>2ip.ru / сайты вне списков</strong> покажут IP VDS.
-            Домены из списков (YouTube, Telegram…) — через выбранное VPN-подключение.
+            {{ t('resolver.phoneHint2ip') }}
           </div>
           <div class="q-mb-xs">
-            iPhone: отключите <strong>iCloud Private Relay</strong>.
-            Android: <strong>Private DNS / DoH</strong> — выкл.; при сбоях Telegram — очистите кэш приложения.
+            {{ t('resolver.phoneHintRelay') }}
           </div>
           <div>
-            Community-списки скачиваются в
-            <router-link class="text-primary" :to="{ name: 'resolver-settings' }">Настройках</router-link>
-            (<span class="mono">rulesets/*.srs</span>). При Сохранить HTTP не вызывается.
-            Точка VPN —
-            <router-link class="text-primary" :to="{ name: 'resolver-connections' }">Подключения</router-link>.
+            {{ t('resolver.communityListsHint') }}
           </div>
         </div>
       </q-banner>
 
       <q-card class="q-pa-md q-mb-md status-card" flat bordered>
-        <div class="text-subtitle2 q-mb-sm">Проверьте на телефоне</div>
+        <div class="text-subtitle2 q-mb-sm">{{ t('resolver.checkOnPhone') }}</div>
         <ul class="q-my-none text-body2 text-grey-4 client-checklist">
-          <li>Удалён старый сервер в AmneziaWG, импортирован свежий QR / .conf</li>
+          <li>{{ t('resolver.checkDeletedReimported') }}</li>
           <li>
             <span class="mono">DNS</span> = gateway
-            <span v-if="firstEnabledGateway" class="text-grey-5">(напр. {{ firstEnabledGateway }})</span>
+            <span v-if="firstEnabledGateway" class="text-grey-5">({{ firstEnabledGateway }})</span>
           </li>
-          <li><span class="mono">AllowedIPs = 0.0.0.0/0</span> (полный туннель на VDS)</li>
-          <li>Private DNS выключен (Android)</li>
-          <li>2ip.ru → IP VDS; приложения из списков → через VPN-подключение</li>
+          <li>{{ t('resolver.checkAllowedIps') }}</li>
+          <li>{{ t('resolver.checkAllowedIpsSplit') }}</li>
+          <li>{{ t('resolver.checkPrivateDns') }}</li>
+          <li>{{ t('resolver.check2ip') }}</li>
+          <li>{{ t('resolver.check2ipSplit') }}</li>
         </ul>
       </q-card>
 
@@ -82,13 +74,13 @@
         <div class="row items-center q-col-gutter-md">
           <div class="col-auto">
             <q-badge :color="status.healthy ? 'positive' : 'negative'" class="q-pa-sm">
-              {{ status.healthy ? 'OK' : 'Ошибка' }}
+              {{ status.healthy ? t('diagnostics.ok') : t('common.error') }}
             </q-badge>
           </div>
           <div class="col">
             <div class="text-subtitle2">
-              {{ status.enabled ? 'Резолвер активен' : 'Резолвер выключен' }}
-              <span class="text-grey-5"> · sing-box: {{ status.singbox_running ? 'запущен' : 'остановлен' }}</span>
+              {{ status.enabled ? t('resolver.statusActive') : t('resolver.statusDisabled') }}
+              <span class="text-grey-5"> · sing-box: {{ status.singbox_running ? t('resolver.singboxRunning') : t('resolver.singboxStopped') }}</span>
             </div>
             <div class="text-caption text-grey-5">{{ status.message }}</div>
           </div>
@@ -107,7 +99,7 @@
         :loading="loading"
         class="bg-transparent"
         :rows-per-page-options="[10, 25, 0]"
-        no-data-label="Нет серверных конфигов"
+        :no-data-label="t('resolver.noServerConfigs')"
       >
         <template #body="props">
           <q-tr :props="props">
@@ -126,7 +118,7 @@
             </q-td>
             <q-td key="resolver" :props="props">
               <q-badge :color="props.row.resolver_enabled ? 'deep-purple' : 'grey-8'">
-                {{ props.row.resolver_enabled ? 'вкл' : 'выкл' }}
+                {{ props.row.resolver_enabled ? t('common.on') : t('common.off') }}
               </q-badge>
             </q-td>
             <q-td key="connection" :props="props">
@@ -138,11 +130,11 @@
             <q-td colspan="100%" class="expanded-cell">
               <div v-if="forms[props.row.id]" class="q-pa-md expand-inner">
                 <div class="row items-center q-mb-md">
-                  <div class="col text-subtitle1">Настройки «{{ props.row.name }}»</div>
+                  <div class="col text-subtitle1">{{ t('resolver.settingsFor', { name: props.row.name }) }}</div>
                   <q-toggle
                     v-model="forms[props.row.id].resolver_enabled"
                     color="primary"
-                    :label="forms[props.row.id].resolver_enabled ? 'Резолвер включён' : 'Резолвер выключен'"
+                    :label="forms[props.row.id].resolver_enabled ? t('resolver.resolverEnabled') : t('resolver.resolverDisabled')"
                     :disable="savingId === props.row.id || !props.row.enabled"
                   />
                 </div>
@@ -153,13 +145,13 @@
                   rounded
                   class="q-mb-md text-warning surface-warn-bg"
                 >
-                  Конфиг выключен — резолвер не применяется.
+                  {{ t('resolver.configDisabledBanner') }}
                 </q-banner>
 
                 <q-select
                   v-model="forms[props.row.id].connection_id"
                   :options="connectionOptions"
-                  :label="forms[props.row.id].resolver_enabled ? 'Подключение (точка VPN) *' : 'Подключение (точка VPN)'"
+                  :label="forms[props.row.id].resolver_enabled ? t('resolver.connectionRequired') : t('resolver.connectionOptional')"
                   emit-value
                   map-options
                   filled
@@ -169,24 +161,46 @@
                   :hint="connectionHint(props.row.id)"
                   :disable="!connectionOptions.length"
                   :rules="forms[props.row.id].resolver_enabled
-                    ? [v => !!v || 'Выберите подключение']
+                    ? [v => !!v || t('resolver.selectConnection')]
                     : []"
                   lazy-rules
                 >
                   <template #no-option>
                     <q-item>
                       <q-item-section class="text-grey-5">
-                        Нет подключений —
-                        <router-link :to="{ name: 'resolver-connections' }" class="text-primary">создать</router-link>
+                        {{ t('resolver.noConnections') }}
+                        <router-link :to="{ name: 'resolver-connections' }" class="text-primary">{{ t('resolver.create') }}</router-link>
                       </q-item-section>
                     </q-item>
                   </template>
                 </q-select>
 
+                <q-option-group
+                  v-model="forms[props.row.id].resolver_routing_mode"
+                  :options="routingModeOptions"
+                  color="primary"
+                  type="radio"
+                  class="q-mb-sm"
+                  :disable="!forms[props.row.id].resolver_enabled"
+                />
+                <div class="text-caption text-grey-5 q-mb-md">
+                  {{ forms[props.row.id].resolver_routing_mode === 'client_split'
+                    ? t('resolver.modeClientSplitHint')
+                    : t('resolver.modeVdsSplitHint') }}
+                </div>
+                <q-banner
+                  v-if="forms[props.row.id].resolver_enabled && forms[props.row.id].resolver_routing_mode === 'client_split'"
+                  dense
+                  rounded
+                  class="q-mb-md surface-panel-alt surface-border"
+                >
+                  {{ t('resolver.modeClientSplitCidrWarning') }}
+                </q-banner>
+
                 <q-input
                   v-model="forms[props.row.id].resolver_dns"
                   label="DNS (sing-box / upstream)"
-                  hint="Для доменов вне списков FakeIP. В клиентском .conf при включённом резолвере остаётся gateway."
+                  :hint="t('resolver.fakeIpHint')"
                   filled
 
                   dense
@@ -196,16 +210,16 @@
 
                 <q-checkbox
                   v-model="forms[props.row.id].resolver_reject_quic"
-                  label="Блокировать QUIC (UDP/443) для доменов из списков"
+                  :label="t('resolver.blockQuic')"
                   dense
 
                   class="q-mb-md"
                 />
                 <div class="text-caption text-grey-5 q-mb-md" style="margin-top: -8px">
-                  Форсирует TCP для FakeIP-доменов этого конфига (аналог старого YouTube QUIC reject, но для всех выбранных списков).
+                  {{ t('resolver.blockQuicHint') }}
                 </div>
 
-                <div class="text-caption text-grey-5 q-mb-xs">Списки (community + свои)</div>
+                <div class="text-caption text-grey-5 q-mb-xs">{{ t('resolver.listsCommunityCustom') }}</div>
                 <div class="row q-col-gutter-sm q-mb-md">
                   <div
                     v-for="item in selectableLists"
@@ -228,10 +242,10 @@
                   <div class="col-12 col-md-6">
                     <TagListInput
                       v-model="forms[props.row.id].user_domains"
-                      label="Свои домены"
+                      :label="t('resolver.customDomains')"
                       placeholder="example.com"
-                      hint="Enter или «Добавить». Можно вставить список из буфера."
-                      empty-hint="Нет доменов — добавьте ниже"
+                      :hint="t('resolver.domainsHint')"
+                      :empty-hint="t('resolver.noDomains')"
                       :normalize="normalizeDomain"
                       :validate="validateDomain"
                     />
@@ -239,10 +253,10 @@
                   <div class="col-12 col-md-6">
                     <TagListInput
                       v-model="forms[props.row.id].user_subnets"
-                      label="Свои подсети (опционально)"
-                      placeholder="1.2.3.0/24 или 1.2.3.4"
-                      hint="CIDR или IP. Enter / «Добавить» / вставка списка."
-                      empty-hint="Нет подсетей — добавьте ниже"
+                      :label="t('resolver.customSubnets')"
+                      :placeholder="t('resolver.subnetsPlaceholder')"
+                      :hint="t('resolver.subnetsHint')"
+                      :empty-hint="t('resolver.noSubnets')"
                       :normalize="normalizeSubnet"
                       :validate="validateSubnet"
                     />
@@ -256,13 +270,13 @@
                 <div class="row q-gutter-sm items-center">
                   <q-btn
                     color="primary"
-                    label="Сохранить"
+                    :label="t('common.save')"
                     :loading="savingId === props.row.id"
                     :disable="!isDirty(props.row.id)"
                     @click="save(props.row.id)"
                   />
                   <div v-if="props.row.resolver_updated_at" class="text-caption text-grey-6">
-                    Применено: {{ formatTs(props.row.resolver_updated_at) }}
+                    {{ t('resolver.appliedAt', { ts: formatTs(props.row.resolver_updated_at) }) }}
                   </div>
                 </div>
               </div>
@@ -272,7 +286,7 @@
       </q-table>
 
       <div v-if="vnConfigs.length" class="text-caption text-grey-6 q-mt-md">
-        Виртуальные сети не показаны:
+        {{ t('resolver.virtualNetworksHidden') }}
         {{ vnConfigs.map(c => c.name).join(', ') }}.
       </div>
     </div>
@@ -281,11 +295,14 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useQuasar } from 'quasar'
 import api from '@/boot/axios'
 import TagListInput from '@/components/TagListInput.vue'
 import { useApplyProgress } from '@/composables/useApplyProgress'
+import { bcp47Locale } from '@/i18n'
 
+const { t, locale } = useI18n()
 const $q = useQuasar()
 const { withApplyProgress } = useApplyProgress()
 const loading = ref(true)
@@ -306,13 +323,13 @@ const status = reactive({
 const forms = reactive({})
 const baselines = reactive({})
 
-const columns = [
+const columns = computed(() => [
   { name: 'expand', label: '', field: 'expand', align: 'left' },
-  { name: 'name', label: 'Конфиг', field: 'name', align: 'left' },
-  { name: 'iface', label: 'Интерфейс', field: 'iface', align: 'left' },
-  { name: 'resolver', label: 'Резолвер', field: 'resolver_enabled', align: 'left' },
-  { name: 'connection', label: 'Подключение', field: 'connection_name', align: 'left' }
-]
+  { name: 'name', label: t('resolver.colConfig'), field: 'name', align: 'left' },
+  { name: 'iface', label: t('resolver.colInterface'), field: 'iface', align: 'left' },
+  { name: 'resolver', label: t('resolver.title'), field: 'resolver_enabled', align: 'left' },
+  { name: 'connection', label: t('resolver.colConnection'), field: 'connection_name', align: 'left' }
+])
 
 const selectableLists = computed(() => [
   ...(status.community_lists || []),
@@ -334,10 +351,15 @@ const firstEnabledGateway = computed(() => {
   return cfg?.gateway_ip || null
 })
 
+const routingModeOptions = computed(() => [
+  { label: t('resolver.modeVdsSplit'), value: 'vds_split' },
+  { label: t('resolver.modeClientSplit'), value: 'client_split' }
+])
+
 function formatTs (iso) {
   if (!iso) return '—'
   try {
-    return new Date(iso).toLocaleString()
+    return new Date(iso).toLocaleString(bcp47Locale(locale.value))
   } catch {
     return iso
   }
@@ -355,7 +377,7 @@ function normalizeDomain (raw) {
 
 function validateDomain (domain) {
   if (!/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/.test(domain)) {
-    return `Неверный домен: ${domain}`
+    return t('resolver.invalidDomain', { domain })
   }
   return null
 }
@@ -374,20 +396,21 @@ function normalizeSubnet (raw) {
 function validateSubnet (cidr) {
   const [host, mask] = cidr.split('/')
   if (!host || mask === undefined || !/^\d+$/.test(mask)) {
-    return `Неверная подсеть: ${cidr}`
+    return t('resolver.invalidSubnet', { cidr })
   }
   const maskInt = Number(mask)
   const isV4 = /^\d{1,3}(?:\.\d{1,3}){3}$/.test(host)
-  if (!isV4) return `Неверный IP: ${host}`
+  if (!isV4) return t('resolver.invalidIp', { host })
   const octets = host.split('.').map(Number)
-  if (octets.some(o => o > 255)) return `Неверный IP: ${host}`
-  if (maskInt < 0 || maskInt > 32) return `Неверная маска: ${cidr}`
+  if (octets.some(o => o > 255)) return t('resolver.invalidIp', { host })
+  if (maskInt < 0 || maskInt > 32) return t('resolver.invalidMask', { cidr })
   return null
 }
 
 function formSnapshot (form) {
   return {
     resolver_enabled: !!form.resolver_enabled,
+    resolver_routing_mode: form.resolver_routing_mode === 'client_split' ? 'client_split' : 'vds_split',
     resolver_reject_quic: !!form.resolver_reject_quic,
     connection_id: form.connection_id || null,
     resolver_dns: String(form.resolver_dns || '1.1.1.1').trim(),
@@ -400,6 +423,7 @@ function formSnapshot (form) {
 function syncForm (cfg) {
   forms[cfg.id] = {
     resolver_enabled: !!cfg.resolver_enabled,
+    resolver_routing_mode: cfg.resolver_routing_mode === 'client_split' ? 'client_split' : 'vds_split',
     resolver_reject_quic: !!cfg.resolver_reject_quic,
     connection_id: cfg.connection_id || null,
     resolver_dns: cfg.resolver_dns || '1.1.1.1',
@@ -458,14 +482,23 @@ function previewAllowed (configId) {
   const cfg = serverConfigs.value.find(c => c.id === configId)
   if (!form || !cfg) return ''
   if (!form.resolver_enabled) return cfg.client_allowed_ips_preview || ''
+  if (form.resolver_routing_mode === 'client_split') {
+    const parts = ['198.18.0.0/15']
+    if (cfg.gateway_ip) parts.push(`${cfg.gateway_ip}/32`)
+    for (const cidr of form.user_subnets || []) {
+      const c = String(cidr || '').trim()
+      if (c) parts.push(c.includes('/') ? c : `${c}/32`)
+    }
+    return [...new Set(parts)].join(', ')
+  }
   return '0.0.0.0/0, ::/0'
 }
 
 function connectionHint (configId) {
-  if (!connectionOptions.value.length) return 'Сначала создайте подключение'
+  if (!connectionOptions.value.length) return t('resolver.createConnectionFirst')
   const form = forms[configId]
-  if (form?.resolver_enabled) return 'Обязательно при включённом резолвере'
-  return 'Необязательно, пока резолвер выключен'
+  if (form?.resolver_enabled) return t('resolver.requiredWhenEnabled')
+  return t('resolver.optionalWhenDisabled')
 }
 
 async function load () {
@@ -477,7 +510,7 @@ async function load () {
       syncForm(cfg)
     }
   } catch (e) {
-    $q.notify({ type: 'negative', message: e?.response?.data?.message || 'Не удалось загрузить резолвер' })
+    $q.notify({ type: 'negative', message: e?.response?.data?.message || t('resolver.loadError') })
   } finally {
     loading.value = false
   }
@@ -487,7 +520,7 @@ async function save (id) {
   const form = forms[id]
   if (!form) return
   if (form.resolver_enabled && !form.connection_id) {
-    $q.notify({ type: 'negative', message: 'Выберите подключение (точку VPN)' })
+    $q.notify({ type: 'negative', message: t('resolver.selectConnectionPoint') })
     return
   }
   savingId.value = id
@@ -495,6 +528,7 @@ async function save (id) {
     const { data } = await withApplyProgress('resolver-save', () =>
       api.put(`/api/resolver/configs/${id}`, {
         resolver_enabled: form.resolver_enabled,
+        resolver_routing_mode: form.resolver_routing_mode === 'client_split' ? 'client_split' : 'vds_split',
         resolver_reject_quic: form.resolver_reject_quic,
         connection_id: form.connection_id,
         resolver_dns: form.resolver_dns,
@@ -510,12 +544,12 @@ async function save (id) {
     if (data.warning) {
       $q.notify({ type: 'warning', message: data.warning, timeout: 8000 })
     } else {
-      $q.notify({ type: 'positive', message: 'Сохранено' })
+      $q.notify({ type: 'positive', message: t('common.saved') })
     }
   } catch (e) {
     const msg = e?.response?.data?.message
       || Object.values(e?.response?.data?.errors || {}).flat()[0]
-      || 'Ошибка сохранения'
+      || t('common.saveError')
     $q.notify({ type: 'negative', message: msg })
   } finally {
     savingId.value = null
@@ -590,10 +624,22 @@ onMounted(load)
 }
 .expanded-cell {
   background: var(--surface-bg);
+  /* q-table defaults to --no-wrap; allow form/banner text to wrap */
+  white-space: normal;
 }
 .expand-inner {
   border-left: 2px solid var(--surface-border);
   margin-left: 8px;
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.expand-inner :deep(.q-banner),
+.expand-inner :deep(.q-banner__content) {
+  min-width: 0;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .mono {
   font-family: var(--theme-mono);

@@ -112,6 +112,8 @@ assemble_runtime() {
 
   cp "${RELEASE}/bundle-install.sh" "${bundle_dir}/bundle-install.sh"
   cp "${RELEASE}/bundle-uninstall.sh" "${bundle_dir}/bundle-uninstall.sh"
+  cp "${ROOT}/LICENSE" "${bundle_dir}/LICENSE"
+  cp "${ROOT}/NOTICE.md" "${bundle_dir}/NOTICE.md"
   echo "${VERSION}" > "${bundle_dir}/VERSION"
 
   chmod +x "${bundle_dir}/bundle-install.sh" "${bundle_dir}/bundle-uninstall.sh"

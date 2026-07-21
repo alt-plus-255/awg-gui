@@ -13,9 +13,9 @@
     :title="currentStyleLabel"
   >
     <q-list dense class="theme-switcher-list">
-      <q-item-label header class="text-soft-theme">Тема</q-item-label>
+      <q-item-label header class="text-soft-theme">{{ t('theme.theme') }}</q-item-label>
       <q-item
-        v-for="opt in theme.colorModeOptionList"
+        v-for="opt in colorModeOptions"
         :key="opt.value"
         clickable
         v-close-popup="opt.value !== 'auto'"
@@ -39,7 +39,7 @@
                   type="time"
                   dense
                   filled
-                  label="Светлая с"
+                  :label="t('theme.lightFrom')"
                   @update:model-value="onAutoFrom"
                 />
               </div>
@@ -49,7 +49,7 @@
                   type="time"
                   dense
                   filled
-                  label="до"
+                  :label="t('theme.lightUntil')"
                   @update:model-value="onAutoTo"
                 />
               </div>
@@ -60,7 +60,7 @@
 
       <q-separator class="q-my-xs" />
 
-      <q-item-label header class="text-soft-theme">Стиль</q-item-label>
+      <q-item-label header class="text-soft-theme">{{ t('theme.style') }}</q-item-label>
       <q-item
         v-for="opt in theme.styleOptions"
         :key="opt.value"
@@ -81,14 +81,24 @@
 
 <script setup>
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useThemeStore } from '@/stores/theme'
+import { COLOR_MODES } from '@/themes/themes'
 
 defineProps({
   compact: { type: Boolean, default: false }
 })
 
+const { t } = useI18n()
 const theme = useThemeStore()
 const currentStyleLabel = computed(() => theme.current.label)
+
+const colorModeOptions = computed(() =>
+  COLOR_MODES.map((value) => ({
+    value,
+    label: t(`theme.${value}`)
+  }))
+)
 
 function onAutoFrom (value) {
   theme.setAutoHours({ ...theme.autoHours, from: value })

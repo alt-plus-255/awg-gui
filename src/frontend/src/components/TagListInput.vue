@@ -3,7 +3,7 @@
     <div class="text-caption text-grey-5 q-mb-xs">{{ label }}</div>
 
     <div v-if="!modelValue.length" class="text-caption text-grey-6 q-mb-sm">
-      {{ emptyHint }}
+      {{ emptyHint || t('common.tagListEmpty') }}
     </div>
 
     <div v-else class="chips-wrap q-mb-sm">
@@ -39,7 +39,7 @@
       <q-btn
         color="primary"
         icon="add"
-        label="Добавить"
+        :label="t('common.tagAdd')"
         class="q-mt-xs"
         :disable="!draft.trim()"
         @click="addFromDraft"
@@ -50,6 +50,7 @@
 
 <script setup>
 import { ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useQuasar } from 'quasar'
 
 const props = defineProps({
@@ -71,7 +72,7 @@ const props = defineProps({
   },
   emptyHint: {
     type: String,
-    default: 'Список пуст — добавьте ниже'
+    default: ''
   },
   /** (raw: string) => string | null — normalized value or null if empty */
   normalize: {
@@ -89,6 +90,7 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['update:modelValue'])
+const { t } = useI18n()
 const $q = useQuasar()
 const draft = ref('')
 const error = ref('')
@@ -143,16 +145,20 @@ function addMany (tokens, { notify = true } = {}) {
   if (invalid.length) {
     $q.notify({
       type: 'negative',
-      message: `Не добавлено (неверный формат): ${invalid.slice(0, 5).join(', ')}${invalid.length > 5 ? '…' : ''}`
+      message: t('common.tagInvalid', {
+        invalid: `${invalid.slice(0, 5).join(', ')}${invalid.length > 5 ? '…' : ''}`
+      })
     })
   } else if (added) {
     $q.notify({
       type: 'positive',
-      message: `Добавлено: ${added}${dups ? `, пропущено дублей: ${dups}` : ''}`,
+      message: dups
+        ? t('common.tagAddedWithDups', { added, dups })
+        : t('common.tagAdded', { added }),
       timeout: 2500
     })
   } else if (dups) {
-    $q.notify({ type: 'info', message: 'Все значения уже в списке', timeout: 2000 })
+    $q.notify({ type: 'info', message: t('common.tagAllExist'), timeout: 2000 })
   }
 
   return { added, invalid, dups }
@@ -176,7 +182,7 @@ function addFromDraft () {
     return
   }
   if (props.modelValue.includes(result.value)) {
-    error.value = `Уже есть: ${result.value}`
+    error.value = t('common.tagAlreadyExists', { value: result.value })
     return
   }
   emit('update:modelValue', [...props.modelValue, result.value])

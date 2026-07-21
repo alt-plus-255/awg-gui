@@ -75,6 +75,11 @@ class ResolverConnectionController extends Controller
         }
     }
 
+    public function pingSession()
+    {
+        return response()->json($this->pingService->sessionStatus());
+    }
+
     public function index()
     {
         $items = ResolverConnection::query()
@@ -95,7 +100,7 @@ class ResolverConnectionController extends Controller
 
         if (trim((string) ($data['url'] ?? '')) === '' && trim((string) ($data['body'] ?? '')) === '') {
             throw ValidationException::withMessages([
-                'url' => ['Укажите URL подписки или вставьте содержимое'],
+                'url' => [__('resolver.subscription_url_or_content_required')],
             ]);
         }
 
@@ -113,21 +118,21 @@ class ResolverConnectionController extends Controller
     public function pingSubscription(Request $request)
     {
         throw ValidationException::withMessages([
-            'connection' => ['Сохраните подключение перед проверкой пинга'],
+            'connection' => [__('resolver.save_connection_before_ping')],
         ]);
     }
 
     public function pingSubscriptionStream(Request $request)
     {
         throw ValidationException::withMessages([
-            'connection' => ['Сохраните подключение перед проверкой пинга'],
+            'connection' => [__('resolver.save_connection_before_ping')],
         ]);
     }
 
     public function pingSubscriptionNode(Request $request)
     {
         throw ValidationException::withMessages([
-            'connection' => ['Сохраните подключение перед проверкой пинга'],
+            'connection' => [__('resolver.save_connection_before_ping')],
         ]);
     }
 
@@ -137,14 +142,14 @@ class ResolverConnectionController extends Controller
 
         if (! $connection->isSubscription()) {
             throw ValidationException::withMessages([
-                'connection' => ['Пинг узлов доступен только для подписок'],
+                'connection' => [__('resolver.ping_subscriptions_only')],
             ]);
         }
 
         $nodes = is_array($connection->subscription_nodes) ? $connection->subscription_nodes : [];
         if ($nodes === []) {
             throw ValidationException::withMessages([
-                'connection' => ['Нет кэшированных узлов — обновите подписку'],
+                'connection' => [__('resolver.no_cached_nodes')],
             ]);
         }
 
@@ -159,14 +164,14 @@ class ResolverConnectionController extends Controller
 
         if (! $connection->isSubscription()) {
             throw ValidationException::withMessages([
-                'connection' => ['Пинг узлов доступен только для подписок'],
+                'connection' => [__('resolver.ping_subscriptions_only')],
             ]);
         }
 
         $nodes = is_array($connection->subscription_nodes) ? $connection->subscription_nodes : [];
         if ($nodes === []) {
             throw ValidationException::withMessages([
-                'connection' => ['Нет кэшированных узлов — обновите подписку'],
+                'connection' => [__('resolver.no_cached_nodes')],
             ]);
         }
 
@@ -179,7 +184,7 @@ class ResolverConnectionController extends Controller
     {
         if (! $connection->isSubscription()) {
             throw ValidationException::withMessages([
-                'connection' => ['Доступно только для подписок'],
+                'connection' => [__('resolver.subscriptions_only')],
             ]);
         }
 
@@ -204,7 +209,7 @@ class ResolverConnectionController extends Controller
 
         if (! $connection->isSubscription()) {
             throw ValidationException::withMessages([
-                'connection' => ['Пинг узлов доступен только для подписок'],
+                'connection' => [__('resolver.ping_subscriptions_only')],
             ]);
         }
 
@@ -216,7 +221,10 @@ class ResolverConnectionController extends Controller
         try {
             $result = $this->pingService->pingNode($connection, $data['key'], $request->boolean('fast'));
         } catch (PingSessionBusyException $e) {
-            return response()->json(['error' => $e->getMessage()], 409);
+            return response()->json([
+                'error' => $e->getMessage(),
+                'code' => 'ping_busy',
+            ], 409);
         } catch (\RuntimeException $e) {
             return response()->json(['error' => $e->getMessage()], 422);
         }
@@ -230,7 +238,7 @@ class ResolverConnectionController extends Controller
     {
         if (! $connection->enabled) {
             throw ValidationException::withMessages([
-                'connection' => ['Подключение выключено — включите перед проверкой'],
+                'connection' => [__('resolver.connection_disabled_enable_first')],
             ]);
         }
 
@@ -252,8 +260,8 @@ class ResolverConnectionController extends Controller
                 $connection->last_tspu_detail = $tspu['detail'];
                 $connection->last_tspu_meta = $tspu;
                 $connection->last_test_error = $tspu['tspu_likely']
-                    ? 'ТСПУ: '.$tspu['detail']
-                    : 'sing-box / Clash API недоступен';
+                    ? __('resolver.tspu_prefix', ['detail' => $tspu['detail']])
+                    : __('resolver.singbox_clash_unavailable');
                 $connection->save();
 
                 return response()->json([
@@ -269,7 +277,10 @@ class ResolverConnectionController extends Controller
         try {
             $result = $this->pingService->pingConnection($connection);
         } catch (PingSessionBusyException $e) {
-            return response()->json(['error' => $e->getMessage()], 409);
+            return response()->json([
+                'error' => $e->getMessage(),
+                'code' => 'ping_busy',
+            ], 409);
         } catch (\RuntimeException $e) {
             return response()->json(['error' => $e->getMessage()], 422);
         }
@@ -284,9 +295,9 @@ class ResolverConnectionController extends Controller
         $connection->last_tspu_detail = $tspu['detail'];
         $connection->last_tspu_meta = $tspu;
 
-        $error = $result['ok'] ? null : ($result['error'] ?? 'Ошибка');
+        $error = $result['ok'] ? null : ($result['error'] ?? __('api.error'));
         if (! $result['ok'] && $tspu['tspu_likely']) {
-            $error = 'ТСПУ: '.($tspu['detail'] ?: 'вероятна блокировка DPI');
+            $error = __('resolver.tspu_prefix', ['detail' => $tspu['detail'] ?: __('resolver.tspu_dpi_likely')]);
         } elseif (! $result['ok'] && $tspu['status'] !== 'ok' && $tspu['status'] !== 'skipped') {
             $error = ($error ? $error.' · ' : '').$tspu['detail'];
         }
@@ -408,7 +419,7 @@ class ResolverConnectionController extends Controller
         $refs = $connection->configs()->count();
         if ($refs > 0) {
             throw ValidationException::withMessages([
-                'connection' => ["Нельзя удалить: используется в {$refs} конфиг(ах) резолвера"],
+                'connection' => [__('resolver.cannot_delete_in_use', ['refs' => $refs])],
             ]);
         }
 
@@ -491,14 +502,14 @@ class ResolverConnectionController extends Controller
         $url = $data['subscription_url'] ?? $connection->subscription_url;
         if ($url === null || $url === '') {
             throw ValidationException::withMessages([
-                'subscription_url' => ['Укажите URL подписки'],
+                'subscription_url' => [__('resolver.subscription_url_required')],
             ]);
         }
 
         $mode = $data['subscription_mode'] ?? $connection->subscription_mode;
         if (! in_array($mode, [ResolverConnection::MODE_SINGLE, ResolverConnection::MODE_URLTEST], true)) {
             throw ValidationException::withMessages([
-                'subscription_mode' => ['Укажите режим: single или urltest'],
+                'subscription_mode' => [__('resolver.subscription_mode_required')],
             ]);
         }
 
@@ -555,7 +566,7 @@ class ResolverConnectionController extends Controller
 
         if ($selected === null || $selected === '') {
             throw ValidationException::withMessages([
-                'subscription_selected' => ['Выберите локацию из подписки'],
+                'subscription_selected' => [__('resolver.select_subscription_location')],
             ]);
         }
 
@@ -566,7 +577,7 @@ class ResolverConnectionController extends Controller
         }
 
         throw ValidationException::withMessages([
-            'subscription_selected' => ['Выбранная локация не найдена в подписке — выполните тест снова'],
+            'subscription_selected' => [__('resolver.subscription_location_not_found')],
         ]);
     }
 
@@ -593,6 +604,8 @@ class ResolverConnectionController extends Controller
         $truncated = $total > $pingLimit;
 
         return response()->stream(function () use ($connection, $total, $pingLimit, $truncated, $fastOnly, $autoApply) {
+            @ignore_user_abort(true);
+
             echo json_encode([
                 'type' => 'start',
                 'count' => min($total, $pingLimit),

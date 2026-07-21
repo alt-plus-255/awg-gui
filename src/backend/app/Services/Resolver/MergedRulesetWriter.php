@@ -48,7 +48,7 @@ class MergedRulesetWriter
         $srs = $this->paths->communityRulesetPath($tag);
         if (! is_file($srs)) {
             throw new RuntimeException(
-                "Ruleset не найден на диске: {$tag}.srs — откройте Резолвер → Настройки → Скачать."
+                __('resolver.ruleset_not_on_disk_settings', ['tag' => $tag])
             );
         }
 
@@ -84,14 +84,14 @@ class MergedRulesetWriter
         if (! $r->successful() || ! is_file($cachePath)) {
             @unlink($cachePath);
             @unlink($metaPath);
-            throw new RuntimeException("Не удалось decompile {$tag}.srs: ".trim($r->errorOutput() ?: $r->output()));
+            throw new RuntimeException(__('resolver.decompile_failed', ['tag' => $tag, 'error' => trim($r->errorOutput() ?: $r->output())]));
         }
 
         $decoded = json_decode((string) file_get_contents($cachePath), true);
         if (! is_array($decoded)) {
             @unlink($cachePath);
             @unlink($metaPath);
-            throw new RuntimeException("Некорректный JSON после decompile {$tag}");
+            throw new RuntimeException(__('resolver.invalid_json_after_decompile', ['tag' => $tag]));
         }
 
         file_put_contents($metaPath, json_encode([
@@ -122,7 +122,7 @@ class MergedRulesetWriter
             $path = $this->paths->rulesetDir().'/'.$tag.'.json';
             if (! is_file($path)) {
                 throw new RuntimeException(
-                    "Свой список «{$tag}» не найден на диске — откройте Резолвер → Настройки."
+                    __('resolver.custom_list_not_on_disk_short', ['tag' => $tag])
                 );
             }
             $decoded = json_decode((string) file_get_contents($path), true);

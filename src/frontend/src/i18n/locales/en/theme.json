@@ -1,0 +1,13 @@
+{
+  "theme": "Theme",
+  "style": "Style",
+  "language": "Language",
+  "lightFrom": "Light from",
+  "lightUntil": "until",
+  "dark": "Dark",
+  "light": "Light",
+  "system": "System",
+  "auto": "Automatic by time",
+  "ru": "Русский",
+  "en": "English"
+}

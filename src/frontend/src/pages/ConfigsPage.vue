@@ -5,27 +5,27 @@
         <div class="col-12 col-md">
           <div class="row items-center no-wrap">
             <div class="col">
-              <div class="text-h5">Конфиги и пиры</div>
+              <div class="text-h5">{{ t('configs.title') }}</div>
             </div>
             <div class="col-auto lt-md">
-              <q-btn flat dense icon="refresh" label="Обновить" @click="load" :loading="loading" />
+              <q-btn flat dense icon="refresh" :label="t('common.refresh')" @click="load" :loading="loading" />
             </div>
           </div>
         </div>
         <div class="col-12 col-md-auto">
           <div class="row items-center configs-page-actions">
-            <q-btn flat icon="refresh" label="Обновить" class="q-mr-sm gt-sm" @click="load" :loading="loading" />
+            <q-btn flat icon="refresh" :label="t('common.refresh')" class="q-mr-sm gt-sm" @click="load" :loading="loading" />
             <div class="configs-page-primary-actions">
               <q-btn
                 outline
                 color="warning"
                 icon="restart_alt"
-                label="Перезапустить AWG"
+                :label="t('configs.restartAwg')"
                 :loading="restartBusy"
                 :disable="restartBusy"
                 @click="confirmRestartAwg"
               />
-              <q-btn color="primary" icon="add" label="Создать конфиг" @click="openCreate" />
+              <q-btn color="primary" icon="add" :label="t('configs.createConfig')" @click="openCreate" />
             </div>
           </div>
         </div>
@@ -55,21 +55,21 @@
             <q-td key="name" :props="props">{{ props.row.name }}</q-td>
             <q-td key="type" :props="props">
               <q-badge :color="props.row.type === 'virtual_network' ? 'info' : 'primary'">
-                {{ props.row.type_label }}
+                {{ props.row.type === 'virtual_network' ? t('configs.typeVirtualNetwork') : t('configs.typeServer') }}
               </q-badge>
               <q-badge
                 v-if="props.row.type === 'virtual_network'"
                 :color="props.row.vn_policy === 'deny_all' ? 'deep-orange' : 'grey-8'"
                 class="q-ml-xs"
               >
-                {{ props.row.vn_policy === 'deny_all' ? 'изоляция' : 'все видят всех' }}
+                {{ props.row.vn_policy === 'deny_all' ? t('configs.badgeIsolation') : t('configs.badgeAllowAll') }}
               </q-badge>
               <q-badge
                 v-if="props.row.resolver_enabled"
                 color="deep-purple"
                 class="q-ml-xs"
               >
-                резолвер
+                {{ t('configs.badgeResolver') }}
               </q-badge>
             </q-td>
             <q-td key="iface" :props="props">{{ props.row.iface }}</q-td>
@@ -78,13 +78,13 @@
             <q-td key="peers_count" :props="props">{{ props.row.peers_count }}</q-td>
             <q-td key="enabled" :props="props">
               <q-badge :color="props.row.enabled ? 'positive' : 'grey-8'">
-                {{ props.row.enabled ? 'вкл' : 'выкл' }}
+                {{ props.row.enabled ? t('common.on') : t('common.off') }}
               </q-badge>
             </q-td>
             <q-td key="actions" :props="props">
-              <q-btn flat dense icon="description" title="Показать .conf" @click="showServerConf(props.row)" />
-              <q-btn flat dense icon="edit" title="Редактировать" @click="openEdit(props.row)" />
-              <q-btn flat dense color="negative" icon="delete" title="Удалить" @click="remove(props.row)" />
+              <q-btn flat dense icon="description" :title="t('configs.showConf')" @click="showServerConf(props.row)" />
+              <q-btn flat dense icon="edit" :title="t('common.edit')" @click="openEdit(props.row)" />
+              <q-btn flat dense color="negative" icon="delete" :title="t('common.delete')" @click="remove(props.row)" />
             </q-td>
           </q-tr>
 
@@ -92,17 +92,17 @@
             <q-td colspan="100%" class="expanded-cell">
               <div class="q-pa-md">
                 <div class="row items-center q-mb-sm">
-                  <div class="text-subtitle1 col">Пиры конфига «{{ props.row.name }}»</div>
-                  <q-btn flat dense icon="refresh" label="Обновить" class="q-mr-sm" @click="refreshConfigLive(props.row.id)" :loading="peersState[props.row.id]?.liveLoading" />
-                  <q-btn color="primary" dense icon="add" label="Добавить peer" @click="openAddPeer(props.row)" />
+                  <div class="text-subtitle1 col">{{ t('configs.peersOfConfig', { name: props.row.name }) }}</div>
+                  <q-btn flat dense icon="refresh" :label="t('common.refresh')" class="q-mr-sm" @click="refreshConfigLive(props.row.id)" :loading="peersState[props.row.id]?.liveLoading" />
+                  <q-btn color="primary" dense icon="add" :label="t('configs.addPeer')" @click="openAddPeer(props.row)" />
                 </div>
 
                 <div v-if="props.row.type === 'virtual_network'" class="text-caption text-grey-5 q-mb-sm">
                   <template v-if="props.row.vn_policy === 'deny_all'">
-                    Режим изоляции: пир видит только те подсети, которые разрешены правилами доступа (настраиваются ниже, под таблицей пиров).
+                    {{ t('configs.isolationModeHint') }}
                   </template>
                   <template v-else>
-                    Укажите LAN роутера в «Подсеть за роутером». Клиентский .conf получит AllowedIPs = свой tunnel + LAN остальных пиров.
+                    {{ t('configs.lanRouterHint') }}
                   </template>
                 </div>
 
@@ -112,7 +112,7 @@
                   rounded
                   class="bg-warning text-dark q-mb-sm"
                 >
-                  Статистика AWG недоступна (docker exec). RX/TX и online могут не обновляться.
+                  {{ t('configs.statsUnavailable') }}
                 </q-banner>
 
                 <q-table
@@ -125,7 +125,7 @@
                   :loading="peersState[props.row.id]?.loading"
                   class="bg-transparent"
                   :rows-per-page-options="[10, 25, 0]"
-                  no-data-label="Нет пиров"
+                  :no-data-label="t('configs.noPeers')"
                 >
                   <template #body-cell-client_allowed_ips="peerProps">
                     <q-td :props="peerProps">
@@ -137,7 +137,7 @@
                   <template #body-cell-online="peerProps">
                     <q-td :props="peerProps">
                       <q-badge :color="peerProps.row.online ? 'positive' : 'grey-8'">
-                        {{ peerProps.row.online != null ? (peerProps.row.online ? 'онлайн' : 'офлайн') : '—' }}
+                        {{ peerProps.row.online != null ? (peerProps.row.online ? t('common.online') : t('common.offline')) : '—' }}
                       </q-badge>
                     </q-td>
                   </template>
@@ -176,35 +176,35 @@
                   </template>
                   <template #body-cell-actions="peerProps">
                     <q-td :props="peerProps">
-                      <q-btn flat dense icon="edit" title="Редактировать" @click="openEditPeer(props.row, peerProps.row)" />
+                      <q-btn flat dense icon="edit" :title="t('common.edit')" @click="openEditPeer(props.row, peerProps.row)" />
                       <q-btn flat dense icon="qr_code_2" title="QR" @click="openShare(props.row, peerProps.row)" />
-                      <q-btn flat dense icon="download" title="Конфиг" @click="downloadConf(props.row, peerProps.row)" />
-                      <q-btn flat dense color="warning" icon="link_off" title="Отвязать от конфига" @click="detachPeer(props.row, peerProps.row)" />
-                      <q-btn flat dense color="negative" icon="delete" title="Удалить peer полностью" @click="deletePeer(peerProps.row)" />
+                      <q-btn flat dense icon="download" :title="t('dashboard.configTooltip')" @click="downloadConf(props.row, peerProps.row)" />
+                      <q-btn flat dense color="warning" icon="link_off" :title="t('configs.detachFromConfig')" @click="detachPeer(props.row, peerProps.row)" />
+                      <q-btn flat dense color="negative" icon="delete" :title="t('configs.deletePeerFully')" @click="deletePeer(peerProps.row)" />
                     </q-td>
                   </template>
                 </q-table>
 
-                <!-- Правила доступа (режим изоляции) -->
+                <!-- access rules (isolation mode) -->
                 <div v-if="props.row.type === 'virtual_network' && props.row.vn_policy === 'deny_all'" class="q-mt-lg">
                   <div class="row items-center q-mb-xs">
-                    <div class="text-subtitle1 col">Правила доступа</div>
-                    <q-btn flat dense icon="add" label="Добавить правило" class="q-mr-sm" @click="addRule(props.row.id)" />
+                    <div class="text-subtitle1 col">{{ t('configs.accessRules') }}</div>
+                    <q-btn flat dense icon="add" :label="t('configs.addRule')" class="q-mr-sm" @click="addRule(props.row.id)" />
                     <q-btn
                       color="primary"
                       dense
                       icon="save"
-                      label="Сохранить правила"
+                      :label="t('configs.saveRules')"
                       :loading="zonesState[props.row.id]?.saving"
                       :disable="!zonesState[props.row.id]?.dirty"
                       @click="saveZones(props.row)"
                     />
                   </div>
                   <div class="text-caption text-grey-5 q-mb-sm">
-                    Доступ строго слева направо: пиры слева получают маршруты к подсетям пиров справа. <br>
-                    Пирам справа выдаётся только туннельный адрес источника — для ответного трафика; подсеть источника им не отдаётся. <br>
-                    На роутерах-источниках должен быть включён masquerade WG-интерфейса, иначе ответы не пройдут. <br>
-                    Пир вне всех правил полностью изолирован.
+                    {{ t('configs.rulesHintLeftToRight') }} <br>
+                    {{ t('configs.rulesHintTunnelOnly') }} <br>
+                    {{ t('configs.rulesHintMasquerade') }} <br>
+                    {{ t('configs.peerOutsideRules') }}
                   </div>
 
                   <q-banner
@@ -213,11 +213,11 @@
                     rounded
                     class="bg-blue-grey-9 text-grey-4 q-mb-sm"
                   >
-                    Изолированы (вне правил): {{ isolatedPeers(props.row.id).join(', ') }}
+                    {{ t('configs.isolatedOutsideRules', { names: isolatedPeers(props.row.id).join(', ') }) }}
                   </q-banner>
 
                   <div v-if="!(zonesState[props.row.id]?.rules || []).length" class="text-caption text-grey-6 q-mb-sm">
-                    Правил пока нет — все пиры изолированы.
+                    {{ t('configs.noRulesYet') }}
                   </div>
 
                   <div
@@ -235,7 +235,7 @@
                         map-options
                         option-value="client_id"
                         option-label="name"
-                        label="Кто ходит"
+                        :label="t('configs.whoWalks')"
 
                         filled
                         dense
@@ -253,7 +253,7 @@
                         map-options
                         option-value="client_id"
                         option-label="name"
-                        label="Куда (подсеть пира)"
+                        :label="t('configs.wherePeerSubnet')"
 
                         filled
                         dense
@@ -261,7 +261,7 @@
                       />
                     </div>
                     <div class="col-auto">
-                      <q-btn flat dense icon="close" color="negative" title="Удалить правило" @click="removeRule(props.row.id, rIdx)" />
+                      <q-btn flat dense icon="close" color="negative" :title="t('configs.deleteRule')" @click="removeRule(props.row.id, rIdx)" />
                     </div>
                   </div>
                 </div>
@@ -272,9 +272,9 @@
       </q-table>
 
       <div v-if="unattachedClients.length" class="q-mt-lg">
-        <div class="text-subtitle1 q-mb-sm">Непривязанные пиры</div>
+        <div class="text-subtitle1 q-mb-sm">{{ t('configs.unboundPeers') }}</div>
         <div class="text-caption text-grey-5 q-mb-sm">
-          Пиры без привязки к конфигу — можно привязать заново или удалить.
+          {{ t('configs.unboundPeersHint') }}
         </div>
         <q-table
           :rows="unattachedClients"
@@ -296,7 +296,7 @@
                 dense
                 color="primary"
                 icon="link"
-                title="Привязать к конфигу"
+                :title="t('configs.attachToConfig')"
                 :disable="!configs.length"
                 @click="openAttachUnattached(props.row)"
               />
@@ -305,7 +305,7 @@
                 dense
                 color="negative"
                 icon="delete"
-                title="Удалить peer полностью"
+                :title="t('configs.deletePeerFully')"
                 @click="deletePeer({ client_id: props.row.id, name: props.row.name })"
               />
             </q-td>
@@ -318,7 +318,7 @@
     <q-dialog v-model="attachPickOpen" v-bind="mobileDialog" persistent>
       <q-card style="width: min(420px, 95vw); max-width: 95vw;" class="surface-panel dialog-card column no-wrap">
         <q-card-section class="text-h6">
-          Привязать peer
+          {{ t('configs.attachPeer') }}
           <div class="text-caption text-grey-5">{{ attachClient?.name }}</div>
         </q-card-section>
         <q-card-section class="col dialog-scroll-body">
@@ -329,14 +329,14 @@
             option-label="name"
             emit-value
             map-options
-            label="Конфиг"
+            :label="t('dashboard.colConfig')"
 
             filled
           />
         </q-card-section>
         <q-card-actions align="right">
-          <q-btn flat label="Отмена" v-close-popup />
-          <q-btn color="primary" label="Далее" :disable="!attachConfigId" @click="confirmAttachPick" />
+          <q-btn flat :label="t('common.cancel')" v-close-popup />
+          <q-btn color="primary" :label="t('common.next')" :disable="!attachConfigId" @click="confirmAttachPick" />
         </q-card-actions>
       </q-card>
     </q-dialog>
@@ -349,11 +349,11 @@
           : 'width: min(480px, 95vw); max-width: 95vw; max-height: 90vh;'"
         class="surface-panel dialog-card column no-wrap"
       >
-        <q-card-section class="text-h6">{{ editingId ? 'Редактировать конфиг' : 'Новый конфиг' }}</q-card-section>
+        <q-card-section class="text-h6">{{ editingId ? t('configs.editConfig') : t('configs.newConfig') }}</q-card-section>
         <q-card-section class="col dialog-scroll-body">
           <div class="row q-col-gutter-md">
             <div class="col-12 col-md-6">
-              <q-input v-model="form.name" label="Имя" filled class="q-mb-md" />
+              <q-input v-model="form.name" :label="t('common.name')" filled class="q-mb-md" />
             </div>
             <div class="col-12 col-md-6">
               <div class="row items-center q-col-gutter-sm q-mb-md">
@@ -361,7 +361,7 @@
                   <q-select
                     v-model="form.type"
                     :options="typeOptions"
-                    label="Тип"
+                    :label="t('common.type')"
                     emit-value
                     map-options
 
@@ -370,7 +370,7 @@
                   />
                 </div>
                 <div v-if="editingId" class="col-auto">
-                  <q-toggle v-model="form.enabled" label="Включён" color="positive" />
+                  <q-toggle v-model="form.enabled" :label="t('configs.enabledToggle')" color="positive" />
                 </div>
               </div>
             </div>
@@ -380,26 +380,43 @@
             v-if="form.type === 'virtual_network'"
             v-model="form.vn_policy"
             :options="vnPolicyOptions"
-            label="Политика видимости"
+            :label="t('configs.visibilityPolicy')"
             emit-value
             map-options
 
             filled
             class="q-mb-md"
             :hint="form.vn_policy === 'deny_all'
-              ? 'Пиры изолированы. Доступы настраиваются правилами под таблицей пиров.'
-              : 'Каждый пир получает подсети всех остальных, кроме исключений.'"
+              ? t('configs.peersIsolatedHint')
+              : t('configs.peersAllowAllHint')"
           />
 
           <div class="row q-col-gutter-md">
-            <div :class="editingId ? 'col-12 col-md-4' : 'col-12'">
-              <q-input v-model="form.internal_subnet" label="Внутренняя подсеть" hint="10.66.66.0/24" filled class="q-mb-md" />
+            <div :class="editingId ? 'col-12 col-md-4' : 'col-12 col-sm-6'">
+              <q-input
+                v-model="form.internal_subnet"
+                :label="t('configs.internalSubnet')"
+                :hint="editingId ? '10.66.66.0/24' : t('configs.subnetFreeHint')"
+                :error="!!subnetFieldError"
+                :error-message="subnetFieldError || undefined"
+                filled
+                class="q-mb-md"
+              />
             </div>
             <div v-if="editingId" class="col-12 col-md-4">
-              <q-input v-model="form.server_address" label="Address сервера" filled class="q-mb-md" />
+              <q-input v-model="form.server_address" :label="t('configs.serverAddress')" filled class="q-mb-md" />
             </div>
-            <div v-if="editingId" class="col-12 col-md-4">
-              <q-input v-model.number="form.listen_port" type="number" label="ListenPort" filled class="q-mb-md" />
+            <div :class="editingId ? 'col-12 col-md-4' : 'col-12 col-sm-6'">
+              <q-input
+                v-model.number="form.listen_port"
+                type="number"
+                :label="t('configs.listenPort')"
+                :hint="t('configs.listenPortHint')"
+                :error="!!portFieldError"
+                :error-message="portFieldError || undefined"
+                filled
+                class="q-mb-md"
+              />
             </div>
           </div>
 
@@ -407,9 +424,9 @@
             <div class="col-12 col-md-6">
               <q-input
                 v-model="form.peer_dns"
-                label="DNS для клиентов"
+                :label="t('configs.clientDns')"
                 :hint="editingRow?.resolver_enabled
-                  ? 'Сейчас переопределяется резолвером (DNS = gateway туннеля). Настройка на странице «Резолвер».'
+                  ? t('configs.dnsOverriddenByResolver')
                   : undefined"
 
                 filled
@@ -425,10 +442,10 @@
           <q-input
             v-if="form.type === 'server'"
             v-model="form.client_allowed_ips"
-            label="AllowedIPs (клиентские)"
+            :label="t('configs.clientAllowedIps')"
             :hint="editingRow?.resolver_enabled
-              ? 'Сейчас переопределяется резолвером (подсеть + FakeIP). Настройка на странице «Резолвер».'
-              : '0.0.0.0/0, ::/0 — весь интернет'"
+              ? t('configs.allowedIpsOverriddenByResolver')
+              : t('configs.allowedIpsInternetHint')"
 
             filled
             class="q-mb-md"
@@ -440,17 +457,15 @@
             rounded
             class="q-mb-md surface-panel-alt"
           >
-            Резолвер (точечный обход): только домены из списков через VPN.
-            Speedtest покажет IP SIM — это норма. Переимпортируйте QR в AmneziaWG;
-            на iPhone отключите Private Relay. Списки — на странице «Резолвер».
+            {{ t('configs.resolverBanner') }}
           </q-banner>
 
           <template v-if="editingId && editingRow">
-            <div class="text-subtitle2 q-mt-md q-mb-sm">Файл конфига на сервере</div>
+            <div class="text-subtitle2 q-mt-md q-mb-sm">{{ t('configs.configFileOnServer') }}</div>
             <div
               v-for="p in [
-                { label: 'На хосте', path: editingRow.host_config_path },
-                { label: 'В контейнере', path: editingRow.config_path }
+                { label: t('configs.onHost'), path: editingRow.host_config_path },
+                { label: t('configs.inContainer'), path: editingRow.config_path }
               ]"
               :key="p.label"
               class="row items-center no-wrap q-mb-xs"
@@ -458,14 +473,14 @@
               <div class="text-caption text-grey-5 config-path-label">{{ p.label }}</div>
               <div class="config-path-value col">{{ p.path }}</div>
               <q-btn flat dense round size="sm" icon="content_copy" @click="copyPath(p.path)">
-                <q-tooltip>Копировать путь</q-tooltip>
+                <q-tooltip>{{ t('configs.copyPath') }}</q-tooltip>
               </q-btn>
             </div>
           </template>
 
           <template v-if="editingId">
             <div class="row items-center q-mt-md q-mb-sm">
-              <div class="text-subtitle2">Обфускация AWG</div>
+              <div class="text-subtitle2">{{ t('configs.awgObfuscation') }}</div>
               <q-space />
               <q-btn
                 flat
@@ -473,7 +488,7 @@
                 no-caps
                 color="primary"
                 icon="casino"
-                label="Сгенерировать"
+                :label="t('configs.generate')"
                 @click="generateJunk"
               />
             </div>
@@ -494,8 +509,8 @@
           </template>
         </q-card-section>
         <q-card-actions align="right">
-          <q-btn flat label="Отмена" v-close-popup />
-          <q-btn color="primary" label="Сохранить" :loading="saving" @click="saveConfig" />
+          <q-btn flat :label="t('common.cancel')" v-close-popup />
+          <q-btn color="primary" :label="t('common.save')" :loading="saving" :disable="!!subnetFieldError || !!portFieldError" @click="saveConfig" />
         </q-card-actions>
       </q-card>
     </q-dialog>
@@ -504,16 +519,16 @@
     <q-dialog v-model="peerFormOpen" v-bind="mobileDialog" persistent>
       <q-card style="width: min(460px, 95vw); max-width: 95vw;" class="surface-panel dialog-card column no-wrap">
         <q-card-section class="text-h6">
-          {{ editingPeerId ? 'Редактировать peer' : 'Добавить peer' }}
-          <div class="text-caption text-grey-5">Конфиг: {{ activeConfig?.name }}</div>
+          {{ editingPeerId ? t('configs.editPeer') : t('configs.addPeer') }}
+          <div class="text-caption text-grey-5">{{ t('configs.configLabel', { name: activeConfig?.name }) }}</div>
         </q-card-section>
         <q-card-section class="col dialog-scroll-body">
           <q-btn-toggle
             v-if="!editingPeerId"
             v-model="peerForm.mode"
             :options="[
-              { label: 'Новый peer', value: 'new' },
-              { label: 'Существующий', value: 'existing' }
+              { label: t('configs.newPeer'), value: 'new' },
+              { label: t('configs.existingPeer'), value: 'existing' }
             ]"
             toggle-color="primary"
             unelevated
@@ -522,8 +537,8 @@
           />
 
           <template v-if="editingPeerId || peerForm.mode === 'new'">
-            <q-input v-model="peerForm.name" label="Имя" filled class="q-mb-md" />
-            <q-input v-model="peerForm.comment" label="Комментарий" filled class="q-mb-md" />
+            <q-input v-model="peerForm.name" :label="t('common.name')" filled class="q-mb-md" />
+            <q-input v-model="peerForm.comment" :label="t('configs.colComment')" filled class="q-mb-md" />
           </template>
 
           <q-select
@@ -545,9 +560,9 @@
           <template v-if="activeConfig?.type === 'virtual_network'">
             <q-input
               v-model="peerForm.local_subnet"
-              label="Локальный IP адрес подсети *"
+              :label="t('configs.localSubnetIp')"
               placeholder="192.168.1.0/24"
-              hint="LAN за роутером этого peer"
+              :hint="t('configs.lanBehindPeer')"
 
               filled
               class="q-mb-md"
@@ -562,8 +577,8 @@
                 map-options
                 option-value="client_id"
                 option-label="name"
-                label="Исключить узлы"
-                hint="Подсети этих узлов не попадут в AllowedIPs данного peer"
+                :label="t('configs.excludeNodes')"
+                :hint="t('configs.excludeNodesHint')"
 
                 filled
                 class="q-mb-md"
@@ -571,38 +586,38 @@
               <q-toggle
                 v-if="peerForm.excluded_client_ids.length"
                 v-model="peerForm.exclusions_mutual"
-                label="Взаимное исключение"
+                :label="t('configs.mutualExclusion')"
                 color="primary"
                 class="q-mb-md"
               >
                 <q-tooltip>
-                  Вкл: исключённые узлы тоже не получат подсеть этого peer. Выкл: исключение только в одну сторону.
+                  {{ t('configs.mutualExclusionHint') }}
                 </q-tooltip>
               </q-toggle>
             </template>
             <q-banner v-else dense rounded class="bg-blue-grey-9 text-grey-4 q-mb-md">
-              Конфиг в режиме изоляции: доступы этого peer настраиваются правилами под таблицей пиров.
+              {{ t('configs.peerIsolationHint') }}
             </q-banner>
           </template>
           <template v-else>
-            <div class="text-subtitle2 q-mb-sm">AllowedIPs (сервер → peer)</div>
+            <div class="text-subtitle2 q-mb-sm">{{ t('configs.serverToPeerAllowedIps') }}</div>
             <div v-for="(ip, idx) in peerForm.extra_allowed_ips" :key="idx" class="row q-gutter-sm q-mb-sm items-center">
               <q-input v-model="peerForm.extra_allowed_ips[idx]" label="CIDR" filled dense class="col" />
               <q-btn flat dense icon="close" color="negative" @click="peerForm.extra_allowed_ips.splice(idx, 1)" />
             </div>
-            <q-btn flat dense color="primary" icon="add" label="Добавить CIDR" class="q-mb-md" @click="peerForm.extra_allowed_ips.push('')" />
+            <q-btn flat dense color="primary" icon="add" :label="t('configs.addCidr')" class="q-mb-md" @click="peerForm.extra_allowed_ips.push('')" />
           </template>
 
           <div v-if="peerPreview" class="q-mb-md">
-            <div class="text-caption text-grey-5">Разрешённые IP-адреса (в клиентском .conf)</div>
+            <div class="text-caption text-grey-5">{{ t('configs.clientConfAllowedIps') }}</div>
             <div class="q-mt-xs">{{ peerPreview }}</div>
           </div>
 
           <q-toggle v-if="!editingPeerId" v-model="peerForm.use_preshared_key" label="PresharedKey" color="primary" class="q-mb-sm" />
         </q-card-section>
         <q-card-actions align="right">
-          <q-btn flat label="Отмена" v-close-popup />
-          <q-btn color="primary" :label="editingPeerId ? 'Сохранить' : 'Добавить'" :loading="peerSaving" @click="savePeer" />
+          <q-btn flat :label="t('common.cancel')" v-close-popup />
+          <q-btn color="primary" :label="editingPeerId ? t('common.save') : t('common.add')" :loading="peerSaving" @click="savePeer" />
         </q-card-actions>
       </q-card>
     </q-dialog>
@@ -635,9 +650,9 @@
           />
         </q-card-section>
         <q-card-actions align="right">
-          <q-btn flat label="Копировать" :disable="!serverConfText" @click="copyServerConf" />
-          <q-btn flat label="Скачать" :disable="!serverConfText" @click="downloadServerConf" />
-          <q-btn flat label="Закрыть" v-close-popup />
+          <q-btn flat :label="t('common.copy')" :disable="!serverConfText" @click="copyServerConf" />
+          <q-btn flat :label="t('common.download')" :disable="!serverConfText" @click="downloadServerConf" />
+          <q-btn flat :label="t('common.close')" v-close-popup />
         </q-card-actions>
       </q-card>
     </q-dialog>
@@ -654,6 +669,7 @@ import {
   unsubscribeLiveStats,
   useLiveStatsState
 } from '@/composables/useLiveStats'
+import { useI18n } from 'vue-i18n'
 import { useQuasar } from 'quasar'
 import api from '@/boot/axios'
 import { copyText } from '@/utils/clipboard'
@@ -661,6 +677,7 @@ import PeerShareDialog from '@/components/PeerShareDialog.vue'
 import { useMobileDialog } from '@/composables/useMobileDialog'
 import { useSystemStore } from '@/stores/system'
 
+const { t } = useI18n()
 const $q = useQuasar()
 const mobileDialog = useMobileDialog()
 const system = useSystemStore()
@@ -675,18 +692,18 @@ const formOpen = ref(false)
 const editingId = ref(null)
 const editingRow = ref(null)
 const junkKeys = ['jc', 'jmin', 'jmax', 's1', 's2', 's3', 's4', 'h1', 'h2', 'h3', 'h4', 'i1', 'i2', 'i3', 'i4', 'i5']
-const typeOptions = [
-  { label: 'Сервер (весь интернет)', value: 'server' },
-  { label: 'Виртуальная сеть (роутеры)', value: 'virtual_network' }
-]
-const vnPolicyOptions = [
-  { label: 'Все видят всех (кроме исключений)', value: 'allow_all' },
-  { label: 'Изоляция (правила доступа)', value: 'deny_all' }
-]
+const typeOptions = computed(() => [
+  { label: t('configs.typeServer'), value: 'server' },
+  { label: t('configs.typeVirtualNetwork'), value: 'virtual_network' }
+])
+const vnPolicyOptions = computed(() => [
+  { label: t('configs.policyAllowAll'), value: 'allow_all' },
+  { label: t('configs.policyDenyAll'), value: 'deny_all' }
+])
 
 const form = reactive({
   name: '',
-  type: 'virtual_network',
+  type: 'server',
   vn_policy: 'allow_all',
   internal_subnet: '10.66.66.0/24',
   server_address: '',
@@ -701,35 +718,35 @@ const form = reactive({
   i1: '', i2: '', i3: '', i4: '', i5: ''
 })
 
-const columns = [
+const columns = computed(() => [
   { name: 'expand', label: '', field: 'expand', align: 'left' },
-  { name: 'name', label: 'Имя', field: 'name', align: 'left', sortable: true },
-  { name: 'type', label: 'Тип', field: 'type_label', align: 'left' },
+  { name: 'name', label: t('configs.colName'), field: 'name', align: 'left', sortable: true },
+  { name: 'type', label: t('configs.colType'), field: (row) => row.type === 'virtual_network' ? t('configs.typeVirtualNetwork') : t('configs.typeServer'), align: 'left' },
   { name: 'iface', label: 'Interface', field: 'iface', align: 'left' },
-  { name: 'listen_port', label: 'Порт', field: 'listen_port', align: 'left' },
-  { name: 'internal_subnet', label: 'Подсеть', field: 'internal_subnet', align: 'left' },
-  { name: 'peers_count', label: 'Пиры', field: 'peers_count', align: 'right' },
-  { name: 'enabled', label: 'Статус', field: 'enabled', align: 'left' },
-  { name: 'actions', label: 'Действия', field: 'actions', align: 'right' }
-]
+  { name: 'listen_port', label: t('configs.colPort'), field: 'listen_port', align: 'left' },
+  { name: 'internal_subnet', label: t('configs.colSubnet'), field: 'internal_subnet', align: 'left' },
+  { name: 'peers_count', label: t('configs.colPeers'), field: 'peers_count', align: 'right' },
+  { name: 'enabled', label: t('configs.colStatus'), field: 'enabled', align: 'left' },
+  { name: 'actions', label: t('configs.colActions'), field: 'actions', align: 'right' }
+])
 
-const peerColumns = [
+const peerColumns = computed(() => [
   { name: 'name', label: 'Peer', field: 'name', align: 'left', sortable: true },
   { name: 'address', label: 'Tunnel IP', field: 'address', align: 'left' },
-  { name: 'client_allowed_ips', label: 'Разрешённые IP', field: 'client_allowed_ips', align: 'left' },
-  { name: 'online', label: 'Статус', field: 'online', align: 'left' },
+  { name: 'client_allowed_ips', label: t('configs.colAllowedIps'), field: 'client_allowed_ips', align: 'left' },
+  { name: 'online', label: t('configs.colStatus'), field: 'online', align: 'left' },
   { name: 'latest_handshake_human', label: 'Handshake', field: (row) => row.latest_handshake_human || '—', align: 'left' },
   { name: 'transfer_rx', label: 'RX', field: 'transfer_rx', align: 'right' },
   { name: 'transfer_tx', label: 'TX', field: 'transfer_tx', align: 'right' },
-  { name: 'enabled', label: 'Вкл', field: 'enabled', align: 'left' },
-  { name: 'actions', label: 'Действия', field: 'actions', align: 'right' }
-]
+  { name: 'enabled', label: t('configs.colEnabled'), field: 'enabled', align: 'left' },
+  { name: 'actions', label: t('configs.colActions'), field: 'actions', align: 'right' }
+])
 
-const unattachedColumns = [
+const unattachedColumns = computed(() => [
   { name: 'name', label: 'Peer', field: 'name', align: 'left', sortable: true },
-  { name: 'comment', label: 'Комментарий', field: 'comment', align: 'left' },
-  { name: 'actions', label: 'Действия', field: 'actions', align: 'right' }
-]
+  { name: 'comment', label: t('configs.colComment'), field: 'comment', align: 'left' },
+  { name: 'actions', label: t('configs.colActions'), field: 'actions', align: 'right' }
+])
 
 // peersState[configId] = { loading, liveLoading, peers, statsAvailable }
 const peersState = reactive({})
@@ -884,16 +901,16 @@ function confirmRestartAwg () {
     $q.notify({
       type: 'warning',
       position: 'top-right',
-      message: 'Перезапуск AWG уже выполняется'
+      message: t('common.restartAwgInProgress')
     })
     return
   }
 
   $q.dialog({
-    title: 'Перезапустить AWG',
-    message: 'Перезапустить службу AmneziaWG? Активные соединения будут разорваны на время перезапуска.',
-    cancel: { label: 'Отмена', flat: true },
-    ok: { label: 'Перезапустить', color: 'warning' },
+    title: t('configs.restartAwgTitle'),
+    message: t('configs.restartAwgConfirm'),
+    cancel: { label: t('common.cancel'), flat: true },
+    ok: { label: t('configs.restart'), color: 'warning' },
     persistent: true,
   }).onOk(() => {
     restartAwg()
@@ -913,14 +930,14 @@ async function restartAwg () {
     $q.notify({
       type: data.ok ? 'positive' : 'negative',
       position: 'top-right',
-      message: data.message || (data.ok ? 'AWG перезапущен' : 'Ошибка перезапуска')
+      message: data.message || (data.ok ? t('configs.awgRestarted') : t('configs.restartError'))
     })
   } catch (e) {
     const already = e?.response?.status === 409 || e?.response?.data?.already_restarting
     $q.notify({
       type: already ? 'warning' : 'negative',
       position: 'top-right',
-      message: e?.response?.data?.message || 'Не удалось перезапустить AWG'
+      message: e?.response?.data?.message || t('configs.restartFailed')
     })
   } finally {
     restartingAwg.value = false
@@ -1046,7 +1063,7 @@ async function refreshConfigLive (configId) {
     applyLiveToConfigPeers(configId)
     state.statsAvailable = data.stats_available !== false
   } catch (e) {
-    $q.notify({ type: 'negative', message: e?.response?.data?.message || 'Не удалось обновить статистику' })
+    $q.notify({ type: 'negative', message: e?.response?.data?.message || t('configs.refreshStatsError') })
   } finally {
     state.liveLoading = false
   }
@@ -1097,11 +1114,11 @@ async function saveZones (config) {
   if (!state) return
   for (const rule of state.rules) {
     if (!(rule.src_client_ids || []).length || !(rule.dest_client_ids || []).length) {
-      $q.notify({ type: 'negative', message: 'В каждом правиле должны быть заполнены обе стороны' })
+      $q.notify({ type: 'negative', message: t('configs.ruleSidesRequired') })
       return
     }
     if (rule.src_client_ids.some((id) => rule.dest_client_ids.includes(id))) {
-      $q.notify({ type: 'negative', message: 'Пир не может быть одновременно слева и справа в одном правиле' })
+      $q.notify({ type: 'negative', message: t('configs.peerBothSidesError') })
       return
     }
   }
@@ -1116,22 +1133,111 @@ async function saveZones (config) {
     })
     state.baseline = snapshotZonesRules(state.rules)
     state.dirty = false
-    $q.notify({ type: 'positive', message: 'Правила сохранены, конфиги перегенерированы. Пирам нужно заново скачать .conf' })
+    $q.notify({ type: 'positive', message: t('configs.rulesSaved') })
     await Promise.all([loadPeers(config.id, true), reloadConfigsOnly()])
   } catch (e) {
-    $q.notify({ type: 'negative', message: e?.response?.data?.message || 'Ошибка сохранения правил' })
+    $q.notify({ type: 'negative', message: e?.response?.data?.message || t('configs.rulesSaveError') })
   } finally {
     state.saving = false
   }
 }
 
+function parseCidr (cidr) {
+  const m = String(cidr || '').trim().match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\/(\d{1,2})$/)
+  if (!m) return null
+  const octets = [Number(m[1]), Number(m[2]), Number(m[3]), Number(m[4])]
+  const mask = Number(m[5])
+  if (octets.some((o) => o > 255) || mask < 0 || mask > 32) return null
+  let ip = ((octets[0] << 24) >>> 0) + (octets[1] << 16) + (octets[2] << 8) + octets[3]
+  const maskBits = mask === 0 ? 0 : (~0 << (32 - mask)) >>> 0
+  ip = (ip & maskBits) >>> 0
+  const network = `${(ip >>> 24) & 255}.${(ip >>> 16) & 255}.${(ip >>> 8) & 255}.${ip & 255}`
+  return { ip, mask, key: `${network}/${mask}` }
+}
+
+function usedSubnetKeys (excludeId = null) {
+  const keys = new Set()
+  for (const c of configs.value) {
+    if (excludeId != null && c.id === excludeId) continue
+    const parsed = parseCidr(c.internal_subnet)
+    if (parsed) keys.add(parsed.key)
+  }
+  return keys
+}
+
+const PORT_MIN = 51820
+const PORT_MAX = 51839
+
+function usedPorts (excludeId = null) {
+  const ports = new Set()
+  for (const c of configs.value) {
+    if (excludeId != null && c.id === excludeId) continue
+    const p = Number(c.listen_port)
+    if (Number.isInteger(p)) ports.add(p)
+  }
+  return ports
+}
+
+function nextFreeSubnet () {
+  const used = usedSubnetKeys()
+  for (let third = 66; third <= 254; third++) {
+    const cidr = `10.66.${third}.0/24`
+    if (!used.has(cidr)) return cidr
+  }
+  for (let second = 67; second <= 254; second++) {
+    for (let third = 0; third <= 254; third++) {
+      const cidr = `10.${second}.${third}.0/24`
+      if (!used.has(cidr)) return cidr
+    }
+  }
+  return '10.66.66.0/24'
+}
+
+function nextFreePort () {
+  const used = usedPorts()
+  for (let p = PORT_MIN; p <= PORT_MAX; p++) {
+    if (!used.has(p)) return p
+  }
+  return PORT_MIN
+}
+
+function subnetValidationError (cidr, excludeId = null) {
+  const parsed = parseCidr(cidr)
+  if (!parsed) return t('configs.invalidSubnet')
+  if (usedSubnetKeys(excludeId).has(parsed.key)) {
+    return t('configs.subnetTaken', { subnet: parsed.key })
+  }
+  return null
+}
+
+function portValidationError (port, excludeId = null) {
+  const p = Number(port)
+  if (!Number.isInteger(p) || p < PORT_MIN || p > PORT_MAX) {
+    return t('configs.invalidPort', { min: PORT_MIN, max: PORT_MAX })
+  }
+  if (usedPorts(excludeId).has(p)) {
+    return t('configs.portTaken', { port: p })
+  }
+  return null
+}
+
+const subnetFieldError = computed(() => {
+  if (!formOpen.value) return null
+  return subnetValidationError(form.internal_subnet, editingId.value)
+})
+
+const portFieldError = computed(() => {
+  if (!formOpen.value) return null
+  return portValidationError(form.listen_port, editingId.value)
+})
+
 function resetForm () {
   form.name = ''
-  form.type = 'virtual_network'
+  form.type = 'server'
   form.vn_policy = 'allow_all'
-  form.internal_subnet = '10.66.66.0/24'
+  form.internal_subnet = nextFreeSubnet()
   form.server_address = ''
-  form.listen_port = 51820
+  form.listen_port = nextFreePort()
   form.peer_dns = '1.1.1.1'
   form.client_allowed_ips = '0.0.0.0/0, ::/0'
   form.persistent_keepalive = 25
@@ -1182,7 +1288,7 @@ function generateJunk () {
 
   $q.notify({
     type: 'info',
-    message: 'Новые параметры обфускации сгенерированы. Они применятся после «Сохранить», затем всем peer нужно заново скачать конфиги.'
+    message: t('configs.obfuscationGenerated')
   })
 }
 
@@ -1199,27 +1305,39 @@ async function copyPath (path) {
   if (!path) return
   try {
     await copyText(path)
-    $q.notify({ type: 'positive', message: 'Путь скопирован' })
+    $q.notify({ type: 'positive', message: t('configs.pathCopied') })
   } catch {
-    $q.notify({ type: 'negative', message: 'Не удалось скопировать' })
+    $q.notify({ type: 'negative', message: t('common.copyFailed') })
   }
 }
 
 async function saveConfig () {
+  const subnetErr = subnetValidationError(form.internal_subnet, editingId.value)
+  if (subnetErr) {
+    $q.notify({ type: 'warning', message: subnetErr })
+    return
+  }
+  const portErr = portValidationError(form.listen_port, editingId.value)
+  if (portErr) {
+    $q.notify({ type: 'warning', message: portErr })
+    return
+  }
   saving.value = true
   try {
     const payload = { ...form }
     if (editingId.value) {
       await api.put(`/api/configs/${editingId.value}`, payload)
-      $q.notify({ type: 'positive', message: 'Конфиг обновлён' })
+      $q.notify({ type: 'positive', message: t('configs.configUpdated') })
     } else {
       await api.post('/api/configs', payload)
-      $q.notify({ type: 'positive', message: 'Конфиг создан' })
+      $q.notify({ type: 'positive', message: t('configs.configCreated') })
     }
     formOpen.value = false
     await load()
   } catch (e) {
-    $q.notify({ type: 'negative', message: e?.response?.data?.message || 'Ошибка сохранения' })
+    const errors = e?.response?.data?.errors
+    const fieldMsg = errors?.internal_subnet?.[0] || errors?.listen_port?.[0]
+    $q.notify({ type: 'negative', message: fieldMsg || e?.response?.data?.message || t('common.saveError') })
   } finally {
     saving.value = false
   }
@@ -1227,8 +1345,8 @@ async function saveConfig () {
 
 async function remove (row) {
   $q.dialog({
-    title: 'Удалить конфиг',
-    message: `Удалить ${row.name}? Все привязки peer будут удалены.`,
+    title: t('configs.deleteConfigTitle'),
+    message: t('configs.deleteConfigConfirm', { name: row.name }),
     cancel: true,
     persistent: true,
   }).onOk(async () => {
@@ -1264,7 +1382,7 @@ function beginAttachToConfig (config, client) {
 
 function openAttachUnattached (client) {
   if (!configs.value.length) {
-    $q.notify({ type: 'warning', message: 'Сначала создайте конфиг' })
+    $q.notify({ type: 'warning', message: t('configs.createConfigFirst') })
     return
   }
   attachClient.value = client
@@ -1308,7 +1426,7 @@ async function savePeer () {
     if (config.type === 'virtual_network') {
       const subnet = String(peerForm.local_subnet).trim()
       if (!subnet) {
-        $q.notify({ type: 'negative', message: 'Укажите локальный IP адрес подсети' })
+        $q.notify({ type: 'negative', message: t('configs.specifyLocalSubnetIp') })
         return
       }
       extraAllowedIps = [subnet]
@@ -1330,10 +1448,10 @@ async function savePeer () {
         comment: peerForm.comment || null
       })
       await api.put(`/api/configs/${config.id}/peers/${editingPeerId.value}`, membershipPayload)
-      $q.notify({ type: 'positive', message: 'Peer обновлён' })
+      $q.notify({ type: 'positive', message: t('configs.peerUpdated') })
     } else if (peerForm.mode === 'new') {
       if (!peerForm.name.trim()) {
-        $q.notify({ type: 'negative', message: 'Укажите имя peer' })
+        $q.notify({ type: 'negative', message: t('configs.specifyPeerName') })
         return
       }
       const { data } = await api.post('/api/clients', {
@@ -1344,17 +1462,17 @@ async function savePeer () {
         ...membershipPayload,
         vpn_client_id: data.client.id
       })
-      $q.notify({ type: 'positive', message: 'Peer создан и привязан' })
+      $q.notify({ type: 'positive', message: t('configs.peerCreatedAndAttached') })
     } else {
       if (!peerForm.vpn_client_id) {
-        $q.notify({ type: 'negative', message: 'Выберите peer' })
+        $q.notify({ type: 'negative', message: t('configs.selectPeer') })
         return
       }
       await api.post(`/api/configs/${config.id}/peers`, {
         ...membershipPayload,
         vpn_client_id: peerForm.vpn_client_id
       })
-      $q.notify({ type: 'positive', message: 'Peer привязан' })
+      $q.notify({ type: 'positive', message: t('configs.peerAttached') })
     }
 
     peerFormOpen.value = false
@@ -1364,7 +1482,7 @@ async function savePeer () {
     }
     await Promise.all(tasks)
   } catch (e) {
-    $q.notify({ type: 'negative', message: e?.response?.data?.message || 'Ошибка' })
+    $q.notify({ type: 'negative', message: e?.response?.data?.message || t('common.error') })
   } finally {
     peerSaving.value = false
   }
@@ -1391,7 +1509,7 @@ async function togglePeer (config, row, enabled) {
     loadPeers(config.id, true)
   } catch (e) {
     row.enabled = prev
-    $q.notify({ type: 'negative', message: e?.response?.data?.message || 'Не удалось изменить статус peer' })
+    $q.notify({ type: 'negative', message: e?.response?.data?.message || t('configs.togglePeerError') })
   } finally {
     peerToggling.delete(key)
   }
@@ -1399,8 +1517,8 @@ async function togglePeer (config, row, enabled) {
 
 async function detachPeer (config, row) {
   $q.dialog({
-    title: 'Отвязать peer',
-    message: `Отвязать ${row.name} от конфига ${config.name}? Peer останется в системе.`,
+    title: t('configs.detachPeerTitle'),
+    message: t('configs.detachPeerConfirm', { name: row.name, config: config.name }),
     cancel: true,
     persistent: true,
   }).onOk(async () => {
@@ -1411,8 +1529,8 @@ async function detachPeer (config, row) {
 
 async function deletePeer (row) {
   $q.dialog({
-    title: 'Удалить peer',
-    message: `Удалить ${row.name} полностью? Все привязки к конфигам будут удалены.`,
+    title: t('configs.deletePeerTitle'),
+    message: t('configs.deletePeerConfirm', { name: row.name }),
     cancel: true,
     persistent: true,
   }).onOk(async () => {
@@ -1455,7 +1573,7 @@ async function showServerConf (row) {
     serverConfText.value = typeof data === 'string' ? data : String(data ?? '')
   } catch (e) {
     serverConfOpen.value = false
-    $q.notify({ type: 'negative', message: e?.response?.data?.message || 'Не удалось загрузить конфиг' })
+    $q.notify({ type: 'negative', message: e?.response?.data?.message || t('configs.loadConfigError') })
   } finally {
     serverConfLoading.value = false
   }
@@ -1465,9 +1583,9 @@ async function copyServerConf () {
   if (!serverConfText.value) return
   try {
     await copyText(serverConfText.value)
-    $q.notify({ type: 'positive', message: 'Конфиг скопирован' })
+    $q.notify({ type: 'positive', message: t('configs.configCopied') })
   } catch {
-    $q.notify({ type: 'negative', message: 'Не удалось скопировать' })
+    $q.notify({ type: 'negative', message: t('common.copyFailed') })
   }
 }
 

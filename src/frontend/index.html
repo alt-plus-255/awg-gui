@@ -10,13 +10,13 @@
     <link
       rel="preload"
       as="style"
-      href="https://fonts.googleapis.com/css2?family=VT323&family=Exo+2:wght@400;500;600&family=Share+Tech+Mono&family=Oswald:wght@400;500;600&family=Roboto+Mono:wght@400;500&display=swap"
+      href="https://fonts.googleapis.com/css2?family=VT323&family=Exo+2:wght@400;500;600&family=Share+Tech+Mono&family=Oswald:wght@400;500;600&family=Roboto+Mono:wght@400;500&family=Orbitron:wght@400;500;600&family=Russo+One&display=swap"
       onload="this.onload=null;this.rel='stylesheet'"
     />
     <noscript>
       <link
         rel="stylesheet"
-        href="https://fonts.googleapis.com/css2?family=VT323&family=Exo+2:wght@400;500;600&family=Share+Tech+Mono&family=Oswald:wght@400;500;600&family=Roboto+Mono:wght@400;500&display=swap"
+        href="https://fonts.googleapis.com/css2?family=VT323&family=Exo+2:wght@400;500;600&family=Share+Tech+Mono&family=Oswald:wght@400;500;600&family=Roboto+Mono:wght@400;500&family=Orbitron:wght@400;500;600&family=Russo+One&display=swap"
       />
     </noscript>
     <link rel="icon" href="/favicon.ico" sizes="any" />
@@ -33,19 +33,23 @@
     <script>
       (function () {
         try {
-          var validStyles = ['classic', 'crt', 'ds', 'sa']
+          var validStyles = ['classic', 'crt', 'ds', 'sa', 'ck', 'ah']
           var validModes = ['dark', 'light', 'system', 'auto']
           var bgMap = {
             classic: { dark: '#0d1117', light: '#ffffff' },
             crt: { dark: '#010a05', light: '#f4fff7' },
             ds: { dark: '#0c0e10', light: '#eef2f4' },
-            sa: { dark: '#0f0c08', light: '#faf8f4' }
+            sa: { dark: '#0f0c08', light: '#faf8f4' },
+            ck: { dark: '#0a0014', light: '#f4f0f8' },
+            ah: { dark: '#1a1210', light: '#f7f1e6' }
           }
           var textMap = {
             classic: { dark: '#e6edf3', light: '#1f2328' },
             crt: { dark: '#b8ffc8', light: '#0a3d18' },
             ds: { dark: '#d4cfc4', light: '#1a2228' },
-            sa: { dark: '#f0e6d0', light: '#2a2418' }
+            sa: { dark: '#f0e6d0', light: '#2a2418' },
+            ck: { dark: '#e8e0f0', light: '#1a1028' },
+            ah: { dark: '#f2e6d0', light: '#2a1c14' }
           }
 
           var styleId = localStorage.getItem('awg-style') || localStorage.getItem('awg-theme') || 'classic'

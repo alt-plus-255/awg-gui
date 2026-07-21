@@ -61,7 +61,7 @@ class ResolverSettingsController extends Controller
     {
         $tag = trim($tag);
         if ($tag === '') {
-            return response()->json(['message' => 'Пустой tag'], 422);
+            return response()->json(['message' => __('resolver.empty_tag')], 422);
         }
 
         try {

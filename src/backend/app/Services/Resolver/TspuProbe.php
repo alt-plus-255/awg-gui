@@ -40,7 +40,7 @@ class TspuProbe
             return $this->pack(
                 status: 'skipped',
                 tspuLikely: false,
-                detail: 'Нет server/port в outbound',
+                detail: __('resolver.tspu_no_server_port'),
                 controlOk: false,
                 tcpOk: false,
                 tlsResponse: false,
@@ -57,7 +57,7 @@ class TspuProbe
             return $this->pack(
                 status: 'ok',
                 tspuLikely: false,
-                detail: 'Прокси отвечает — блокировки ТСПУ не видно',
+                detail: __('resolver.tspu_proxy_ok'),
                 controlOk: true,
                 tcpOk: true,
                 tlsResponse: true,
@@ -76,7 +76,7 @@ class TspuProbe
             return $this->pack(
                 status: 'uncertain',
                 tspuLikely: false,
-                detail: "Не удалось резолвить {$server}",
+                detail: __('resolver.tspu_resolve_failed', ['server' => $server]),
                 controlOk: $controlOk,
                 tcpOk: false,
                 tlsResponse: false,
@@ -95,8 +95,8 @@ class TspuProbe
                 status: 'tcp_fail',
                 tspuLikely: false,
                 detail: $controlOk
-                    ? "Обрыв на TCP: до {$server} ({$ip}:{$port}) не достучались — хост/фаервол/блок IP"
-                    : "Обрыв на TCP до {$server} ({$ip}:{$port}); исходящий интернет с GUI-сервера тоже плохой",
+                    ? __('resolver.tspu_tcp_fail_host', ['server' => $server, 'ip' => $ip, 'port' => $port])
+                    : __('resolver.tspu_tcp_fail_egress', ['server' => $server, 'ip' => $ip, 'port' => $port]),
                 controlOk: $controlOk,
                 tcpOk: false,
                 tlsResponse: false,
@@ -115,8 +115,8 @@ class TspuProbe
                 status: 'tls_ok_proxy_fail',
                 tspuLikely: false,
                 detail: $isReality
-                    ? "Обрыв на VLESS: TLS до {$ip}:{$port} отвечает, Reality/VLESS не поднялся — uuid/pbk/sid/flow/SNI"
-                    : "Обрыв на прокси: TCP/TLS до {$ip}:{$port} живы, outbound не отвечает",
+                    ? __('resolver.tspu_vless_fail', ['ip' => $ip, 'port' => $port])
+                    : __('resolver.tspu_proxy_fail', ['ip' => $ip, 'port' => $port]),
                 controlOk: $controlOk,
                 tcpOk: true,
                 tlsResponse: true,
@@ -134,8 +134,8 @@ class TspuProbe
                 status: 'tspu_likely',
                 tspuLikely: true,
                 detail: $isReality
-                    ? "Обрыв на TLS/Reality: TCP до {$ip}:{$port} OK, ClientHello без ответа — типичный DPI ТСПУ"
-                    : "Обрыв на TLS: TCP до {$ip}:{$port} OK, ClientHello без ответа — похоже на ТСПУ/DPI",
+                    ? __('resolver.tspu_tls_dpi', ['ip' => $ip, 'port' => $port])
+                    : __('resolver.tspu_tls_dpi_generic', ['ip' => $ip, 'port' => $port]),
                 controlOk: true,
                 tcpOk: true,
                 tlsResponse: false,
@@ -151,7 +151,7 @@ class TspuProbe
         return $this->pack(
             status: 'uncertain',
             tspuLikely: false,
-            detail: "TCP до {$ip}:{$port} OK, TLS молчит; контроль интернета с GUI-сервера тоже плохой",
+            detail: __('resolver.tspu_tls_silent_egress_bad', ['ip' => $ip, 'port' => $port]),
             controlOk: false,
             tcpOk: true,
             tlsResponse: false,
@@ -200,29 +200,31 @@ class TspuProbe
         $chain = [
             [
                 'id' => 'control',
-                'label' => 'Интернет',
+                'label' => __('resolver.tspu_label_internet'),
                 'ok' => $status === 'skipped' ? null : $controlOk,
-                'note' => $controlOk ? 'GUI → 1.1.1.1 OK' : 'GUI без исходящего интернета',
+                'note' => $controlOk ? __('resolver.tspu_control_ok') : __('resolver.tspu_control_fail'),
             ],
             [
                 'id' => 'dns',
                 'label' => 'DNS',
                 'ok' => $status === 'skipped' ? null : ($ip !== null),
-                'note' => $ip ? (($server && $server !== $ip) ? "{$server} → {$ip}" : $ip) : 'резолв не удался',
+                'note' => $ip ? (($server && $server !== $ip) ? "{$server} → {$ip}" : $ip) : __('resolver.tspu_resolve_failed_short'),
             ],
             [
                 'id' => 'tcp',
                 'label' => 'TCP',
                 'ok' => $status === 'skipped' || $ip === null ? null : $tcpOk,
-                'note' => $tcpOk ? "SYN/ACK {$endpoint}" : "нет TCP до {$endpoint}",
+                'note' => $tcpOk ? "SYN/ACK {$endpoint}" : __('resolver.tspu_no_tcp', ['endpoint' => $endpoint]),
             ],
             [
                 'id' => 'tls',
                 'label' => 'TLS',
                 'ok' => (! $tcpOk || $status === 'skipped') ? null : $tlsResponse,
                 'note' => $tlsResponse
-                    ? 'ответ на ClientHello'
-                    : ($tcpOk ? 'ClientHello без ответа'.($tspuLikely ? ' ← ТСПУ' : '') : 'не проверяли'),
+                    ? __('resolver.tspu_clienthello_ok')
+                    : ($tcpOk
+                        ? ($tspuLikely ? __('resolver.tspu_clienthello_no_reply_tspu') : __('resolver.tspu_clienthello_no_reply'))
+                        : __('resolver.tspu_not_checked')),
             ],
             [
                 'id' => 'proxy',
@@ -230,7 +232,9 @@ class TspuProbe
                 'ok' => $status === 'ok' ? true : (($tcpOk && $tlsResponse) || $status === 'tls_ok_proxy_fail' ? $proxyOk : null),
                 'note' => $proxyOk
                     ? 'delay OK'
-                    : ($tlsResponse ? 'прокси не ответил' : ($tspuLikely ? 'не дошли (обрыв на TLS)' : 'не проверяли / fail')),
+                    : ($tlsResponse
+                        ? __('resolver.tspu_proxy_no_reply')
+                        : ($tspuLikely ? __('resolver.tspu_did_not_reach_tls') : __('resolver.tspu_not_checked_fail'))),
             ],
         ];
 

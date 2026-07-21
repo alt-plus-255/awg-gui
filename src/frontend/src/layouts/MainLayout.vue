@@ -8,7 +8,7 @@
           round
           icon="menu"
           class="lt-md q-mr-sm"
-          aria-label="Меню"
+          :aria-label="t('common.menu')"
           @click="drawerOpen = !drawerOpen"
         />
 
@@ -25,11 +25,11 @@
           align="left"
           active-color="primary"
           indicator-color="primary"
-          class="text-muted-theme gt-sm desktop-nav-tabs"
+          class="gt-sm desktop-nav-tabs"
           inline-label
         >
-          <q-route-tab name="dashboard" label="Дашборд" :to="{ name: 'dashboard' }" exact />
-          <q-route-tab name="configs" label="Конфиги и пиры" :to="{ name: 'configs' }" />
+          <q-route-tab name="dashboard" :label="t('nav.dashboard')" :to="{ name: 'dashboard' }" exact />
+          <q-route-tab name="configs" :label="t('nav.configs')" :to="{ name: 'configs' }" />
 
           <q-btn-dropdown
             flat
@@ -37,8 +37,8 @@
             no-caps
             stretch
             :ripple="false"
-            :label="'Резолвер'"
-            :class="['resolver-menu-btn', resolverMenuActive ? 'resolver-menu-btn--active text-primary' : 'text-muted-theme']"
+            :label="t('nav.resolver')"
+            :class="['resolver-menu-btn', resolverMenuActive ? 'resolver-menu-btn--active text-primary' : '']"
             content-class="resolver-dropdown surface-panel"
             menu-anchor="bottom middle"
             menu-self="top middle"
@@ -56,8 +56,8 @@
                   <q-icon name="alt_route" size="18px" />
                 </q-item-section>
                 <q-item-section>
-                  <q-item-label>Резолвер</q-item-label>
-                  <q-item-label caption class="text-grey-5">Точечный обход</q-item-label>
+                  <q-item-label>{{ t('nav.resolver') }}</q-item-label>
+                  <q-item-label caption class="text-grey-5">{{ t('nav.resolverCaption') }}</q-item-label>
                 </q-item-section>
               </q-item>
 
@@ -75,8 +75,8 @@
                   <q-icon name="cable" size="18px" />
                 </q-item-section>
                 <q-item-section>
-                  <q-item-label>Подключения</q-item-label>
-                  <q-item-label caption class="text-grey-5">Точки VPN / прокси</q-item-label>
+                  <q-item-label>{{ t('nav.connections') }}</q-item-label>
+                  <q-item-label caption class="text-grey-5">{{ t('nav.connectionsCaption') }}</q-item-label>
                 </q-item-section>
               </q-item>
 
@@ -94,8 +94,8 @@
                   <q-icon name="troubleshoot" size="18px" />
                 </q-item-section>
                 <q-item-section>
-                  <q-item-label>Диагностика</q-item-label>
-                  <q-item-label caption class="text-grey-5">Проверка резолвера</q-item-label>
+                  <q-item-label>{{ t('nav.diagnostics') }}</q-item-label>
+                  <q-item-label caption class="text-grey-5">{{ t('nav.diagnosticsCaption') }}</q-item-label>
                 </q-item-section>
               </q-item>
 
@@ -111,14 +111,14 @@
                   <q-icon name="tune" size="18px" />
                 </q-item-section>
                 <q-item-section>
-                  <q-item-label>Настройки</q-item-label>
-                  <q-item-label caption class="text-grey-5">Списки и sync</q-item-label>
+                  <q-item-label>{{ t('nav.resolverSettings') }}</q-item-label>
+                  <q-item-label caption class="text-grey-5">{{ t('nav.resolverSettingsCaption') }}</q-item-label>
                 </q-item-section>
               </q-item>
             </q-list>
           </q-btn-dropdown>
 
-          <q-route-tab name="settings" label="Настройки" :to="{ name: 'settings' }" />
+          <q-route-tab name="settings" :label="t('nav.settings')" :to="{ name: 'settings' }" />
         </q-tabs>
 
         <q-space />
@@ -127,7 +127,7 @@
           v-if="showLiveInterval"
           v-model="liveInterval"
           :options="intervalOptions"
-          label="Интервал"
+          :label="t('nav.liveInterval')"
           emit-value
           map-options
           dense
@@ -135,7 +135,7 @@
           class="q-mr-sm live-interval-select"
           @update:model-value="onLiveIntervalChange"
         >
-          <q-tooltip>Интервал Live Fetch</q-tooltip>
+          <q-tooltip>{{ t('nav.liveIntervalTooltip') }}</q-tooltip>
         </q-select>
 
         <q-badge
@@ -148,9 +148,10 @@
           <q-tooltip>{{ liveStatus.hint }}</q-tooltip>
         </q-badge>
 
+        <LanguageSwitcher class="q-mr-sm" :compact="$q.screen.lt.md" />
         <ThemeSwitcher class="q-mr-sm" :compact="$q.screen.lt.md" />
         <div class="q-mr-md text-caption text-grey-5 gt-sm">{{ auth.user?.username }}</div>
-        <q-btn flat dense icon="logout" label="Выход" class="gt-sm" @click="onLogout" />
+        <q-btn flat dense icon="logout" :label="t('nav.logout')" class="gt-sm" @click="onLogout" />
       </q-toolbar>
     </q-header>
 
@@ -163,7 +164,7 @@
       class="surface-panel mobile-nav-drawer"
     >
       <q-list padding>
-        <q-item-label header class="text-grey-5">Навигация</q-item-label>
+        <q-item-label header class="text-grey-5">{{ t('nav.navigation') }}</q-item-label>
 
         <q-item
           v-for="item in mainNavItems"
@@ -181,7 +182,7 @@
         </q-item>
 
         <q-separator class="q-my-sm" />
-        <q-item-label header class="text-grey-5">Резолвер</q-item-label>
+        <q-item-label header class="text-grey-5">{{ t('nav.resolver') }}</q-item-label>
 
         <q-item
           v-for="item in resolverNavItems"
@@ -207,7 +208,11 @@
           <q-item-section avatar>
             <q-icon name="logout" />
           </q-item-section>
-          <q-item-section>Выход{{ auth.user?.username ? ` (${auth.user.username})` : '' }}</q-item-section>
+          <q-item-section>
+            {{ auth.user?.username
+              ? t('nav.logoutWithUser', { username: auth.user.username })
+              : t('nav.logout') }}
+          </q-item-section>
         </q-item>
       </q-list>
     </q-drawer>
@@ -226,6 +231,7 @@
 
 <script setup>
 import { computed, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useSettingsStore } from '@/stores/settings'
@@ -237,8 +243,10 @@ import {
   useLiveStatsState
 } from '@/composables/useLiveStats'
 import ThemeSwitcher from '@/components/ThemeSwitcher.vue'
+import LanguageSwitcher from '@/components/LanguageSwitcher.vue'
 import SystemBootOverlay from '@/components/SystemBootOverlay.vue'
 
+const { t } = useI18n()
 const auth = useAuthStore()
 const settingsStore = useSettingsStore()
 const systemStore = useSystemStore()
@@ -249,7 +257,7 @@ const route = useRoute()
 useAppBootstrap()
 
 const drawerOpen = ref(false)
-const intervalOptions = getLiveIntervalOptions()
+const intervalOptions = computed(() => getLiveIntervalOptions(t))
 const liveInterval = ref(liveState.intervalMs)
 
 const showLiveInterval = computed(() =>
@@ -267,73 +275,73 @@ function onLiveIntervalChange (ms) {
 const liveStatus = computed(() => {
   if (liveState.failed) {
     return {
-      label: 'Live ошибка',
+      label: t('nav.liveError'),
       color: 'negative',
       outline: false,
-      hint: 'Обновление статистики остановлено после ошибок'
+      hint: t('nav.liveErrorHint')
     }
   }
   if (!liveState.active) return null
   if (liveState.transport === 'ws') {
     return {
-      label: 'Live WS',
+      label: t('nav.liveWs'),
       color: 'positive',
       outline: false,
-      hint: 'Статистика обновляется через WebSocket'
+      hint: t('nav.liveWsHint')
     }
   }
   if (liveState.transport === 'http') {
     return {
-      label: 'Live Fetch',
+      label: t('nav.liveFetch'),
       color: 'warning',
       outline: false,
-      hint: 'WebSocket недоступен, используется HTTP polling'
+      hint: t('nav.liveFetchHint')
     }
   }
   return {
-    label: 'Live…',
+    label: t('nav.liveConnecting'),
     color: 'grey-6',
     outline: true,
-    hint: 'Подключение к каналу обновлений'
+    hint: t('nav.liveConnectingHint')
   }
 })
 
-const mainNavItems = [
-  { name: 'dashboard', label: 'Дашборд', icon: 'dashboard', to: { name: 'dashboard' } },
-  { name: 'configs', label: 'Конфиги и пиры', icon: 'vpn_key', to: { name: 'configs' } },
-  { name: 'settings', label: 'Настройки', icon: 'settings', to: { name: 'settings' } }
-]
+const mainNavItems = computed(() => [
+  { name: 'dashboard', label: t('nav.dashboard'), icon: 'dashboard', to: { name: 'dashboard' } },
+  { name: 'configs', label: t('nav.configs'), icon: 'vpn_key', to: { name: 'configs' } },
+  { name: 'settings', label: t('nav.settings'), icon: 'settings', to: { name: 'settings' } }
+])
 
-const resolverNavItems = [
+const resolverNavItems = computed(() => [
   {
     name: 'resolver',
-    label: 'Резолвер',
-    caption: 'Точечный обход',
+    label: t('nav.resolver'),
+    caption: t('nav.resolverCaption'),
     icon: 'alt_route',
     to: { name: 'resolver' }
   },
   {
     name: 'resolver-connections',
-    label: 'Подключения',
-    caption: 'Точки VPN / прокси',
+    label: t('nav.connections'),
+    caption: t('nav.connectionsCaption'),
     icon: 'cable',
     to: { name: 'resolver-connections' }
   },
   {
     name: 'diagnostics',
-    label: 'Диагностика',
-    caption: 'Проверка резолвера',
+    label: t('nav.diagnostics'),
+    caption: t('nav.diagnosticsCaption'),
     icon: 'troubleshoot',
     to: { name: 'diagnostics' }
   },
   {
     name: 'resolver-settings',
-    label: 'Настройки',
-    caption: 'Списки и sync',
+    label: t('nav.resolverSettings'),
+    caption: t('nav.resolverSettingsCaption'),
     icon: 'tune',
     to: { name: 'resolver-settings' }
   }
-]
+])
 
 const resolverMenuActive = computed(() =>
   ['resolver', 'resolver-connections', 'diagnostics', 'resolver-settings'].includes(route.name)

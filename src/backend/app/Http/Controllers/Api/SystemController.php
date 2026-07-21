@@ -22,11 +22,11 @@ class SystemController extends Controller
 
         $messages = [];
         if (! $awgRunning) {
-            $messages[] = 'Контейнер AmneziaWG не запущен';
+            $messages[] = __('system.awg_not_running');
         } elseif (! $statsAvailable) {
-            $messages[] = 'Статистика AWG недоступна (docker exec)';
+            $messages[] = __('system.awg_stats_unavailable');
         } else {
-            $messages[] = 'AmneziaWG работает';
+            $messages[] = __('system.awg_ok');
         }
 
         return response()->json([
@@ -65,7 +65,7 @@ class SystemController extends Controller
             return response()->json([
                 'ok' => false,
                 'already_restarting' => true,
-                'message' => 'Перезапуск AWG уже выполняется',
+                'message' => __('api.awg_restart_already_running'),
                 'details' => $result,
             ], 409);
         }
@@ -73,14 +73,14 @@ class SystemController extends Controller
         if (! $result['ok']) {
             return response()->json([
                 'ok' => false,
-                'message' => 'Не удалось перезапустить контейнер AmneziaWG',
+                'message' => __('api.awg_restart_failed'),
                 'details' => $result,
             ], 500);
         }
 
         return response()->json([
             'ok' => true,
-            'message' => 'Контейнер AmneziaWG перезапущен, конфиги применены',
+            'message' => __('api.awg_restart_ok'),
             'details' => $result,
         ]);
     }
@@ -95,7 +95,7 @@ class SystemController extends Controller
 
         return response()->json([
             'ok' => true,
-            'message' => 'Перезапуск служб запущен (AWG, Caddy). Панель может быть недоступна несколько секунд.',
+            'message' => __('system.restart_all_started'),
         ]);
     }
 }

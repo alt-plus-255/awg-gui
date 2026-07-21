@@ -87,6 +87,7 @@ Route::put('/resolver/custom-lists/{customList}', [ResolverCustomListController:
 Route::delete('/resolver/custom-lists/{customList}', [ResolverCustomListController::class, 'destroy']);
 
 Route::get('/resolver/connections', [ResolverConnectionController::class, 'index']);
+Route::get('/resolver/ping-session', [ResolverConnectionController::class, 'pingSession']);
 Route::post('/resolver/ping-probe/warmup', [ResolverConnectionController::class, 'warmupPingProbe']);
 Route::post('/resolver/ping-probe/restart', [ResolverConnectionController::class, 'restartPingProbe']);
 Route::post('/resolver/connections/parse-subscription', [ResolverConnectionController::class, 'parseSubscription']);

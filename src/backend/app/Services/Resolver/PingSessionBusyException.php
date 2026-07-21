@@ -8,6 +8,6 @@ class PingSessionBusyException extends RuntimeException
 {
     public function __construct()
     {
-        parent::__construct('Проверка пинга уже выполняется — подождите');
+        parent::__construct(__('resolver.ping_already_running'));
     }
 }

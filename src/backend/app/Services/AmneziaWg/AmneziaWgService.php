@@ -310,27 +310,27 @@ class AmneziaWgService
 
         if ($publicHost === '' || $publicHost === 'auto') {
             throw new \InvalidArgumentException(
-                'Для проверки домена укажите конкретный публичный IPv4 сервера (не auto).'
+                __('settings.domain_check_need_public_ipv4')
             );
         }
 
         if (! filter_var($publicHost, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
             throw new \InvalidArgumentException(
-                'Публичный IP сервера должен быть IPv4-адресом для сопоставления с доменом.'
+                __('settings.public_ip_must_be_ipv4')
             );
         }
 
         $resolved = $this->resolveIpv4Addresses($domain);
         if ($resolved === []) {
             throw new \InvalidArgumentException(
-                "Домен «{$domain}» не резолвится в A-запись (IPv4)."
+                __('settings.domain_no_a_record', ['domain' => $domain])
             );
         }
 
         if (! in_array($publicHost, $resolved, true)) {
             $got = implode(', ', $resolved);
             throw new \InvalidArgumentException(
-                "Домен «{$domain}» указывает на {$got}, а не на публичный IP панели {$publicHost}."
+                __('settings.domain_points_elsewhere', ['domain' => $domain, 'got' => $got, 'host' => $publicHost])
             );
         }
     }
@@ -524,7 +524,13 @@ class AmneziaWgService
         }
 
         if ($config->isResolverEnabled()) {
-            // Full tunnel to VDS: non-list traffic MASQUERADE → VDS IP (e.g. 2ip.ru).
+            if ($config->isClientSplitResolver()) {
+                // Split-tunnel: only FakeIP + gateway (+ user_subnets) in client AllowedIPs.
+                // Community ip_cidr stay on VDS (MARK/sing-box); not in peer .conf.
+                return app(ResolverService::class)->clientSplitAllowedIps($config);
+            }
+
+            // vds_split (default): full tunnel to VDS — non-list MASQUERADE → VDS IP.
             // List domains use FakeIP → sing-box → user VPN. Never put list CIDRs here.
             return ['0.0.0.0/0', '::/0'];
         }
@@ -640,7 +646,7 @@ class AmneziaWgService
     public function nextClientAddress(AwgConfig $config): string
     {
         if (! preg_match('#^(\d+\.\d+\.\d+)\.(\d+)/(\d+)$#', $config->internal_subnet, $m)) {
-            throw new RuntimeException('Неверный internal_subnet');
+            throw new RuntimeException(__('configs.invalid_internal_subnet'));
         }
         $prefix = $m[1];
         $used = AwgConfigPeer::query()
@@ -662,24 +668,43 @@ class AmneziaWgService
             }
         }
 
-        throw new RuntimeException('Нет свободных адресов в подсети');
+        throw new RuntimeException(__('configs.no_free_addresses'));
     }
 
     /** @return array{iface:string,listen_port:int} */
     public function allocateIfaceAndPort(): array
     {
+        return [
+            'iface' => $this->allocateIface(),
+            'listen_port' => $this->nextFreeListenPort(),
+        ];
+    }
+
+    public function allocateIface(): string
+    {
         $usedIfaces = AwgConfig::query()->pluck('iface')->all();
-        $usedPorts = AwgConfig::query()->pluck('listen_port')->map(fn ($p) => (int) $p)->all();
 
         for ($i = 0; $i <= self::PORT_MAX - self::PORT_MIN; $i++) {
             $iface = 'awg'.$i;
-            $port = self::PORT_MIN + $i;
-            if (! in_array($iface, $usedIfaces, true) && ! in_array($port, $usedPorts, true)) {
-                return ['iface' => $iface, 'listen_port' => $port];
+            if (! in_array($iface, $usedIfaces, true)) {
+                return $iface;
             }
         }
 
-        throw new RuntimeException('Достигнут лимит конфигов ('.(self::PORT_MAX - self::PORT_MIN + 1).')');
+        throw new RuntimeException(__('configs.config_limit_reached', ['count' => self::PORT_MAX - self::PORT_MIN + 1]));
+    }
+
+    public function nextFreeListenPort(): int
+    {
+        $usedPorts = AwgConfig::query()->pluck('listen_port')->map(fn ($p) => (int) $p)->all();
+
+        for ($port = self::PORT_MIN; $port <= self::PORT_MAX; $port++) {
+            if (! in_array($port, $usedPorts, true)) {
+                return $port;
+            }
+        }
+
+        throw new RuntimeException(__('configs.config_limit_reached', ['count' => self::PORT_MAX - self::PORT_MIN + 1]));
     }
 
     public function buildServerConfig(AwgConfig $config): string
@@ -1254,16 +1279,16 @@ class AmneziaWgService
     {
         foreach (['HTTP' => $httpPort, 'HTTPS' => $httpsPort] as $label => $port) {
             if (! ctype_digit((string) $port)) {
-                throw new \InvalidArgumentException("Порт {$label} должен быть числом.");
+                throw new \InvalidArgumentException(__('settings.port_must_be_number', ['label' => $label]));
             }
             $n = (int) $port;
             if ($n < 1 || $n > 65535) {
-                throw new \InvalidArgumentException("Порт {$label} должен быть в диапазоне 1–65535.");
+                throw new \InvalidArgumentException(__('settings.port_out_of_range', ['label' => $label]));
             }
         }
 
         if ((int) $httpPort === (int) $httpsPort) {
-            throw new \InvalidArgumentException('Порты HTTP и HTTPS панели должны отличаться.');
+            throw new \InvalidArgumentException(__('settings.http_https_ports_must_differ'));
         }
     }
 

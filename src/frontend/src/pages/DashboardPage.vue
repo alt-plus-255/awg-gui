@@ -3,10 +3,10 @@
     <div class="page-wrap">
       <div class="row items-center q-mb-md no-wrap">
         <div class="col">
-          <div class="text-h5">Дашборд</div>
+          <div class="text-h5">{{ t('dashboard.title') }}</div>
         </div>
         <div class="col-auto lt-md">
-          <q-btn flat dense icon="refresh" label="Обновить" @click="refreshFromDocker" :loading="refreshing" />
+          <q-btn flat dense icon="refresh" :label="t('common.refresh')" @click="refreshFromDocker" :loading="refreshing" />
         </div>
       </div>
 
@@ -15,7 +15,7 @@
           <q-select
             v-model="filterConfigId"
             :options="configOptions"
-            label="Конфиг"
+            :label="t('dashboard.configFilter')"
             emit-value
             map-options
 
@@ -30,13 +30,13 @@
         </div>
         <div class="col-12 col-md-auto gt-sm">
           <div class="row items-center no-wrap justify-end">
-            <q-btn flat icon="refresh" label="Обновить" class="q-mr-sm" @click="refreshFromDocker" :loading="refreshing" />
+            <q-btn flat icon="refresh" :label="t('common.refresh')" class="q-mr-sm" @click="refreshFromDocker" :loading="refreshing" />
           </div>
         </div>
       </div>
 
       <q-banner v-if="statsAvailable === false" dense rounded class="bg-warning text-dark q-mb-md">
-        Статистика AWG недоступна (docker exec). Данные из БД могут быть устаревшими.
+        {{ t('dashboard.statsUnavailable') }}
       </q-banner>
 
       <div class="row q-col-gutter-md q-mb-lg items-stretch">
@@ -91,7 +91,7 @@
             <q-btn flat dense round icon="close" v-close-popup />
           </q-card-section>
           <q-card-section class="col dialog-scroll-body">
-            <div class="text-caption text-grey-5 q-mb-sm">Обновление с интервалом Live. Только просмотр.</div>
+            <div class="text-caption text-grey-5 q-mb-sm">{{ t('dashboard.liveViewHint') }}</div>
             <q-table
               dense
 
@@ -113,7 +113,7 @@
               </template>
             </q-table>
             <div v-if="containerRows.length" class="q-mt-md">
-              <div class="text-subtitle2 q-mb-xs">Контейнеры</div>
+              <div class="text-subtitle2 q-mb-xs">{{ t('dashboard.containers') }}</div>
               <q-table
                 dense
 
@@ -131,7 +131,7 @@
       </q-dialog>
 
       <q-table
-        title="Peer (привязки)"
+        :title="t('dashboard.peersTitle')"
         :rows="rows"
         :columns="columns"
         row-key="membership_id"
@@ -144,7 +144,7 @@
         <template #body-cell-online="props">
           <q-td :props="props">
             <q-badge :color="props.row.online ? 'positive' : 'grey-8'">
-              {{ props.row.online != null ? (props.row.online ? 'онлайн' : 'офлайн') : '—' }}
+              {{ props.row.online != null ? (props.row.online ? t('common.online') : t('common.offline')) : '—' }}
             </q-badge>
           </q-td>
         </template>
@@ -191,16 +191,16 @@
         <template #body-cell-actions="props">
           <q-td :props="props">
             <q-btn flat dense icon="qr_code_2" title="QR" @click="openShare(props.row)" />
-            <q-btn flat dense icon="download" title="Конфиг" @click="downloadConf(props.row)" />
+            <q-btn flat dense icon="download" :title="t('dashboard.configTooltip')" @click="downloadConf(props.row)" />
           </q-td>
         </template>
       </q-table>
 
       <q-card v-if="$q.screen.gt.sm" flat class="q-mt-lg surface-panel">
         <q-card-section class="q-pb-none">
-          <div class="text-h6">Граф соединений</div>
+          <div class="text-h6">{{ t('dashboard.graphTitle') }}</div>
           <div class="text-caption text-grey-5">
-            Связи пиров на основе настроек (политика, зоны, исключения).
+            {{ t('dashboard.graphHint') }}
           </div>
         </q-card-section>
         <q-card-section>
@@ -210,15 +210,15 @@
 
       <q-card v-else flat class="q-mt-lg surface-panel">
         <q-card-section>
-          <div class="text-h6">Граф соединений</div>
+          <div class="text-h6">{{ t('dashboard.graphTitle') }}</div>
           <div class="text-caption text-grey-5 q-mb-md">
-            Связи пиров на основе настроек (политика, зоны, исключения).
+            {{ t('dashboard.graphHint') }}
           </div>
           <q-btn
             color="primary"
             class="full-width"
             icon="account_tree"
-            label="Открыть граф"
+            :label="t('dashboard.openGraph')"
             @click="graphOpen = true"
           />
         </q-card-section>
@@ -234,9 +234,9 @@
     >
       <q-card class="graph-dialog-card column no-wrap surface-panel">
         <q-card-section class="row items-center q-pb-sm">
-          <div class="text-h6">Граф соединений</div>
+          <div class="text-h6">{{ t('dashboard.graphTitle') }}</div>
           <q-space />
-          <q-btn flat round dense icon="close" aria-label="Закрыть" v-close-popup />
+          <q-btn flat round dense icon="close" :aria-label="t('common.close')" v-close-popup />
         </q-card-section>
         <q-card-section class="col q-pt-none graph-dialog-body">
           <PeerConnectionsGraph
@@ -248,7 +248,7 @@
           />
         </q-card-section>
         <q-card-actions class="q-pa-md">
-          <q-btn class="full-width" outline color="primary" label="Закрыть" v-close-popup />
+          <q-btn class="full-width" outline color="primary" :label="t('common.close')" v-close-popup />
         </q-card-actions>
       </q-card>
     </q-dialog>
@@ -264,12 +264,14 @@
 
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useQuasar } from 'quasar'
 import api from '@/boot/axios'
 import PeerConnectionsGraph from '@/components/PeerConnectionsGraph.vue'
 import PeerShareDialog from '@/components/PeerShareDialog.vue'
 import { useDashboardData } from '@/composables/useDashboardData'
 import { useMobileDialog } from '@/composables/useMobileDialog'
+import { bcp47Locale } from '@/i18n'
 import {
   mergeLiveIntoPeers,
   onLiveStats,
@@ -279,6 +281,7 @@ import {
   useLiveStatsState
 } from '@/composables/useLiveStats'
 
+const { t, locale } = useI18n()
 const $q = useQuasar()
 const mobileDialog = useMobileDialog()
 const liveState = useLiveStatsState()
@@ -322,7 +325,7 @@ const containerRows = ref([])
 let processPollTimer = null
 
 const processModalTitle = computed(() => (
-  processModalSort.value === 'mem' ? 'Процессы (RAM)' : 'Процессы (CPU)'
+  processModalSort.value === 'mem' ? t('dashboard.processesRam') : t('dashboard.processesCpu')
 ))
 
 const processColumnsCpu = [
@@ -341,26 +344,26 @@ const processColumnsMem = [
   { name: 'command', label: 'Command', field: 'command', align: 'left' }
 ]
 
-const containerColumnsCpu = [
-  { name: 'name', label: 'Контейнер', field: 'name', align: 'left' },
+const containerColumnsCpu = computed(() => [
+  { name: 'name', label: t('dashboard.container'), field: 'name', align: 'left' },
   { name: 'cpu_percent', label: 'CPU%', field: 'cpu_percent', align: 'right', format: (v) => formatHostPercent(v) },
   { name: 'mem_percent', label: 'MEM%', field: 'mem_percent', align: 'right', format: (v) => formatHostPercent(v) },
   { name: 'used', label: 'RAM', field: 'used', align: 'right', format: (v) => formatBytes(v) }
-]
+])
 
-const containerColumnsMem = [
-  { name: 'name', label: 'Контейнер', field: 'name', align: 'left' },
+const containerColumnsMem = computed(() => [
+  { name: 'name', label: t('dashboard.container'), field: 'name', align: 'left' },
   { name: 'mem_percent', label: 'MEM%', field: 'mem_percent', align: 'right', format: (v) => formatHostPercent(v) },
   { name: 'used', label: 'RAM', field: 'used', align: 'right', format: (v) => formatBytes(v) },
   { name: 'cpu_percent', label: 'CPU%', field: 'cpu_percent', align: 'right', format: (v) => formatHostPercent(v) }
-]
+])
 
 const activeProcessColumns = computed(() => (
   processModalSort.value === 'mem' ? processColumnsMem : processColumnsCpu
 ))
 
 const activeContainerColumns = computed(() => (
-  processModalSort.value === 'mem' ? containerColumnsMem : containerColumnsCpu
+  processModalSort.value === 'mem' ? containerColumnsMem.value : containerColumnsCpu.value
 ))
 
 function peerToggleKey (configId, clientId) {
@@ -372,7 +375,7 @@ function isPeerToggling (configId, clientId) {
 }
 
 const configOptions = computed(() => [
-  { label: 'Все конфиги', value: null },
+  { label: t('dashboard.allConfigs'), value: null },
   ...configs.value.map((c) => ({ label: `${c.name} (${c.iface})`, value: c.id }))
 ])
 
@@ -409,9 +412,9 @@ const summary = computed(() => {
 
 const cards = computed(() => [
   { label: 'Peers', value: summary.value.clients_total },
-  { label: 'Привязок', value: summary.value.memberships_total },
-  { label: 'Включено', value: summary.value.memberships_enabled },
-  { label: 'Онлайн', value: summary.value.online }
+  { label: t('dashboard.memberships'), value: summary.value.memberships_total },
+  { label: t('dashboard.enabledCount'), value: summary.value.memberships_enabled },
+  { label: t('dashboard.onlineCount'), value: summary.value.online }
 ])
 
 function hostProgressColor (percent) {
@@ -442,7 +445,7 @@ const hostCards = computed(() => {
       percentLabel: formatHostPercent(cpuPct),
       detail: null,
       modalSort: 'cpu',
-      modalTitle: 'Процессы',
+      modalTitle: t('dashboard.processes'),
       progress: cpuPct == null ? 0 : Math.min(1, Number(cpuPct) / 100),
       color: hostProgressColor(cpuPct)
     },
@@ -451,7 +454,7 @@ const hostCards = computed(() => {
       percentLabel: formatHostPercent(memPct),
       detail: formatHostBytesPair(host.memory?.used, host.memory?.total),
       modalSort: 'mem',
-      modalTitle: 'Память',
+      modalTitle: t('dashboard.memory'),
       progress: memPct == null ? 0 : Math.min(1, Number(memPct) / 100),
       color: hostProgressColor(memPct)
     },
@@ -469,25 +472,25 @@ const hostCards = computed(() => {
 
 const syncLabel = computed(() => {
   const ts = liveState.lastSyncedAt || displayPeers.value.find((p) => p.stats_synced_at)?.stats_synced_at
-  if (!ts) return 'Статистика из БД (нажмите «Обновить» для синхронизации с AWG)'
+  if (!ts) return t('dashboard.statsFromDb')
   try {
-    return `Обновлено: ${new Date(ts).toLocaleString()}`
+    return t('dashboard.updatedAt', { ts: new Date(ts).toLocaleString(bcp47Locale(locale.value)) })
   } catch {
     return null
   }
 })
 
-const columns = [
-  { name: 'name', label: 'Имя', field: 'name', align: 'left', sortable: true },
-  { name: 'config_name', label: 'Конфиг', field: 'config_name', align: 'left' },
+const columns = computed(() => [
+  { name: 'name', label: t('dashboard.colName'), field: 'name', align: 'left', sortable: true },
+  { name: 'config_name', label: t('dashboard.colConfig'), field: 'config_name', align: 'left' },
   { name: 'client_allowed_ips', label: 'AllowedIPs', field: 'client_allowed_ips', align: 'left' },
-  { name: 'online', label: 'Статус', field: 'online', align: 'left' },
+  { name: 'online', label: t('dashboard.colStatus'), field: 'online', align: 'left' },
   { name: 'latest_handshake_human', label: 'Handshake', field: 'latest_handshake_human', align: 'left' },
   { name: 'transfer_rx', label: 'RX', field: 'transfer_rx', align: 'right' },
   { name: 'transfer_tx', label: 'TX', field: 'transfer_tx', align: 'right' },
-  { name: 'enabled', label: 'Вкл', field: 'enabled', align: 'left' },
-  { name: 'actions', label: 'Действия', field: 'actions', align: 'right' }
-]
+  { name: 'enabled', label: t('dashboard.colEnabled'), field: 'enabled', align: 'left' },
+  { name: 'actions', label: t('dashboard.colActions'), field: 'actions', align: 'right' }
+])
 
 const rows = computed(() => displayPeers.value.map((p) => ({
   ...p,
@@ -547,7 +550,7 @@ async function refreshFromDocker () {
     const data = await refreshLiveStats(filterConfigId.value ? [filterConfigId.value] : enabledConfigIds())
     applyPeersFromRefresh(data)
   } catch (e) {
-    $q.notify({ type: 'negative', message: e?.response?.data?.message || 'Не удалось обновить статистику' })
+    $q.notify({ type: 'negative', message: e?.response?.data?.message || t('dashboard.refreshStatsError') })
   } finally {
     refreshing.value = false
   }
@@ -583,7 +586,7 @@ async function toggle (row, enabled) {
     await loadFromDb()
   } catch (e) {
     peer.enabled = prev
-    $q.notify({ type: 'negative', message: e?.response?.data?.message || 'Не удалось изменить статус peer' })
+    $q.notify({ type: 'negative', message: e?.response?.data?.message || t('dashboard.togglePeerError') })
   } finally {
     peerToggling.delete(key)
   }
@@ -617,7 +620,7 @@ async function loadProcesses () {
     processRows.value = data.processes || []
     containerRows.value = data.containers || []
   } catch (e) {
-    $q.notify({ type: 'negative', message: e?.response?.data?.message || 'Не удалось загрузить процессы' })
+    $q.notify({ type: 'negative', message: e?.response?.data?.message || t('dashboard.loadProcessesError') })
   } finally {
     processLoading.value = false
   }

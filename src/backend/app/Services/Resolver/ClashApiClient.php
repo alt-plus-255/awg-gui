@@ -164,14 +164,15 @@ class ClashApiClient
                     continue;
                 }
 
-                if (! $proc->successful()) {
+                $result = $proc->wait();
+                if (! $result->successful()) {
                     $parsed = [
                         'ok' => false,
                         'latency_ms' => null,
-                        'error' => trim($proc->errorOutput() ?: '') ?: 'ошибка проверки',
+                        'error' => trim($result->errorOutput() ?: '') ?: __('resolver.check_error'),
                     ];
                 } else {
-                    $parsed = $this->parseDelayCurlOutput((string) $proc->output());
+                    $parsed = $this->parseDelayCurlOutput((string) $result->output());
                 }
 
                 $out[$key] = $parsed;
@@ -213,8 +214,8 @@ class ClashApiClient
                     'body' => null,
                     'raw' => trim($r->errorOutput()),
                     'error' => $probe
-                        ? 'Clash API probe недоступен'
-                        : 'Clash API недоступен (sing-box не запущен?)',
+                        ? __('resolver.clash_api_probe_unavailable')
+                        : __('resolver.clash_api_unavailable'),
                 ];
             }
             $marker = '___HTTP_STATUS___';
@@ -225,7 +226,7 @@ class ClashApiClient
                     'status' => 0,
                     'body' => null,
                     'raw' => trim($out),
-                    'error' => 'Некорректный ответ Clash API',
+                    'error' => __('resolver.clash_api_invalid_response'),
                 ];
             }
             $rawBody = substr($out, 0, $pos);
@@ -238,7 +239,7 @@ class ClashApiClient
                     'status' => 0,
                     'body' => null,
                     'raw' => $rawBody,
-                    'error' => 'Clash API недоступен (sing-box ещё не готов)',
+                    'error' => __('resolver.clash_api_not_ready'),
                 ];
             }
 
@@ -274,11 +275,11 @@ class ClashApiClient
             return [
                 'ok' => $delay > 0,
                 'latency_ms' => $delay > 0 ? $delay : null,
-                'error' => $delay > 0 ? null : 'Нулевая задержка',
+                'error' => $delay > 0 ? null : __('resolver.zero_delay'),
             ];
         }
 
-        $err = $resp['error'] ?? 'Проверка не удалась';
+        $err = $resp['error'] ?? __('resolver.check_failed');
         if (is_string($resp['raw']) && $resp['raw'] !== '' && str_contains($resp['raw'], '{')) {
             $j = json_decode($resp['raw'], true);
             if (is_array($j) && ! empty($j['message'])) {
@@ -297,13 +298,13 @@ class ClashApiClient
     {
         $lower = strtolower($err);
         if ($lower === 'timeout' || str_contains($lower, 'timeout')) {
-            return 'Таймаут';
+            return __('resolver.timeout');
         }
         if (str_contains($lower, 'an error occurred in the delay test')) {
-            return 'Узел недоступен';
+            return __('resolver.node_unavailable');
         }
         if (str_contains($lower, 'context deadline exceeded')) {
-            return 'Таймаут соединения';
+            return __('resolver.connection_timeout');
         }
 
         return $err;
@@ -320,7 +321,7 @@ class ClashApiClient
             return [
                 'ok' => false,
                 'latency_ms' => null,
-                'error' => 'Некорректный ответ Clash API',
+                'error' => __('resolver.clash_api_invalid_response'),
             ];
         }
 

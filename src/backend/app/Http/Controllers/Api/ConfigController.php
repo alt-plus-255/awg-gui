@@ -49,21 +49,24 @@ class ConfigController extends Controller
             'enabled' => ['sometimes', 'boolean'],
         ]);
 
-        $alloc = $this->awg->allocateIfaceAndPort();
         $keys = $this->awg->generateKeyPair();
         $junk = $this->awg->generateJunkParams();
         $defaults = $this->awg->defaultConfigAttributes();
 
         $subnet = $data['internal_subnet'] ?? $defaults['internal_subnet'];
+        $this->assertSubnetAvailable($subnet);
         $serverAddress = $defaults['server_address'];
         if (preg_match('#^(\d+\.\d+\.\d+)\.(\d+)/(\d+)$#', $subnet, $m)) {
             $serverAddress = $m[1].'.1/'.$m[3];
         }
 
-        $port = $data['listen_port'] ?? $alloc['listen_port'];
+        $iface = $this->awg->allocateIface();
+        $port = isset($data['listen_port'])
+            ? (int) $data['listen_port']
+            : $this->awg->nextFreeListenPort();
         if (AwgConfig::query()->where('listen_port', $port)->exists()) {
             throw ValidationException::withMessages([
-                'listen_port' => ['Порт уже занят'],
+                'listen_port' => [__('configs.port_taken')],
             ]);
         }
 
@@ -71,7 +74,7 @@ class ConfigController extends Controller
             'name' => $data['name'],
             'type' => $data['type'],
             'vn_policy' => $data['vn_policy'] ?? 'allow_all',
-            'iface' => $alloc['iface'],
+            'iface' => $iface,
             'listen_port' => $port,
             'internal_subnet' => $subnet,
             'server_address' => $serverAddress,
@@ -128,6 +131,10 @@ class ConfigController extends Controller
 
         $data = $this->sanitizeSignatureFields($data);
 
+        if (isset($data['internal_subnet'])) {
+            $this->assertSubnetAvailable($data['internal_subnet'], $config->id);
+        }
+
         $config->fill($data);
 
         if (($config->type === 'virtual_network') && $config->resolver_enabled) {
@@ -151,7 +158,7 @@ class ConfigController extends Controller
     {
         if (AwgConfig::query()->count() <= 1) {
             throw ValidationException::withMessages([
-                'config' => ['Нельзя удалить последний конфиг'],
+                'config' => [__('configs.cannot_delete_last')],
             ]);
         }
 
@@ -200,7 +207,7 @@ class ConfigController extends Controller
 
         if (AwgConfigPeer::query()->where('awg_config_id', $config->id)->where('vpn_client_id', $client->id)->exists()) {
             throw ValidationException::withMessages([
-                'vpn_client_id' => ['Peer уже привязан к этому конфигу'],
+                'vpn_client_id' => [__('configs.peer_already_bound')],
             ]);
         }
 
@@ -305,7 +312,7 @@ class ConfigController extends Controller
     {
         if ($config->type !== 'virtual_network') {
             throw ValidationException::withMessages([
-                'config' => ['Правила доступа доступны только для конфигов типа «Виртуальная сеть»'],
+                'config' => [__('configs.access_rules_vn_only')],
             ]);
         }
 
@@ -422,7 +429,7 @@ class ConfigController extends Controller
 
         if (! $membership->preshared_key) {
             throw ValidationException::withMessages([
-                'use_preshared_key' => ['PresharedKey выключен для этого peer'],
+                'use_preshared_key' => [__('configs.preshared_key_disabled')],
             ]);
         }
 
@@ -460,7 +467,7 @@ class ConfigController extends Controller
             'ok' => true,
             'server_public_key' => $result['server_public_key'],
             'config' => $this->serializeConfig($config->fresh()),
-            'message' => 'Ключи сервера перегенерированы. Скачайте заново конфиги всех peer.',
+            'message' => __('configs.server_keys_regenerated'),
         ]);
     }
 
@@ -492,7 +499,7 @@ class ConfigController extends Controller
             return response()->json([
                 'ok' => false,
                 'already_restarting' => true,
-                'message' => 'Перезапуск AWG уже выполняется',
+                'message' => __('api.awg_restart_already_running'),
                 'details' => $result,
             ], 409);
         }
@@ -500,14 +507,14 @@ class ConfigController extends Controller
         if (! $result['ok']) {
             return response()->json([
                 'ok' => false,
-                'message' => 'Не удалось перезапустить контейнер AmneziaWG',
+                'message' => __('api.awg_restart_failed'),
                 'details' => $result,
             ], 500);
         }
 
         return response()->json([
             'ok' => true,
-            'message' => 'Контейнер AmneziaWG перезапущен, конфиги применены',
+            'message' => __('api.awg_restart_ok'),
             'details' => $result,
         ]);
     }
@@ -521,7 +528,7 @@ class ConfigController extends Controller
         $user = $request->user();
         if (! $user || ! Hash::check($data['password'], $user->password)) {
             throw ValidationException::withMessages([
-                'password' => ['Неверный пароль администратора'],
+                'password' => [__('configs.admin_password_invalid')],
             ]);
         }
     }
@@ -535,7 +542,7 @@ class ConfigController extends Controller
 
         if (count($extraIps) !== 1) {
             throw ValidationException::withMessages([
-                'extra_allowed_ips' => ['Для виртуальной сети укажите ровно одну локальную подсеть (например 192.168.1.0/24)'],
+                'extra_allowed_ips' => [__('configs.vn_extra_allowed_ips_one')],
             ]);
         }
     }
@@ -557,7 +564,7 @@ class ConfigController extends Controller
 
         if (in_array($ownClientId, $ids, true)) {
             throw ValidationException::withMessages([
-                'excluded_client_ids' => ['Нельзя исключить самого себя'],
+                'excluded_client_ids' => [__('configs.cannot_exclude_self')],
             ]);
         }
 
@@ -570,7 +577,7 @@ class ConfigController extends Controller
         $unknown = array_diff($ids, $attachedIds);
         if ($unknown) {
             throw ValidationException::withMessages([
-                'excluded_client_ids' => ['Некоторые исключаемые узлы не привязаны к этому конфигу'],
+                'excluded_client_ids' => [__('configs.excluded_not_bound')],
             ]);
         }
 
@@ -612,7 +619,7 @@ class ConfigController extends Controller
 
             if (array_intersect($src, $dest)) {
                 throw ValidationException::withMessages([
-                    'rules' => ['Пир не может быть одновременно источником и назначением в одном правиле'],
+                    'rules' => [__('configs.peer_cannot_be_src_and_dest')],
                 ]);
             }
 
@@ -710,13 +717,13 @@ class ConfigController extends Controller
             }
             if (! preg_match('#^[^/\s]+/\d{1,3}$#', $cidr)) {
                 throw ValidationException::withMessages([
-                    'extra_allowed_ips' => ["Неверный CIDR: {$cidr}"],
+                    'extra_allowed_ips' => [__('configs.invalid_cidr', ['cidr' => $cidr])],
                 ]);
             }
             $host = explode('/', $cidr, 2)[0];
             if (! filter_var($host, FILTER_VALIDATE_IP)) {
                 throw ValidationException::withMessages([
-                    'extra_allowed_ips' => ["Неверный IP в CIDR: {$cidr}"],
+                    'extra_allowed_ips' => [__('configs.invalid_ip_in_cidr', ['cidr' => $cidr])],
                 ]);
             }
             $out[] = $cidr;
@@ -725,13 +732,58 @@ class ConfigController extends Controller
         return array_values(array_unique($out));
     }
 
+    private function assertSubnetAvailable(string $subnet, ?int $ignoreId = null): void
+    {
+        $key = $this->normalizeSubnetKey($subnet);
+        if ($key === null) {
+            throw ValidationException::withMessages([
+                'internal_subnet' => [__('configs.invalid_internal_subnet')],
+            ]);
+        }
+
+        $query = AwgConfig::query()->orderBy('id');
+        if ($ignoreId !== null) {
+            $query->where('id', '!=', $ignoreId);
+        }
+
+        foreach ($query->pluck('internal_subnet') as $existing) {
+            if ($this->normalizeSubnetKey((string) $existing) === $key) {
+                throw ValidationException::withMessages([
+                    'internal_subnet' => [__('configs.subnet_taken')],
+                ]);
+            }
+        }
+    }
+
+    private function normalizeSubnetKey(string $subnet): ?string
+    {
+        if (! preg_match('#^([^/\s]+)/(\d{1,2})$#', trim($subnet), $m)) {
+            return null;
+        }
+
+        $mask = (int) $m[2];
+        if ($mask < 0 || $mask > 32) {
+            return null;
+        }
+
+        $long = ip2long($m[1]);
+        if ($long === false) {
+            return null;
+        }
+
+        $maskBits = $mask === 0 ? 0 : (-1 << (32 - $mask));
+        $network = $long & $maskBits;
+
+        return long2ip($network).'/'.$mask;
+    }
+
     private function serializeConfig(AwgConfig $config): array
     {
         return [
             'id' => $config->id,
             'name' => $config->name,
             'type' => $config->type,
-            'type_label' => $config->type === 'virtual_network' ? 'Виртуальная сеть' : 'Сервер',
+            'type_label' => $config->type === 'virtual_network' ? __('api.type_virtual_network') : __('api.type_server'),
             'vn_policy' => $config->vn_policy ?? 'allow_all',
             'vn_zones' => [
                 'rules' => array_values($config->vn_zones['rules'] ?? []),

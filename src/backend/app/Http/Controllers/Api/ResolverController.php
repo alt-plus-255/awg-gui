@@ -25,6 +25,7 @@ class ResolverController extends Controller
     {
         $data = $request->validate([
             'resolver_enabled' => ['required', 'boolean'],
+            'resolver_routing_mode' => ['sometimes', 'string', 'in:vds_split,client_split'],
             'resolver_reject_quic' => ['sometimes', 'boolean'],
             'connection_id' => ['nullable', 'integer', 'exists:resolver_connections,id'],
             'resolver_dns' => ['sometimes', 'nullable', 'string', 'max:255'],
@@ -36,6 +37,9 @@ class ResolverController extends Controller
             'user_subnets.*' => ['string', 'max:64'],
         ]);
 
+        if (array_key_exists('resolver_routing_mode', $data)) {
+            $config->resolver_routing_mode = $data['resolver_routing_mode'];
+        }
         if (array_key_exists('resolver_reject_quic', $data)) {
             $config->resolver_reject_quic = (bool) $data['resolver_reject_quic'];
         }
@@ -46,7 +50,7 @@ class ResolverController extends Controller
             }
             if (! filter_var($dns, FILTER_VALIDATE_IP) && ! preg_match('/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/i', $dns)) {
                 throw ValidationException::withMessages([
-                    'resolver_dns' => ['Укажите IP или hostname DNS-сервера'],
+                    'resolver_dns' => [__('resolver.dns_required')],
                 ]);
             }
             $config->resolver_dns = $dns;
@@ -76,7 +80,7 @@ class ResolverController extends Controller
             );
             if ($normalized['community_lists'] === [] && $normalized['user_domains'] === [] && $normalized['user_subnets'] === []) {
                 throw ValidationException::withMessages([
-                    'community_lists' => ['Выберите хотя бы один список доменов, свои домены или подсети'],
+                    'community_lists' => [__('resolver.select_at_least_one_list')],
                 ]);
             }
 
@@ -111,13 +115,18 @@ class ResolverController extends Controller
         $config->save();
         $this->awg->applyConfig($config, refreshSubscriptions: false);
 
-        $needsClientReimport = $config->wasChanged('resolver_enabled');
+        $needsClientReimport = $config->wasChanged('resolver_enabled')
+            || $config->wasChanged('resolver_routing_mode')
+            || (
+                $config->resolverRoutingMode() === AwgConfig::ROUTING_MODE_CLIENT_SPLIT
+                && $config->wasChanged('user_subnets')
+            );
 
         return response()->json([
             'ok' => true,
             'status' => $this->resolver->status(),
             'warning' => $needsClientReimport
-                ? 'Клиентам нужно заново скачать и импортировать .conf / QR — изменились DNS и AllowedIPs.'
+                ? __('resolver.clients_need_reimport')
                 : null,
         ]);
     }

@@ -131,7 +131,7 @@ class SettingsController extends Controller
                 $this->ssl->recreateCaddy();
             } catch (\Throwable $e) {
                 return response()->json([
-                    'message' => 'Настройки сохранены, но не удалось применить новые порты Caddy: '.$e->getMessage(),
+                    'message' => __('settings.caddy_ports_apply_failed', ['error' => $e->getMessage()]),
                     'settings' => Setting::allKeyed(),
                     'display_endpoint' => $this->awg->resolveEndpointHost(),
                     'panel_url' => $this->awg->resolvePanelUrl(),
@@ -180,7 +180,7 @@ class SettingsController extends Controller
                 'ssl' => $this->ssl->status(),
                 'settings' => Setting::allKeyed(),
                 'panel_url' => $this->awg->resolvePanelUrl(),
-                'message' => 'Сертификат уже выпущен — HTTPS включён',
+                'message' => __('settings.ssl_already_issued'),
             ]);
         }
 
@@ -188,7 +188,7 @@ class SettingsController extends Controller
             'ok' => true,
             'challenge' => $challenge,
             'ssl' => $this->ssl->status(),
-            'message' => 'Добавьте TXT-запись в DNS, затем нажмите «Продолжить».',
+            'message' => __('settings.ssl_add_txt_record'),
         ]);
     }
 
@@ -208,7 +208,7 @@ class SettingsController extends Controller
             'ssl' => $ssl,
             'settings' => Setting::allKeyed(),
             'panel_url' => $this->awg->resolvePanelUrl(),
-            'message' => 'Сертификат выпущен, HTTPS включён',
+            'message' => __('settings.ssl_issued'),
         ]);
     }
 
@@ -221,7 +221,7 @@ class SettingsController extends Controller
         }
 
         if ($ssl === null) {
-            return response()->json(['ok' => false, 'message' => 'Выпущенный сертификат не найден'], 404);
+            return response()->json(['ok' => false, 'message' => __('settings.ssl_cert_not_found')], 404);
         }
 
         return response()->json([
@@ -231,7 +231,7 @@ class SettingsController extends Controller
             'ssl' => $ssl,
             'settings' => Setting::allKeyed(),
             'panel_url' => $this->awg->resolvePanelUrl(),
-            'message' => 'Найден выпущенный сертификат — HTTPS включён',
+            'message' => __('settings.ssl_cert_found_enabled'),
         ]);
     }
 
@@ -248,7 +248,7 @@ class SettingsController extends Controller
             'ssl' => $ssl,
             'settings' => Setting::allKeyed(),
             'panel_url' => $this->awg->resolvePanelUrl(),
-            'message' => 'HTTPS отключён',
+            'message' => __('settings.https_disabled'),
         ]);
     }
 
@@ -271,14 +271,14 @@ class SettingsController extends Controller
                 'ssl' => $recovered,
                 'settings' => Setting::allKeyed(),
                 'panel_url' => $this->awg->resolvePanelUrl(),
-                'message' => 'Выпуск отменён, но найден готовый сертификат — HTTPS включён',
+                'message' => __('settings.ssl_aborted_but_cert_found'),
             ]);
         }
 
         return response()->json([
             'ok' => true,
             'ssl' => $this->ssl->status(),
-            'message' => 'Выпуск сертификата отменён',
+            'message' => __('settings.ssl_issue_aborted'),
         ]);
     }
 
@@ -301,7 +301,7 @@ class SettingsController extends Controller
                         'ssl' => $ssl,
                         'settings' => Setting::allKeyed(),
                         'panel_url' => $this->awg->resolvePanelUrl(),
-                        'message' => 'Сертификат уже был выпущен — HTTPS включён',
+                        'message' => __('settings.ssl_was_already_issued'),
                     ]);
                 }
             } catch (\Throwable) {
@@ -320,7 +320,7 @@ class SettingsController extends Controller
             return response()->json([
                 'ok' => false,
                 'already_restarting' => true,
-                'message' => 'Перезапуск AWG уже выполняется',
+                'message' => __('api.awg_restart_already_running'),
                 'details' => $result,
             ], 409);
         }
@@ -328,14 +328,14 @@ class SettingsController extends Controller
         if (! $result['ok']) {
             return response()->json([
                 'ok' => false,
-                'message' => 'Не удалось перезапустить контейнер AmneziaWG',
+                'message' => __('api.awg_restart_failed'),
                 'details' => $result,
             ], 500);
         }
 
         return response()->json([
             'ok' => true,
-            'message' => 'Контейнер AmneziaWG перезапущен, конфиги применены',
+            'message' => __('api.awg_restart_ok'),
             'details' => $result,
         ]);
     }
@@ -344,7 +344,7 @@ class SettingsController extends Controller
     {
         $url = Setting::getValue('failure_webhook_url', '');
         if (! $url) {
-            return response()->json(['ok' => false, 'message' => 'URL webhook пуст'], 422);
+            return response()->json(['ok' => false, 'message' => __('settings.webhook_url_empty')], 422);
         }
 
         $this->awg->applyTimezone();
@@ -452,17 +452,17 @@ class SettingsController extends Controller
                 'awg_gui.test',
             ],
             'fields' => [
-                'schema_version' => 'Версия схемы payload',
-                'event' => 'Тип события (awg_gui.failure | awg_gui.test)',
+                'schema_version' => __('settings.webhook_field_schema_version'),
+                'event' => __('settings.webhook_field_event'),
                 'severity' => 'info | warning | error | critical',
-                'source' => 'Всегда awg-gui',
-                'project' => 'Имя Compose-проекта',
-                'hostname' => 'Имя хоста',
-                'timestamp' => 'ISO-8601 в таймзоне панели',
-                'code' => 'Стабильный машиночитаемый код сбоя',
-                'message' => 'Человекочитаемое описание',
-                'panel_url' => 'URL панели администратора, если известен',
-                'details' => 'Расширяемый объект с доп. контекстом',
+                'source' => __('settings.webhook_field_source'),
+                'project' => __('settings.webhook_field_project'),
+                'hostname' => __('settings.webhook_field_hostname'),
+                'timestamp' => __('settings.webhook_field_timestamp'),
+                'code' => __('settings.webhook_field_code'),
+                'message' => __('settings.webhook_field_message'),
+                'panel_url' => __('settings.webhook_field_panel_url'),
+                'details' => __('settings.webhook_field_details'),
             ],
         ];
     }

@@ -1,72 +1,75 @@
 import { useQuasar } from 'quasar'
+import { useI18n } from 'vue-i18n'
 
-const SCENARIOS = {
-  'resolver-save': {
-    title: 'Сохранение резолвера',
-    steps: [
-      'Сохранение настроек…',
-      'Обновление AWG-конфига…',
-      'Сборка sing-box…',
-      'Перезагрузка sing-box…'
-    ],
-    stepIntervalMs: 3000
-  },
-  'connection-save-proxy': {
-    title: 'Сохранение подключения',
-    steps: [
-      'Сохранение настроек…',
-      'Сборка sing-box…',
-      'Перезагрузка sing-box…'
-    ],
-    stepIntervalMs: 2500
-  },
-  'connection-save-subscription': {
-    title: 'Сохранение подписки',
-    steps: [
-      'Загрузка узлов подписки…',
-      'Сохранение настроек…',
-      'Сборка sing-box…',
-      'Перезагрузка sing-box…'
-    ],
-    stepIntervalMs: 4000
-  },
-  'connection-apply': {
-    title: 'Применение стратегии',
-    steps: [
-      'Применение выбора узла…',
-      'Сборка sing-box…',
-      'Перезагрузка sing-box…'
-    ],
-    stepIntervalMs: 2500
-  },
-  'connection-refresh': {
-    title: 'Обновление подписки',
-    steps: [
-      'Загрузка узлов с сервера…',
-      'Сборка sing-box…',
-      'Перезагрузка sing-box…'
-    ],
-    stepIntervalMs: 4000
+const LONG_WAIT_MS = 18000
+
+function buildScenarios (t) {
+  return {
+    'resolver-save': {
+      title: t('resolver.progressSaveResolver'),
+      steps: [
+        t('resolver.progressSavingSettings'),
+        t('resolver.progressUpdateAwg'),
+        t('resolver.progressBuildSingbox'),
+        t('resolver.progressReloadSingbox')
+      ],
+      stepIntervalMs: 3000
+    },
+    'connection-save-proxy': {
+      title: t('connections.progressSaveConnection'),
+      steps: [
+        t('connections.progressSavingSettings'),
+        t('connections.progressBuildSingbox'),
+        t('connections.progressReloadSingbox')
+      ],
+      stepIntervalMs: 2500
+    },
+    'connection-save-subscription': {
+      title: t('connections.progressSaveSubscription'),
+      steps: [
+        t('connections.progressLoadSubscriptionNodes'),
+        t('connections.progressSavingSettings'),
+        t('connections.progressBuildSingbox'),
+        t('connections.progressReloadSingbox')
+      ],
+      stepIntervalMs: 4000
+    },
+    'connection-apply': {
+      title: t('connections.progressApplyStrategy'),
+      steps: [
+        t('connections.progressApplyNodePick'),
+        t('connections.progressBuildSingbox'),
+        t('connections.progressReloadSingbox')
+      ],
+      stepIntervalMs: 2500
+    },
+    'connection-refresh': {
+      title: t('connections.progressRefreshSubscription'),
+      steps: [
+        t('connections.progressLoadNodesFromServer'),
+        t('connections.progressBuildSingbox'),
+        t('connections.progressReloadSingbox')
+      ],
+      stepIntervalMs: 4000
+    }
   }
 }
 
-const LONG_WAIT_HINT = 'При большом числе узлов это может занять до минуты — не закрывайте страницу.'
-const LONG_WAIT_MS = 18000
-
-function buildMessage (scenario, stepIndex, showLongHint) {
+function buildMessage (scenario, stepIndex, showLongHint, longWaitHint) {
   const step = scenario.steps[Math.min(stepIndex, scenario.steps.length - 1)]
   const lines = [`<div class="text-subtitle1 q-mb-sm">${scenario.title}</div>`, `<div>${step}</div>`]
   if (showLongHint) {
-    lines.push(`<div class="text-caption text-grey-4 q-mt-md">${LONG_WAIT_HINT}</div>`)
+    lines.push(`<div class="text-caption text-grey-4 q-mt-md">${longWaitHint}</div>`)
   }
   return lines.join('')
 }
 
 export function useApplyProgress () {
   const $q = useQuasar()
+  const { t } = useI18n()
 
   async function withApplyProgress (scenarioId, operation) {
-    const scenario = SCENARIOS[scenarioId]
+    const scenario = buildScenarios(t)[scenarioId]
     if (!scenario) {
       return operation()
     }
@@ -74,10 +77,11 @@ export function useApplyProgress () {
     let stepIndex = 0
     let showLongHint = false
     const startedAt = Date.now()
+    const longWaitHint = t('common.longWaitHint')
 
     const updateOverlay = () => {
       $q.loading.show({
-        message: buildMessage(scenario, stepIndex, showLongHint),
+        message: buildMessage(scenario, stepIndex, showLongHint, longWaitHint),
         html: true,
         boxClass: 'bg-dark text-white',
         spinnerColor: 'primary'

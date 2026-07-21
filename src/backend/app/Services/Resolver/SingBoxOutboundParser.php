@@ -20,7 +20,7 @@ class SingBoxOutboundParser
         }
 
         throw ValidationException::withMessages([
-            'config_type' => ['Тип конфигурации: url или json'],
+            'config_type' => [__('resolver.config_type_url_or_json')],
         ]);
     }
 
@@ -104,20 +104,20 @@ class SingBoxOutboundParser
         $raw = trim($raw);
         if ($raw === '') {
             throw ValidationException::withMessages([
-                'outbound_json' => ['Укажите outbound JSON'],
+                'outbound_json' => [__('resolver.outbound_json_required')],
             ]);
         }
 
         $decoded = json_decode($raw, true);
         if (! is_array($decoded) || array_is_list($decoded)) {
             throw ValidationException::withMessages([
-                'outbound_json' => ['Ожидается JSON-объект outbound sing-box'],
+                'outbound_json' => [__('resolver.outbound_json_object_expected')],
             ]);
         }
 
         if (empty($decoded['type']) || ! is_string($decoded['type'])) {
             throw ValidationException::withMessages([
-                'outbound_json' => ['В outbound обязательно поле type'],
+                'outbound_json' => [__('resolver.outbound_type_required')],
             ]);
         }
 
@@ -134,7 +134,7 @@ class SingBoxOutboundParser
         $url = trim($url);
         if ($url === '') {
             throw ValidationException::withMessages([
-                'share_url' => ['Укажите ссылку подключения'],
+                'share_url' => [__('resolver.share_url_required')],
             ]);
         }
 
@@ -147,7 +147,7 @@ class SingBoxOutboundParser
             'hysteria2', 'hy2' => $this->parseHysteria2($url),
             'socks', 'socks5' => $this->parseSocks($url),
             default => throw ValidationException::withMessages([
-                'share_url' => ["Неподдерживаемая схема: {$scheme}. Доступны vless, ss, trojan, hy2/hysteria2, socks"],
+                'share_url' => [__('resolver.unsupported_scheme', ['scheme' => $scheme])],
             ]),
         };
     }
@@ -160,7 +160,7 @@ class SingBoxOutboundParser
         $host = (string) ($parts['host'] ?? '');
         $port = (int) ($parts['port'] ?? 443);
         if ($uuid === '' || $host === '') {
-            throw ValidationException::withMessages(['share_url' => ['Некорректная vless:// ссылка']]);
+            throw ValidationException::withMessages(['share_url' => [__('resolver.invalid_vless_url')]]);
         }
 
         parse_str($parts['query'] ?? '', $q);
@@ -197,7 +197,7 @@ class SingBoxOutboundParser
 
         if ($security === 'reality') {
             if ($pbk === '') {
-                throw ValidationException::withMessages(['share_url' => ['Reality: отсутствует pbk']]);
+                throw ValidationException::withMessages(['share_url' => [__('resolver.reality_pbk_missing')]]);
             }
             $outbound['tls'] = [
                 'enabled' => true,
@@ -279,7 +279,7 @@ class SingBoxOutboundParser
             if (! str_contains($userinfo, ':')) {
                 $decoded = base64_decode(strtr($userinfo, '-_', '+/'), true);
                 if ($decoded === false || ! str_contains($decoded, ':')) {
-                    throw ValidationException::withMessages(['share_url' => ['Некорректная ss:// ссылка']]);
+                    throw ValidationException::withMessages(['share_url' => [__('resolver.invalid_ss_url')]]);
                 }
                 [$method, $password] = explode(':', $decoded, 2);
             } else {
@@ -292,7 +292,7 @@ class SingBoxOutboundParser
         } else {
             $decoded = base64_decode(strtr($url, '-_', '+/'), true);
             if ($decoded === false || ! preg_match('#^(.+?):(.+)@(.+):(\d+)$#', $decoded, $m)) {
-                throw ValidationException::withMessages(['share_url' => ['Некорректная ss:// ссылка']]);
+                throw ValidationException::withMessages(['share_url' => [__('resolver.invalid_ss_url')]]);
             }
             $method = $m[1];
             $password = $m[2];
@@ -301,7 +301,7 @@ class SingBoxOutboundParser
         }
 
         if ($method === '' || $password === '' || $host === '' || $port < 1) {
-            throw ValidationException::withMessages(['share_url' => ['Некорректная ss:// ссылка']]);
+            throw ValidationException::withMessages(['share_url' => [__('resolver.invalid_ss_url')]]);
         }
 
         return [
@@ -321,7 +321,7 @@ class SingBoxOutboundParser
         $host = $parts['host'] ?? '';
         $port = (int) ($parts['port'] ?? 443);
         if ($password === '' || $host === '') {
-            throw ValidationException::withMessages(['share_url' => ['Некорректная trojan:// ссылка']]);
+            throw ValidationException::withMessages(['share_url' => [__('resolver.invalid_trojan_url')]]);
         }
         parse_str($parts['query'] ?? '', $q);
         $sni = (string) ($q['sni'] ?? $host);
@@ -348,7 +348,7 @@ class SingBoxOutboundParser
         $host = $parts['host'] ?? '';
         $port = (int) ($parts['port'] ?? 443);
         if ($password === '' || $host === '') {
-            throw ValidationException::withMessages(['share_url' => ['Некорректная hysteria2:// ссылка']]);
+            throw ValidationException::withMessages(['share_url' => [__('resolver.invalid_hysteria2_url')]]);
         }
         parse_str($parts['query'] ?? '', $q);
         $sni = (string) ($q['sni'] ?? $host);
@@ -382,7 +382,7 @@ class SingBoxOutboundParser
         $host = $parts['host'] ?? '';
         $port = (int) ($parts['port'] ?? 1080);
         if ($host === '' || $port < 1) {
-            throw ValidationException::withMessages(['share_url' => ['Некорректная socks:// ссылка']]);
+            throw ValidationException::withMessages(['share_url' => [__('resolver.invalid_socks_url')]]);
         }
         $outbound = [
             'type' => 'socks',

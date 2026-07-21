@@ -9,6 +9,11 @@ CADDY_CONTAINER="${CADDY_CONTAINER:-awggui-caddy}"
 echo "==> Backend PHP (app/) -> ${APP_CONTAINER}"
 docker cp "${ROOT}/backend/app/." "${APP_CONTAINER}:/var/www/html/app/"
 
+if [[ -d "${ROOT}/backend/lang" ]]; then
+  echo "==> Backend lang/ -> ${APP_CONTAINER}"
+  docker cp "${ROOT}/backend/lang/." "${APP_CONTAINER}:/var/www/html/lang/"
+fi
+
 echo "==> Backend bootstrap -> ${APP_CONTAINER}"
 docker cp "${ROOT}/backend/bootstrap/app.php" "${APP_CONTAINER}:/var/www/html/bootstrap/app.php"
 

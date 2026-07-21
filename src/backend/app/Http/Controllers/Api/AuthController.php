@@ -46,7 +46,7 @@ class AuthController extends Controller
         if ($status['locked']) {
             return $this->authError(
                 'locked',
-                'Вход временно заблокирован из‑за слишком большого числа неверных попыток.',
+                __('auth.login_locked'),
                 429,
                 $status
             );
@@ -56,7 +56,7 @@ class AuthController extends Controller
             if (! $this->captcha->verify($credentials['captcha_token'] ?? null, $credentials['captcha_answer'] ?? null)) {
                 return $this->authError(
                     'captcha_invalid',
-                    'Неверная капча. Введите цифры с картинки.',
+                    __('auth.captcha_invalid'),
                     422,
                     array_merge($status, ['captcha_required' => true])
                 );
@@ -74,7 +74,7 @@ class AuthController extends Controller
             if ($status['locked']) {
                 return $this->authError(
                     'locked',
-                    'Вход временно заблокирован из‑за слишком большого числа неверных попыток.',
+                    __('auth.login_locked'),
                     429,
                     $status
                 );
@@ -82,8 +82,8 @@ class AuthController extends Controller
 
             $code = $status['captcha_required'] ? 'captcha_required' : 'invalid_credentials';
             $message = $code === 'captcha_required'
-                ? 'Неверные учётные данные. Для продолжения введите капчу.'
-                : 'Неверные учётные данные.';
+                ? __('auth.invalid_credentials_captcha')
+                : __('auth.invalid_credentials');
 
             return $this->authError($code, $message, 422, $status);
         }
@@ -93,7 +93,7 @@ class AuthController extends Controller
             if ($totp === null || $totp === '') {
                 return $this->authError(
                     'totp_required',
-                    'Введите код из приложения двухфакторной аутентификации.',
+                    __('auth.totp_required'),
                     422,
                     $status
                 );
@@ -102,7 +102,7 @@ class AuthController extends Controller
             if (! $this->twoFactor->verify($user, $totp)) {
                 return $this->authError(
                     'totp_invalid',
-                    'Неверный код двухфакторной аутентификации.',
+                    __('auth.totp_invalid'),
                     422,
                     $status
                 );

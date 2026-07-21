@@ -25,7 +25,7 @@ class SubscriptionFetcher
         $url = trim($url);
         if ($url === '' || ! filter_var($url, FILTER_VALIDATE_URL)) {
             throw ValidationException::withMessages([
-                'subscription_url' => ['Укажите корректный URL подписки'],
+                'subscription_url' => [__('resolver.subscription_url_invalid')],
             ]);
         }
 
@@ -42,7 +42,7 @@ class SubscriptionFetcher
         }
 
         if ($bodies === []) {
-            throw new RuntimeException('Не удалось загрузить подписку');
+            throw new RuntimeException(__('resolver.subscription_fetch_failed'));
         }
 
         return $this->parseBodies($bodies);
@@ -88,7 +88,7 @@ class SubscriptionFetcher
 
         if ($nodes === []) {
             throw new RuntimeException(
-                $errors !== [] ? implode('; ', $errors) : 'Не удалось разобрать подписку'
+                $errors !== [] ? implode('; ', $errors) : __('resolver.subscription_parse_failed')
             );
         }
 
@@ -102,7 +102,7 @@ class SubscriptionFetcher
     {
         $body = trim($body);
         if ($body === '') {
-            throw new RuntimeException('Пустое тело подписки');
+            throw new RuntimeException(__('resolver.subscription_body_empty'));
         }
 
         return $this->parseBodies([$body]);
@@ -165,7 +165,7 @@ class SubscriptionFetcher
         }
 
         if ($nodes === []) {
-            throw new RuntimeException('Не удалось разобрать ни одного узла из подписки');
+            throw new RuntimeException(__('resolver.subscription_no_nodes'));
         }
 
         return $nodes;
@@ -202,10 +202,10 @@ class SubscriptionFetcher
             if ($body !== '' && strlen($body) > 8) {
                 return $body;
             }
-            $lastError = 'Пустой ответ';
+            $lastError = __('resolver.empty_response');
         }
 
-        throw new RuntimeException('Не удалось загрузить подписку: '.($lastError ?? 'unknown'), 0);
+        throw new RuntimeException(__('resolver.subscription_fetch_failed_with_error', ['error' => $lastError ?? 'unknown']), 0);
     }
 
     /** @return list<string> */

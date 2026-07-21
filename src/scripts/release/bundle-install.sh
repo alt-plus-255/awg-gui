@@ -343,7 +343,7 @@ EOF
 }
 
 print_helper() {
-  local repo="${AWG_GUI_GITHUB_REPO:-YOUR_ORG/awg-gui}"
+  local repo="${AWG_GUI_GITHUB_REPO:-alt-plus-255/awg-gui}"
   echo
   echo -e "${BOLD}────────────────────────────────────────${NC}"
   echo -e "${BOLD}Management:${NC}"

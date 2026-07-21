@@ -16,7 +16,7 @@ class DiagnosticsService
 {
     private const CONTAINERS = [
         ['name' => 'awggui-awg', 'label' => 'AmneziaWG'],
-        ['name' => 'awggui-app', 'label' => 'Панель (API)'],
+        ['name' => 'awggui-app', 'label' => 'panel_api'],
         ['name' => 'awggui-db', 'label' => 'MariaDB'],
         ['name' => 'awggui-caddy', 'label' => 'Caddy'],
     ];
@@ -50,7 +50,7 @@ class DiagnosticsService
                 'id' => $c->id,
                 'name' => $c->name,
                 'type' => $c->type,
-                'type_label' => $c->type === 'virtual_network' ? 'Виртуальная сеть' : 'Сервер',
+                'type_label' => $c->type === 'virtual_network' ? __('api.type_virtual_network') : __('api.type_server'),
                 'iface' => $c->iface,
                 'enabled' => (bool) $c->enabled,
                 'resolver_enabled' => (bool) $c->resolver_enabled,
@@ -138,7 +138,7 @@ class DiagnosticsService
                 'ok' => false,
                 'masked' => true,
                 'content' => null,
-                'error' => 'sing-box.json не найден',
+                'error' => __('system.singbox_json_not_found'),
                 'updated_at' => null,
             ];
         }
@@ -150,7 +150,7 @@ class DiagnosticsService
                 'ok' => false,
                 'masked' => true,
                 'content' => $this->maskAwgConfText($raw),
-                'error' => 'Некорректный JSON — показан сырой текст с маскированием',
+                'error' => __('system.invalid_json_masked_raw'),
                 'updated_at' => date('c', (int) filemtime($path)),
             ];
         }
@@ -183,7 +183,7 @@ class DiagnosticsService
                 'name' => $cfg?->name ?? $iface,
                 'type' => $cfg?->type ?? null,
                 'type_label' => $cfg
-                    ? ($cfg->type === 'virtual_network' ? 'Виртуальная сеть' : 'Сервер')
+                    ? ($cfg->type === 'virtual_network' ? __('api.type_virtual_network') : __('api.type_server'))
                     : null,
                 'config_id' => $cfg?->id,
                 'content' => $this->maskAwgConfText($raw),
@@ -209,7 +209,7 @@ class DiagnosticsService
             $running = $this->awg->isContainerRunning($name);
             $out[] = [
                 'name' => $name,
-                'label' => $c['label'],
+                'label' => $c['label'] === 'panel_api' ? __('system.container_panel_api') : $c['label'],
                 'ok' => $running,
                 'running' => $running,
                 'detail' => $running ? 'running' : 'stopped',
@@ -223,7 +223,7 @@ class DiagnosticsService
     private function singBoxRunningCheck(): array
     {
         $running = false;
-        $detail = 'Контейнер AWG не запущен';
+        $detail = __('system.awg_container_not_running');
         if ($this->awg->isContainerRunning()) {
             try {
                 $r = Process::timeout(10)->run([
@@ -231,7 +231,7 @@ class DiagnosticsService
                     'sh', '-c', 'pgrep -x sing-box >/dev/null && echo yes || echo no',
                 ]);
                 $running = trim($r->output()) === 'yes';
-                $detail = $running ? 'процесс запущен' : 'процесс не найден';
+                $detail = $running ? __('system.process_running') : __('system.process_not_found');
             } catch (\Throwable $e) {
                 $detail = $e->getMessage();
             }
@@ -262,7 +262,7 @@ class DiagnosticsService
                     'type' => $config->type,
                     'ok' => false,
                     'up' => false,
-                    'detail' => 'Контейнер AWG не запущен',
+                    'detail' => __('system.awg_container_not_running'),
                 ];
 
                 continue;
@@ -276,7 +276,7 @@ class DiagnosticsService
                 'type' => $config->type,
                 'ok' => $up,
                 'up' => $up,
-                'detail' => $up ? 'up' : 'down / не найден',
+                'detail' => $up ? 'up' : __('system.iface_down_or_missing'),
             ];
         }
 
@@ -329,7 +329,7 @@ class DiagnosticsService
                 'detail' => $c['detail'],
             ];
             if (! $c['ok']) {
-                $hints[] = 'Контейнер '.$c['name'].' не запущен — проверьте docker compose.';
+                $hints[] = __('system.container_not_running_hint', ['name' => $c['name']]);
             }
         }
 
@@ -341,10 +341,10 @@ class DiagnosticsService
             'detail' => $singbox['detail'],
         ];
         if (! $singbox['ok']) {
-            $hints[] = 'sing-box не запущен — примените резолвер или перезапустите AWG.';
+            $hints[] = __('system.singbox_not_running_hint');
         }
 
-        return $this->finalizeGroup('runtime', 'Контейнеры / runtime', $checks, $hints);
+        return $this->finalizeGroup('runtime', __('system.group_runtime'), $checks, $hints);
     }
 
     /**
@@ -361,8 +361,8 @@ class DiagnosticsService
             $checks[] = [
                 'id' => 'awg_ifaces_none',
                 'ok' => true,
-                'label' => 'Интерфейсы AWG',
-                'detail' => 'Нет включённых конфигов в выборке',
+                'label' => __('system.awg_ifaces_label'),
+                'detail' => __('system.no_enabled_configs_in_selection'),
             ];
 
             return $this->finalizeGroup('awg', 'AWG ifaces', $checks, $hints);
@@ -378,12 +378,12 @@ class DiagnosticsService
                 'label' => $config->name.' ('.$config->iface.', '.$typeLabel.')',
                 'detail' => ! $up
                     ? 'iface down'
-                    : ($showOk ? 'up · awg show OK' : 'up, но awg show недоступен'),
+                    : ($showOk ? 'up · awg show OK' : __('system.awg_show_unavailable')),
             ];
             if (! $up) {
-                $hints[] = 'Интерфейс '.$config->iface.' не поднят — перезапустите AWG или проверьте конфиг «'.$config->name.'».';
+                $hints[] = __('system.iface_not_up_hint', ['iface' => $config->iface, 'name' => $config->name]);
             } elseif (! $showOk) {
-                $hints[] = 'awg show '.$config->iface.' не отвечает — проверьте userspace/amneziawg.';
+                $hints[] = __('system.awg_show_no_response_hint', ['iface' => $config->iface]);
             }
         }
 
@@ -404,13 +404,13 @@ class DiagnosticsService
             $checks = [[
                 'id' => 'resolver_skipped',
                 'ok' => true,
-                'label' => 'Резолвер',
+                'label' => __('system.resolver_label'),
                 'detail' => $anyServer
-                    ? 'В выборке нет серверов с включённым резолвером — пропуск'
-                    : 'Нет server-конфигов в выборке — пропуск',
+                    ? __('system.no_resolver_enabled_servers')
+                    : __('system.no_server_configs_in_selection'),
             ]];
 
-            return $this->finalizeGroup('resolver', 'Резолвер / DNS / FakeIP', $checks, []);
+            return $this->finalizeGroup('resolver', __('system.group_resolver'), $checks, []);
         }
 
         $diagnose = $this->resolver->diagnose();
@@ -434,7 +434,7 @@ class DiagnosticsService
 
         return $this->finalizeGroup(
             'resolver',
-            'Резолвер / DNS / FakeIP',
+            __('system.group_resolver'),
             $checks,
             is_array($diagnose['hints'] ?? null) ? $diagnose['hints'] : []
         );
@@ -465,7 +465,7 @@ class DiagnosticsService
                     'id' => 'outbounds_none',
                     'ok' => true,
                     'label' => 'Outbounds',
-                    'detail' => 'Нет активных подключений резолвера',
+                    'detail' => __('system.no_active_resolver_connections'),
                 ];
 
                 return $this->finalizeGroup('outbounds', 'Outbounds', $checks, $hints);
@@ -483,10 +483,10 @@ class DiagnosticsService
                 'id' => 'outbounds_no_awg',
                 'ok' => false,
                 'label' => 'Outbounds',
-                'detail' => 'Контейнер AWG не запущен',
+                'detail' => __('system.awg_container_not_running'),
             ];
 
-            return $this->finalizeGroup('outbounds', 'Outbounds', $checks, ['Запустите контейнер AmneziaWG для проверки outbounds.']);
+            return $this->finalizeGroup('outbounds', 'Outbounds', $checks, [__('system.start_awg_for_outbounds')]);
         }
 
         foreach ($connections as $conn) {
@@ -500,10 +500,10 @@ class DiagnosticsService
                 'label' => $conn->name.' ('.$tag.')',
                 'detail' => $ok
                     ? ($latency !== null ? $latency.' ms' : 'OK')
-                    : ($result['error'] ?? 'ошибка latency'),
+                    : ($result['error'] ?? __('system.latency_error')),
             ];
             if (! $ok) {
-                $hints[] = 'Подключение «'.$conn->name.'»: '.($result['error'] ?? 'нет ответа Clash API');
+                $hints[] = __('system.connection_no_clash_response', ['name' => $conn->name, 'error' => $result['error'] ?? __('system.no_clash_api_response')]);
             }
         }
 
@@ -524,11 +524,11 @@ class DiagnosticsService
             $checks[] = [
                 'id' => 'vn_none',
                 'ok' => true,
-                'label' => 'Виртуальные сети',
-                'detail' => 'Нет VN в выборке — пропуск',
+                'label' => __('system.virtual_networks_label'),
+                'detail' => __('system.no_vn_in_selection'),
             ];
 
-            return $this->finalizeGroup('vn', 'Виртуальные сети', $checks, $hints);
+            return $this->finalizeGroup('vn', __('system.group_vn'), $checks, $hints);
         }
 
         $stats = $this->awg->peerStats();
@@ -561,12 +561,12 @@ class DiagnosticsService
 
             if (! $config->enabled) {
                 $ok = true;
-                $detailParts[] = 'пропуск (выключен)';
+                $detailParts[] = __('system.skip_disabled');
             } elseif (! $up) {
                 $ok = false;
             } elseif ($enabledPeers > 0 && $online === 0) {
                 $ok = false;
-                $detailParts[] = 'нет свежих handshake';
+                $detailParts[] = __('system.no_fresh_handshakes');
             } else {
                 $ok = true;
             }
@@ -579,13 +579,13 @@ class DiagnosticsService
             ];
 
             if ($config->enabled && ! $up) {
-                $hints[] = 'VN «'.$config->name.'»: интерфейс не поднят.';
+                $hints[] = __('system.vn_iface_not_up', ['name' => $config->name]);
             } elseif ($config->enabled && $enabledPeers > 0 && $online === 0) {
-                $hints[] = 'VN «'.$config->name.'»: нет свежих handshake у пиров (подключите клиентов или проверьте ключи).';
+                $hints[] = __('system.vn_no_fresh_handshakes', ['name' => $config->name]);
             }
         }
 
-        return $this->finalizeGroup('vn', 'Виртуальные сети', $checks, $hints);
+        return $this->finalizeGroup('vn', __('system.group_vn'), $checks, $hints);
     }
 
     /**

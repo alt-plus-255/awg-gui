@@ -93,7 +93,7 @@ class SslCertificateService
             'https_port' => $httpsPort,
             'challenge' => $challenge,
             'panel_url' => $this->awg->resolvePanelUrl(),
-            'hint' => 'Для выпуска и обновления сертификата Let\'s Encrypt недостаточно A-записи на IP панели. В DNS домена нужно будет дополнительно создать TXT-запись _acme-challenge (имя и значение покажем после нажатия «Выпустить» / «Обновить»). После добавления записи подтвердите выпуск в панели.',
+            'hint' => __('settings.ssl_dns_hint'),
         ];
     }
 
@@ -163,7 +163,7 @@ class SslCertificateService
         $this->ensureHostLayout();
         $content = $ssl ? $this->buildSslCaddyfile() : $this->buildHttpCaddyfile();
         if (file_put_contents($this->caddyfilePath(), $content) === false) {
-            throw new RuntimeException('Не удалось записать Caddyfile');
+            throw new RuntimeException(__('settings.caddyfile_write_failed'));
         }
     }
 
@@ -176,12 +176,12 @@ class SslCertificateService
     {
         $domain = $this->awg->resolvePanelDomain();
         if ($domain === '') {
-            throw new \InvalidArgumentException('Сначала укажите и сохраните домен панели.');
+            throw new \InvalidArgumentException(__('settings.panel_domain_required'));
         }
 
         $email = trim($email);
         if ($email === '' || ! filter_var($email, FILTER_VALIDATE_EMAIL)) {
-            throw new \InvalidArgumentException('Укажите корректный email для Let\'s Encrypt.');
+            throw new \InvalidArgumentException(__('settings.le_email_required'));
         }
 
         $endpoint = trim((string) Setting::getValue('server_endpoint', env('SERVER_ENDPOINT', 'auto')));
@@ -237,7 +237,7 @@ class SslCertificateService
         $start = Process::timeout(60)->run($args);
         if (! $start->successful()) {
             Setting::setValue('ssl_status', 'error');
-            $err = trim($start->errorOutput() ?: $start->output()) ?: 'Не удалось запустить certbot';
+            $err = trim($start->errorOutput() ?: $start->output()) ?: __('settings.certbot_start_failed');
             Setting::setValue('ssl_error', $err);
             throw new RuntimeException($err);
         }
@@ -264,7 +264,7 @@ class SslCertificateService
                     ];
                 }
                 Setting::setValue('ssl_status', 'error');
-                Setting::setValue('ssl_error', $logs !== '' ? $logs : 'Certbot завершился до появления DNS challenge');
+                Setting::setValue('ssl_error', $logs !== '' ? $logs : __('settings.certbot_finished_before_challenge'));
                 throw new RuntimeException(Setting::getValue('ssl_error'));
             }
 
@@ -273,7 +273,7 @@ class SslCertificateService
 
         $this->abortChallenge(quiet: true);
         Setting::setValue('ssl_status', 'error');
-        Setting::setValue('ssl_error', 'Таймаут ожидания DNS challenge от certbot');
+        Setting::setValue('ssl_error', __('settings.certbot_challenge_timeout'));
         throw new RuntimeException(Setting::getValue('ssl_error'));
     }
 
@@ -290,12 +290,12 @@ class SslCertificateService
             if ($recovered !== null) {
                 return $recovered;
             }
-            throw new \InvalidArgumentException('Нет активного DNS challenge. Сначала нажмите «Выпустить» или «Обновить».');
+            throw new \InvalidArgumentException(__('settings.no_active_dns_challenge'));
         }
 
         $done = $this->challengeDir().'/done';
         if (@file_put_contents($done, '1') === false) {
-            throw new RuntimeException('Не удалось подтвердить DNS challenge');
+            throw new RuntimeException(__('settings.dns_challenge_confirm_failed'));
         }
 
         $deadline = time() + self::CERTBOT_FINISH_SECONDS;
@@ -307,7 +307,7 @@ class SslCertificateService
         }
 
         if ($this->isCertbotRunning()) {
-            throw new RuntimeException('Certbot всё ещё выполняется. Проверьте TXT-запись и подождите, затем повторите.');
+            throw new RuntimeException(__('settings.certbot_still_running'));
         }
 
         $exit = $this->certbotExitCode();
@@ -320,13 +320,13 @@ class SslCertificateService
 
         if ($exit !== 0 && ! $liveOk) {
             Setting::setValue('ssl_status', 'error');
-            Setting::setValue('ssl_error', $logs !== '' ? $logs : "Certbot завершился с кодом {$exit}");
+            Setting::setValue('ssl_error', $logs !== '' ? $logs : __('settings.certbot_exit_code', ['exit' => $exit]));
             throw new RuntimeException(Setting::getValue('ssl_error'));
         }
 
         if (! $liveOk && ! $logsSayOk) {
             Setting::setValue('ssl_status', 'error');
-            Setting::setValue('ssl_error', $logs !== '' ? $logs : 'Файлы сертификата не найдены после certbot');
+            Setting::setValue('ssl_error', $logs !== '' ? $logs : __('settings.cert_files_not_found_after_certbot'));
             throw new RuntimeException(Setting::getValue('ssl_error'));
         }
 
@@ -336,7 +336,7 @@ class SslCertificateService
                 return $recovered;
             }
             Setting::setValue('ssl_status', 'error');
-            Setting::setValue('ssl_error', $logs !== '' ? $logs : 'Файлы сертификата не найдены после certbot');
+            Setting::setValue('ssl_error', $logs !== '' ? $logs : __('settings.cert_files_not_found_after_certbot'));
             throw new RuntimeException(Setting::getValue('ssl_error'));
         }
 
@@ -432,7 +432,7 @@ class SslCertificateService
         if (! $result->successful()) {
             $err = trim($result->errorOutput() ?: $result->output());
             Log::error('caddy recreate failed', ['err' => $err]);
-            throw new RuntimeException($err !== '' ? $err : 'Не удалось пересоздать контейнер Caddy');
+            throw new RuntimeException($err !== '' ? $err : __('settings.caddy_recreate_failed'));
         }
     }
 
@@ -445,7 +445,7 @@ class SslCertificateService
 
         if (! $result->successful()) {
             $err = trim($result->errorOutput() ?: $result->output());
-            throw new RuntimeException($err !== '' ? $err : 'Не удалось перезагрузить Caddy');
+            throw new RuntimeException($err !== '' ? $err : __('settings.caddy_reload_failed'));
         }
     }
 
@@ -466,7 +466,7 @@ class SslCertificateService
         $privkey = $live.'/privkey.pem';
 
         if (! is_readable($fullchain) || ! is_readable($privkey)) {
-            throw new RuntimeException('Certbot завершился успешно, но файлы сертификата не найдены');
+            throw new RuntimeException(__('settings.certbot_ok_but_files_missing'));
         }
 
         $dest = $this->certsPanelDir();
@@ -478,7 +478,7 @@ class SslCertificateService
         $fc = file_get_contents($fullchain);
         $pk = file_get_contents($privkey);
         if ($fc === false || $pk === false || $fc === '' || $pk === '') {
-            throw new RuntimeException('Не удалось прочитать выпущенный сертификат');
+            throw new RuntimeException(__('settings.cert_read_failed'));
         }
 
         file_put_contents($dest.'/fullchain.pem', $fc);

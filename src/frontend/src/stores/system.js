@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import api from '@/boot/axios'
+import { translate } from '@/stores/locale'
 
 export const useSystemStore = defineStore('system', () => {
   const status = ref(null)
@@ -39,7 +40,7 @@ export const useSystemStore = defineStore('system', () => {
           ok: false,
           awg_restarting: false,
           services: { app: { ok: false }, awg: { ok: false, running: false } },
-          messages: ['Не удалось связаться с API панели']
+          messages: [translate('common.apiUnreachable')]
         }
         startBlockedPoll()
         return status.value
@@ -84,7 +85,7 @@ export const useSystemStore = defineStore('system', () => {
       return {
         ok: false,
         already_restarting: true,
-        message: 'Перезапуск AWG уже выполняется'
+        message: translate('common.restartAwgInProgress')
       }
     }
 
@@ -112,7 +113,7 @@ export const useSystemStore = defineStore('system', () => {
       return {
         ok: false,
         already_restarting: true,
-        message: 'Перезапуск AWG уже выполняется'
+        message: translate('common.restartAwgInProgress')
       }
     }
 

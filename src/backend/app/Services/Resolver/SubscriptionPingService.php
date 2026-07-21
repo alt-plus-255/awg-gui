@@ -14,6 +14,8 @@ class SubscriptionPingService
 
     public const SESSION_CANCEL_KEY = 'ping_probe:session_cancel';
 
+    public const SESSION_META_KEY = 'ping_probe:session_meta';
+
     public const DEFAULT_TIMEOUT_MS = 6000;
 
     public const FAST_TCP_TIMEOUT_SEC = 2.0;
@@ -39,7 +41,7 @@ class SubscriptionPingService
     {
         $pairs = $this->outboundBuilder->pingableNodes($conn);
         if ($pairs === []) {
-            throw new RuntimeException('Нет узлов для проверки пинга');
+            throw new RuntimeException(__('resolver.no_nodes_for_ping'));
         }
 
         return $this->runPingSession(function () use ($pairs, $conn, $onResult, $fastOnly) {
@@ -49,7 +51,11 @@ class SubscriptionPingService
             }
 
             return $this->pingByTags($conn, $keyToTag, $onResult, $fastOnly);
-        }, $conn);
+        }, $conn, [
+            'kind' => 'subscription',
+            'total' => count($pairs),
+            'phase' => $fastOnly ? __('resolver.phase_fast_ping') : __('resolver.phase_ping'),
+        ]);
     }
 
     /**
@@ -63,19 +69,23 @@ class SubscriptionPingService
                 'key' => $nodeKey,
                 'latency_ms' => null,
                 'ok' => false,
-                'error' => 'Узел не в probe — выберите локацию и примените',
+                'error' => __('resolver.node_not_in_probe'),
             ];
         }
 
         $results = $this->runPingSession(function () use ($conn, $nodeKey, $tag, $fastOnly) {
             return $this->pingByTags($conn, [$nodeKey => $tag], null, $fastOnly);
-        }, $conn);
+        }, $conn, [
+            'kind' => 'node',
+            'total' => 1,
+            'phase' => __('resolver.phase_ping_node'),
+        ]);
 
         return $results[0] ?? [
             'key' => $nodeKey,
             'latency_ms' => null,
             'ok' => false,
-            'error' => 'не проверен',
+            'error' => __('resolver.not_checked'),
         ];
     }
 
@@ -88,14 +98,18 @@ class SubscriptionPingService
 
         $results = $this->runPingSession(function () use ($conn, $tag, $fastOnly) {
             return $this->pingByTags($conn, ['__conn' => $tag], null, $fastOnly);
-        }, $conn);
+        }, $conn, [
+            'kind' => $conn->isSubscription() ? 'subscription' : 'proxy',
+            'total' => 1,
+            'phase' => __('resolver.phase_checking'),
+        ]);
 
         $r = $results['__conn'] ?? $results[array_key_first($results)] ?? null;
         if ($r === null) {
             return [
                 'ok' => false,
                 'latency_ms' => null,
-                'error' => 'не проверен',
+                'error' => __('resolver.not_checked'),
             ];
         }
 
@@ -338,6 +352,7 @@ class SubscriptionPingService
         Cache::put(self::SESSION_CANCEL_KEY, true, 60);
         $this->probe->stop();
         Cache::forget(self::SESSION_ACTIVE_KEY);
+        Cache::forget(self::SESSION_META_KEY);
         Cache::lock(self::SESSION_LOCK_KEY)->forceRelease();
         Cache::forget(self::SESSION_CANCEL_KEY);
 
@@ -352,10 +367,38 @@ class SubscriptionPingService
     }
 
     /**
+     * @return array{
+     *     active: bool,
+     *     connection_id?: int|null,
+     *     connection_name?: string|null,
+     *     kind?: string|null,
+     *     total?: int,
+     *     tested?: int,
+     *     phase?: string|null,
+     *     started_at?: string|null,
+     *     source?: string|null
+     * }
+     */
+    public function sessionStatus(): array
+    {
+        if (! Cache::has(self::SESSION_ACTIVE_KEY)) {
+            return ['active' => false];
+        }
+
+        $meta = Cache::get(self::SESSION_META_KEY);
+        if (! is_array($meta)) {
+            return ['active' => true];
+        }
+
+        return array_merge(['active' => true], $meta);
+    }
+
+    /**
      * @param  callable(): array<string, array{key: string, latency_ms: ?int, ok: bool, error: ?string, source?: string}>|list<array{key: string, latency_ms: ?int, ok: bool, error: ?string, source?: string}>  $callback
+     * @param  array{kind?: string, total?: int, phase?: string}  $meta
      * @return list<array{key: string, latency_ms: ?int, ok: bool, error: ?string, source?: string}>
      */
-    private function runPingSession(callable $callback, ?ResolverConnection $conn = null): array
+    private function runPingSession(callable $callback, ?ResolverConnection $conn = null, array $meta = []): array
     {
         $lock = Cache::lock(self::SESSION_LOCK_KEY, 600);
         if (! $lock->get()) {
@@ -363,6 +406,17 @@ class SubscriptionPingService
         }
 
         Cache::put(self::SESSION_ACTIVE_KEY, true, 600);
+        @ignore_user_abort(true);
+        $this->writeSessionMeta([
+            'connection_id' => $conn?->id,
+            'connection_name' => $conn?->name,
+            'kind' => $meta['kind'] ?? ($conn?->isSubscription() ? 'subscription' : 'proxy'),
+            'total' => (int) ($meta['total'] ?? 0),
+            'tested' => 0,
+            'phase' => $meta['phase'] ?? __('resolver.phase_preparing'),
+            'started_at' => now()->toIso8601String(),
+            'source' => app()->runningInConsole() ? 'scheduler' : 'ui',
+        ]);
 
         try {
             $this->configSync->rebuildAndMaybeReload();
@@ -382,15 +436,36 @@ class SubscriptionPingService
             return $list;
         } finally {
             Cache::forget(self::SESSION_ACTIVE_KEY);
+            Cache::forget(self::SESSION_META_KEY);
             Cache::forget(self::SESSION_CANCEL_KEY);
             $lock->release();
         }
     }
 
+    /**
+     * @param  array<string, mixed>  $patch
+     */
+    private function writeSessionMeta(array $patch): void
+    {
+        $current = Cache::get(self::SESSION_META_KEY);
+        $merged = array_merge(is_array($current) ? $current : [], $patch);
+        Cache::put(self::SESSION_META_KEY, $merged, 600);
+    }
+
+    private function bumpSessionProgress(): void
+    {
+        $meta = Cache::get(self::SESSION_META_KEY);
+        if (! is_array($meta)) {
+            return;
+        }
+        $meta['tested'] = (int) ($meta['tested'] ?? 0) + 1;
+        Cache::put(self::SESSION_META_KEY, $meta, 600);
+    }
+
     private function assertNotCancelled(): void
     {
         if (Cache::get(self::SESSION_CANCEL_KEY)) {
-            throw new RuntimeException('Пинг отменён');
+            throw new RuntimeException(__('resolver.ping_cancelled'));
         }
     }
 
@@ -427,11 +502,18 @@ class SubscriptionPingService
             }
         }
 
+        $this->writeSessionMeta([
+            'total' => count($keyToTag),
+            'tested' => 0,
+            'phase' => $fastOnly ? __('resolver.phase_fast_ping') : __('resolver.phase_ping'),
+        ]);
+
         $toDelay = $keyToTag;
         $results = [];
 
         $emit = function (array $result) use (&$results, $onResult): void {
             $results[$result['key']] = $result;
+            $this->bumpSessionProgress();
             if ($onResult !== null) {
                 $onResult($result);
             }
@@ -464,7 +546,7 @@ class SubscriptionPingService
                     'key' => $key,
                     'latency_ms' => null,
                     'ok' => false,
-                    'error' => 'TCP недоступен',
+                    'error' => __('resolver.tcp_unavailable'),
                     'source' => 'tcp',
                 ]);
                 unset($toDelay[$key]);

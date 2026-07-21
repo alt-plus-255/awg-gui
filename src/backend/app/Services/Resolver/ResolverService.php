@@ -139,6 +139,47 @@ class ResolverService
         return $addr !== '' ? $addr : '10.66.66.1';
     }
 
+    /**
+     * Compact AllowedIPs for client_split mode.
+     * Community ip_cidr intentionally omitted — kept only on VDS.
+     *
+     * @return list<string>
+     */
+    public function clientSplitAllowedIps(AwgConfig $config): array
+    {
+        $ips = [self::FAKEIP_CIDR, $this->gatewayIp($config).'/32'];
+
+        foreach ($config->user_subnets ?? [] as $cidr) {
+            $cidr = trim((string) $cidr);
+            if ($cidr === '') {
+                continue;
+            }
+            if (! str_contains($cidr, '/')) {
+                if (filter_var($cidr, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+                    $cidr .= '/32';
+                } else {
+                    continue;
+                }
+            }
+            $ips[] = $cidr;
+        }
+
+        return array_values(array_unique($ips));
+    }
+
+    public function clientAllowedIpsPreview(AwgConfig $config): string
+    {
+        if (! $config->resolver_enabled) {
+            return (string) ($config->client_allowed_ips ?: '');
+        }
+
+        if ($config->resolverRoutingMode() === AwgConfig::ROUTING_MODE_CLIENT_SPLIT) {
+            return implode(', ', $this->clientSplitAllowedIps($config));
+        }
+
+        return '0.0.0.0/0, ::/0';
+    }
+
     public function subnetCidr(AwgConfig $config): string
     {
         return (string) ($config->internal_subnet ?: '10.66.66.0/24');
@@ -157,7 +198,7 @@ class ResolverService
         foreach ($lists as $tag) {
             if (! in_array($tag, $known, true)) {
                 throw ValidationException::withMessages([
-                    'community_lists' => ["Неизвестный список: {$tag}"],
+                    'community_lists' => [__('resolver.unknown_list', ['tag' => $tag])],
                 ]);
             }
         }
@@ -165,7 +206,7 @@ class ResolverService
         $exclusiveHits = array_values(array_intersect($lists, self::MUTUALLY_EXCLUSIVE));
         if (count($exclusiveHits) > 1) {
             throw ValidationException::withMessages([
-                'community_lists' => ['Нельзя одновременно выбирать Russia inside, Russia outside и Ukraine inside'],
+                'community_lists' => [__('resolver.cannot_select_conflicting_lists')],
             ]);
         }
 
@@ -195,7 +236,7 @@ class ResolverService
                 $part = ltrim($part, '.');
                 if ($part === '' || ! preg_match('/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/', $part)) {
                     throw ValidationException::withMessages([
-                        'user_domains' => ["Неверный домен: {$raw}"],
+                        'user_domains' => [__('resolver.invalid_domain', ['raw' => $raw])],
                     ]);
                 }
                 $out[] = $part;
@@ -221,14 +262,14 @@ class ResolverService
                 [$host, $mask] = array_pad(explode('/', $part, 2), 2, null);
                 if (! filter_var($host, FILTER_VALIDATE_IP) || $mask === null || ! ctype_digit((string) $mask)) {
                     throw ValidationException::withMessages([
-                        'user_subnets' => ["Неверная подсеть: {$raw}"],
+                        'user_subnets' => [__('resolver.invalid_subnet', ['raw' => $raw])],
                     ]);
                 }
                 $maskInt = (int) $mask;
                 $max = str_contains($host, ':') ? 128 : 32;
                 if ($maskInt < 0 || $maskInt > $max) {
                     throw ValidationException::withMessages([
-                        'user_subnets' => ["Неверная маска: {$raw}"],
+                        'user_subnets' => [__('resolver.invalid_mask', ['raw' => $raw])],
                     ]);
                 }
                 $out[] = $host.'/'.$maskInt;
@@ -242,12 +283,12 @@ class ResolverService
     {
         if ($config->type === 'virtual_network') {
             throw ValidationException::withMessages([
-                'resolver_enabled' => ['Резолвер недоступен для конфигов виртуальной сети'],
+                'resolver_enabled' => [__('resolver.unavailable_for_vn')],
             ]);
         }
         if ($config->type !== 'server') {
             throw ValidationException::withMessages([
-                'resolver_enabled' => ['Резолвер доступен только для серверных конфигов'],
+                'resolver_enabled' => [__('resolver.server_configs_only')],
             ]);
         }
     }
@@ -584,7 +625,7 @@ class ResolverService
             @file_put_contents($this->resolverStatusPath(), json_encode([
                 'enabled' => false,
                 'healthy' => true,
-                'message' => 'Резолвер выключен',
+                'message' => __('resolver.disabled'),
                 'updated_at' => now()->toIso8601String(),
             ], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
             $this->reloadSingBox();
@@ -611,7 +652,7 @@ class ResolverService
             $sb = $this->buildSingBoxConfig($configs, $forceSyncLists);
             $json = json_encode($sb, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
             if ($json === false) {
-                throw new RuntimeException('Не удалось сериализовать sing-box.json');
+                throw new RuntimeException(__('resolver.singbox_serialize_failed'));
             }
             $json .= "\n";
 
@@ -637,7 +678,7 @@ class ResolverService
             @file_put_contents($this->resolverStatusPath(), json_encode([
                 'enabled' => $configs !== [],
                 'healthy' => true,
-                'message' => $configs !== [] ? 'Конфиг применён' : 'Подключения активны (резолвер выкл.)',
+                'message' => $configs !== [] ? __('resolver.config_applied') : __('resolver.connections_active_resolver_off'),
                 'ifaces' => $ifaces,
                 'updated_at' => $now->toIso8601String(),
             ], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
@@ -734,7 +775,7 @@ class ResolverService
             foreach ($lists as $tag) {
                 $localPath = $this->communityRulesetPath($tag);
                 if (! is_file($localPath)) {
-                    throw new RuntimeException("Ruleset не найден на диске: {$tag}.srs — нажмите «Обновить lists»");
+                    throw new RuntimeException(__('resolver.ruleset_not_on_disk_refresh', ['tag' => $tag]));
                 }
             }
 
@@ -987,18 +1028,18 @@ class ResolverService
     {
         if (! $connectionId) {
             throw ValidationException::withMessages([
-                'connection_id' => ['Выберите подключение (точку VPN) для резолвера'],
+                'connection_id' => [__('resolver.select_connection')],
             ]);
         }
         $conn = ResolverConnection::query()->find($connectionId);
         if (! $conn) {
             throw ValidationException::withMessages([
-                'connection_id' => ['Подключение не найдено'],
+                'connection_id' => [__('resolver.connection_not_found')],
             ]);
         }
         if (! $conn->enabled) {
             throw ValidationException::withMessages([
-                'connection_id' => ['Выбранное подключение выключено'],
+                'connection_id' => [__('resolver.connection_disabled')],
             ]);
         }
 
@@ -1084,7 +1125,7 @@ class ResolverService
                 : ($singBoxRunning && (bool) ($file['healthy'] ?? true) && ! $configs->where('resolver_enabled', true)->contains(fn ($c) => filled($c->resolver_last_error))),
             'singbox_running' => $singBoxRunning,
             'fakeip_cidr' => self::FAKEIP_CIDR,
-            'message' => $file['message'] ?? ($enabledCount > 0 ? 'OK' : 'Резолвер выключен'),
+            'message' => $file['message'] ?? ($enabledCount > 0 ? 'OK' : __('resolver.disabled')),
             'updated_at' => $file['updated_at'] ?? null,
             'community_lists' => $this->communityListCatalog(),
             'custom_lists' => $this->lists->customListCatalog(),
@@ -1099,6 +1140,7 @@ class ResolverService
                     'type' => $c->type,
                     'enabled' => (bool) $c->enabled,
                     'resolver_enabled' => (bool) $c->resolver_enabled,
+                    'resolver_routing_mode' => $c->resolverRoutingMode(),
                     'resolver_reject_quic' => (bool) $c->resolver_reject_quic,
                     'connection_id' => $c->connection_id,
                     'connection_name' => $conn?->name,
@@ -1111,9 +1153,7 @@ class ResolverService
                     'gateway_ip' => $this->gatewayIp($c),
                     'resolver_dns' => $c->resolver_dns ?: '1.1.1.1',
                     'client_dns' => $c->resolver_enabled ? $this->gatewayIp($c) : $c->peer_dns,
-                    'client_allowed_ips_preview' => $c->resolver_enabled
-                        ? '0.0.0.0/0, ::/0'
-                        : $c->client_allowed_ips,
+                    'client_allowed_ips_preview' => $this->clientAllowedIpsPreview($c),
                 ];
             })->values()->all(),
         ];

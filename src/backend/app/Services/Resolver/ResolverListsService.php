@@ -101,7 +101,7 @@ class ResolverListsService
         if ($this->isCustomTag($tag)) {
             if ($this->customDiskPath($tag) === null) {
                 throw new RuntimeException(
-                    "Свой список «{$tag}» не найден на диске — откройте Резолвер → Настройки и сохраните/скачайте список."
+                    __('resolver.custom_list_not_on_disk', ['tag' => $tag])
                 );
             }
 
@@ -111,7 +111,7 @@ class ResolverListsService
         $path = $this->paths->communityRulesetPath($tag);
         if (! is_file($path) || filesize($path) <= 16) {
             throw new RuntimeException(
-                "Список «{$tag}» не скачан — откройте Резолвер → Настройки → Скачать."
+                __('resolver.list_not_downloaded', ['tag' => $tag])
             );
         }
     }
@@ -149,7 +149,7 @@ class ResolverListsService
             ->get()
             ->map(fn (ResolverCustomList $l) => [
                 'tag' => $l->slug,
-                'label' => $l->name.' (свой)',
+                'label' => $l->name.' '.__('api.custom_list_suffix'),
                 'kind' => 'custom',
                 'exclusive_group' => null,
                 'id' => $l->id,
@@ -265,7 +265,7 @@ class ResolverListsService
                 }
                 $body = $response->body();
                 if ($body === '' || strlen($body) < 16) {
-                    throw new RuntimeException('пустой или слишком маленький файл');
+                    throw new RuntimeException(__('resolver.empty_or_tiny_file'));
                 }
                 file_put_contents($tmp, $body);
                 rename($tmp, $path);
@@ -294,7 +294,7 @@ class ResolverListsService
         }
 
         if ($errors !== []) {
-            throw new RuntimeException('Не удалось скачать ruleset: '.implode('; ', $errors));
+            throw new RuntimeException(__('resolver.ruleset_download_failed', ['errors' => implode('; ', $errors)]));
         }
     }
 
@@ -353,7 +353,7 @@ class ResolverListsService
         if ($this->isCustomTag($tag)) {
             $list = ResolverCustomList::query()->where('slug', $tag)->first();
             if (! $list || ! $list->isRemote()) {
-                throw new RuntimeException('Sync доступен только для своих списков по ссылке');
+                throw new RuntimeException(__('resolver.sync_custom_url_only'));
             }
             $this->syncCustomRemote($list, $force);
 
@@ -377,14 +377,14 @@ class ResolverListsService
             }
         }
         if ($errors !== []) {
-            throw new RuntimeException('Не удалось скачать свои URL-списки: '.implode('; ', $errors));
+            throw new RuntimeException(__('resolver.custom_url_lists_download_failed', ['errors' => implode('; ', $errors)]));
         }
     }
 
     public function syncCustomRemote(ResolverCustomList $list, bool $force = true): void
     {
         if (! $list->isRemote()) {
-            throw new RuntimeException('У списка нет URL');
+            throw new RuntimeException(__('resolver.list_has_no_url'));
         }
         $url = trim((string) $list->source_url);
         $srsPath = $this->customSrsPath($list->slug);
@@ -396,11 +396,11 @@ class ResolverListsService
 
         $response = Http::timeout(90)->get($url);
         if (! $response->successful()) {
-            throw new RuntimeException("HTTP {$response->status()} для {$url}");
+            throw new RuntimeException(__('resolver.http_status_for_url', ['status' => $response->status(), 'url' => $url]));
         }
         $body = $response->body();
         if ($body === '' || strlen($body) < 4) {
-            throw new RuntimeException('пустой ответ по URL');
+            throw new RuntimeException(__('resolver.empty_url_response'));
         }
 
         if ($this->looksLikeSrs($body, $url)) {
@@ -488,7 +488,7 @@ class ResolverListsService
         $domains = array_values(array_unique($domains));
         $cidrs = array_values(array_unique($cidrs));
         if ($domains === [] && $cidrs === []) {
-            throw new RuntimeException('В текстовом списке нет доменов/CIDR');
+            throw new RuntimeException(__('resolver.text_list_no_domains_cidrs'));
         }
 
         return ['domains' => $domains, 'cidrs' => $cidrs];
@@ -502,7 +502,7 @@ class ResolverListsService
         }
         if (! filter_var($url, FILTER_VALIDATE_URL) || ! preg_match('#^https?://#i', $url)) {
             throw ValidationException::withMessages([
-                'source_url' => ['Укажите http(s) URL списка'],
+                'source_url' => [__('resolver.source_url_required')],
             ]);
         }
 
@@ -529,7 +529,7 @@ class ResolverListsService
                 $part = ltrim($part, '.');
                 if ($part === '' || ! preg_match('/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/', $part)) {
                     throw ValidationException::withMessages([
-                        'domains' => ["Неверный домен: {$raw}"],
+                        'domains' => [__('resolver.invalid_domain', ['raw' => $raw])],
                     ]);
                 }
                 $outDomains[] = $part;
@@ -551,7 +551,7 @@ class ResolverListsService
             }
             if (! $this->isValidCidr($part)) {
                 throw ValidationException::withMessages([
-                    'cidrs' => ["Неверная подсеть: {$raw}"],
+                    'cidrs' => [__('resolver.invalid_subnet', ['raw' => $raw])],
                 ]);
             }
             $outCidrs[] = $part;
@@ -587,7 +587,7 @@ class ResolverListsService
     {
         $name = trim($name);
         if ($name === '') {
-            throw ValidationException::withMessages(['name' => ['Укажите имя списка']]);
+            throw ValidationException::withMessages(['name' => [__('resolver.list_name_required')]]);
         }
         $sourceUrl = $this->normalizeSourceUrl($sourceUrl);
 
@@ -609,7 +609,7 @@ class ResolverListsService
             if ($normalized['domains'] === [] && $normalized['cidrs'] === []) {
                 $list->delete();
                 throw ValidationException::withMessages([
-                    'domains' => ['Добавьте домены/CIDR в textarea или укажите ссылку на список'],
+                    'domains' => [__('resolver.add_domains_or_url')],
                 ]);
             }
             $list->domains = $normalized['domains'];
@@ -625,7 +625,7 @@ class ResolverListsService
     {
         $name = trim($name);
         if ($name === '') {
-            throw ValidationException::withMessages(['name' => ['Укажите имя списка']]);
+            throw ValidationException::withMessages(['name' => [__('resolver.list_name_required')]]);
         }
         $sourceUrl = $this->normalizeSourceUrl($sourceUrl);
 
@@ -644,7 +644,7 @@ class ResolverListsService
             $normalized = $this->normalizeCustomEntries($domains, $cidrs);
             if ($normalized['domains'] === [] && $normalized['cidrs'] === []) {
                 throw ValidationException::withMessages([
-                    'domains' => ['Добавьте домены/CIDR в textarea или укажите ссылку на список'],
+                    'domains' => [__('resolver.add_domains_or_url')],
                 ]);
             }
             $list->domains = $normalized['domains'];

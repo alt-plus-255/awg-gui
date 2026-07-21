@@ -2,7 +2,7 @@
 # dist/install.sh — production online installer (wget one-liner entry point)
 set -euo pipefail
 
-GITHUB_REPO="${AWG_GUI_GITHUB_REPO:-YOUR_ORG/awg-gui}"
+GITHUB_REPO="${AWG_GUI_GITHUB_REPO:-alt-plus-255/awg-gui}"
 VERSION="${AWG_GUI_VERSION:-}"
 INSTALL_DIR="${AWG_GUI_INSTALL_DIR:-/opt/awg-gui}"
 YES=0

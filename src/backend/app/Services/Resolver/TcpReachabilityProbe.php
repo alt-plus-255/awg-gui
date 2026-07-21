@@ -91,7 +91,7 @@ class TcpReachabilityProbe
                     continue;
                 }
 
-                $reachable = $proc->successful();
+                $reachable = $proc->wait()->successful();
                 $out[$key] = $reachable;
                 $onResult($key, $reachable);
                 unset($running[$key]);

@@ -5,23 +5,23 @@
         <div class="col">
           <div class="row items-center no-wrap">
             <div class="col">
-              <div class="text-h5">Подключения</div>
+              <div class="text-h5">{{ t('connections.title') }}</div>
             </div>
             <div class="col-auto lt-md">
-              <q-btn flat dense icon="refresh" label="Обновить" :loading="loading" @click="load" />
+              <q-btn flat dense icon="refresh" :label="t('common.refresh')" :loading="loading" @click="load" />
             </div>
           </div>
           <div class="text-body2 text-grey-5 q-mt-xs">
-            Точки выхода sing-box (VPN/прокси) для режима резолвера.
+            {{ t('connections.description') }}
           </div>
         </div>
         <div class="col-auto gt-sm row items-center no-wrap">
-          <q-btn flat icon="refresh" label="Обновить" class="q-mr-sm" :loading="loading" @click="load" />
-          <q-btn color="primary" icon="add" label="Добавить" @click="openCreate" />
+          <q-btn flat icon="refresh" :label="t('common.refresh')" class="q-mr-sm" :loading="loading" @click="load" />
+          <q-btn color="primary" icon="add" :label="t('connections.add')" @click="openCreate" />
         </div>
       </div>
       <div class="lt-md q-mb-md">
-        <q-btn color="primary" icon="add" label="Добавить" class="full-width" @click="openCreate" />
+        <q-btn color="primary" icon="add" :label="t('connections.add')" class="full-width" @click="openCreate" />
       </div>
 
       <q-banner
@@ -38,12 +38,42 @@
         </template>
       </q-banner>
 
-      <q-banner v-if="autoPingSession.active" dense rounded class="auto-ping-banner q-mb-md">
+      <q-banner v-if="remotePingSession.active" dense rounded class="auto-ping-banner q-mb-md">
         <template #avatar>
           <q-spinner color="primary" size="20px" />
         </template>
         <span class="text-body2">
-          Автопроверка пинга:
+          {{ t('connections.pingInProgress') }}
+          <template v-if="remotePingSession.total > 0">
+            :
+            <strong>{{ Math.min(remotePingSession.tested, remotePingSession.total) }} / {{ remotePingSession.total }}</strong>
+          </template>
+          <span v-if="remotePingSession.connectionName" class="text-grey-5">
+            — {{ remotePingSession.connectionName }}
+          </span>
+          <span v-if="remotePingSession.phase" class="text-grey-6">
+            · {{ remotePingSession.phase }}
+          </span>
+        </span>
+        <template #action>
+          <q-btn
+            flat
+            dense
+            color="orange"
+            icon="stop"
+            :label="t('connections.stop')"
+            :loading="pingProbeRestarting"
+            @click="stopAndRestartPingProbe"
+          />
+        </template>
+      </q-banner>
+
+      <q-banner v-else-if="autoPingSession.active" dense rounded class="auto-ping-banner q-mb-md">
+        <template #avatar>
+          <q-spinner color="primary" size="20px" />
+        </template>
+        <span class="text-body2">
+          {{ t('connections.autoPingColon') }}
           <strong>{{ Math.min(autoPingSession.done + 1, autoPingSession.total) }} / {{ autoPingSession.total }}</strong>
           <span v-if="autoPingSession.currentName" class="text-grey-5"> — {{ autoPingSession.currentName }}</span>
         </span>
@@ -53,7 +83,7 @@
             dense
             color="orange"
             icon="stop"
-            label="Остановить"
+            :label="t('connections.stop')"
             :loading="pingProbeRestarting"
             @click="stopAndRestartPingProbe"
           />
@@ -69,7 +99,7 @@
         :loading="loading"
         class="bg-transparent"
         :rows-per-page-options="[10, 25, 0]"
-        no-data-label="Нет подключений — добавьте первое"
+        :no-data-label="t('connections.noConnections')"
       >
         <template #body="props">
           <q-tr :props="props">
@@ -95,7 +125,7 @@
             <q-td key="config_type" :props="props">
               <div class="config-type-cell">
                 <q-badge :color="configTypeBadgeColor(props.row)" dense>
-                  {{ props.row.kind === 'subscription' ? 'подписка' : (props.row.config_type === 'url' ? 'прокси' : 'JSON') }}
+                  {{ props.row.kind === 'subscription' ? t('connections.kindSubscription') : (props.row.config_type === 'url' ? t('connections.kindProxy') : t('connections.kindJson')) }}
                 </q-badge>
                 <span v-if="props.row.kind === 'subscription'" class="text-caption text-grey-5">
                   {{ subscriptionModeLabel(props.row) }}
@@ -121,7 +151,7 @@
                   </span>
                 </div>
                 <span v-else class="text-caption text-grey-6">
-                  {{ props.row.subscription_mode === 'single' ? 'локация не выбрана' : 'ожидание выбора системы' }}
+                  {{ props.row.subscription_mode === 'single' ? t('connections.locationNotSelected') : t('connections.awaitingSystemPick') }}
                 </span>
               </template>
               <span v-else class="text-caption text-grey-6">—</span>
@@ -131,7 +161,7 @@
                 <div v-if="pingStatus[props.row.id]?.active" class="row items-center q-gutter-xs no-wrap q-mb-xs">
                   <q-spinner size="14px" color="primary" />
                   <span class="text-caption text-primary">
-                    {{ pingStatus[props.row.id].phase || 'пинг…' }}
+                    {{ pingStatus[props.row.id].phase || t('connections.pingEllipsis') }}
                     <template v-if="pingStatus[props.row.id].total > 1">
                       · {{ pingStatus[props.row.id].tested }}/{{ pingStatus[props.row.id].total }}
                     </template>
@@ -144,7 +174,7 @@
                   <span v-if="props.row.latency_ms != null" class="text-caption text-grey-5 mono">
                     {{ props.row.latency_ms }} ms
                   </span>
-                  <q-badge v-if="props.row.tspu?.likely" color="warning">ТСПУ</q-badge>
+                  <q-badge v-if="props.row.tspu?.likely" color="warning">{{ t('connections.tspu') }}</q-badge>
                 </div>
                 <div v-if="props.row.tspu?.chain?.length" class="tspu-chain q-mt-xs">
                   <template v-for="(step, i) in props.row.tspu.chain" :key="step.id">
@@ -164,14 +194,18 @@
                 >
                   {{ props.row.tspu.detail }}
                 </div>
-                <div v-if="formatLastChecked(lastCheckedAt(props.row))" class="text-caption text-grey-6 q-mt-xs">
-                  Проверено: {{ formatLastChecked(lastCheckedAt(props.row)) }}
-                </div>
               </div>
+            </q-td>
+            <q-td key="last_checked" :props="props">
+              <div v-if="formatLastChecked(lastCheckedAt(props.row))" class="last-checked-cell">
+                <div class="text-body2 mono">{{ formatLastCheckedDate(lastCheckedAt(props.row)) }}</div>
+                <div class="text-caption text-grey-5 mono">{{ formatLastCheckedTime(lastCheckedAt(props.row)) }}</div>
+              </div>
+              <span v-else class="text-caption text-grey-6">{{ t('connections.neverChecked') }}</span>
             </q-td>
             <q-td key="enabled" :props="props">
               <q-badge :color="props.row.enabled ? 'positive' : 'grey-8'">
-                {{ props.row.enabled ? 'вкл' : 'выкл' }}
+                {{ props.row.enabled ? t('common.on') : t('common.off') }}
               </q-badge>
             </q-td>
             <q-td key="actions" :props="props">
@@ -180,13 +214,13 @@
                 dense
                 icon="network_check"
                 color="primary"
-                title="Проверить соединение"
+                :title="t('connections.checkConnection')"
                 :loading="testingId === props.row.id || pingStatus[props.row.id]?.active"
                 :disable="!props.row.enabled || (isAnyPingActive && testingId !== props.row.id && !pingStatus[props.row.id]?.active)"
                 @click="testConnection(props.row)"
               />
-              <q-btn flat dense icon="edit" title="Редактировать" @click="openEdit(props.row)" />
-              <q-btn flat dense color="negative" icon="delete" title="Удалить" @click="remove(props.row)" />
+              <q-btn flat dense icon="edit" :title="t('common.edit')" @click="openEdit(props.row)" />
+              <q-btn flat dense color="negative" icon="delete" :title="t('common.delete')" @click="remove(props.row)" />
             </q-td>
           </q-tr>
 
@@ -197,7 +231,7 @@
                   <q-select
                     v-model="subscriptionState[props.row.id].pingIntervalMin"
                     :options="pingIntervalOptions"
-                    label="Автопроверка пинга"
+                    :label="t('connections.autoPing')"
                     dense
                     outlined
                     emit-value
@@ -206,25 +240,32 @@
                     :disable="isConnectionPinging(props.row.id)"
                     @update:model-value="() => savePingInterval(props.row)"
                   />
+                  <div v-if="formatLastChecked(lastCheckedAt(props.row))" class="text-caption text-grey-5">
+                    {{ t('connections.lastCheck') }}
+                    <span class="mono text-grey-4">{{ formatLastChecked(lastCheckedAt(props.row)) }}</span>
+                  </div>
+                  <div v-else class="text-caption text-grey-6">
+                    {{ t('connections.pingNeverRun') }}
+                  </div>
                   <q-badge
                     v-if="isConnectionPinging(props.row.id)"
                     color="info"
                     outline
                   >
-                    проверка…
+                    {{ t('connections.checking') }}
                   </q-badge>
                   <q-space />
-                  <q-btn flat dense icon="cloud_download" label="Обновить подписку"
+                  <q-btn flat dense icon="cloud_download" :label="t('connections.refreshSubscription')"
                     :loading="subscriptionState[props.row.id]?.refreshing"
                     @click="refreshSubscription(props.row)" />
-                  <q-btn color="primary" dense icon="save" label="Применить"
+                  <q-btn color="primary" dense icon="save" :label="t('common.apply')"
                     :loading="subscriptionState[props.row.id]?.saving"
                     :disable="!subscriptionState[props.row.id]?.dirty"
                     @click="applySubscription(props.row)" />
                 </div>
 
                 <div v-if="(subscriptionState[props.row.id]?.nodes || []).length <= 6" class="text-caption text-warning q-mb-sm">
-                  Мало узлов — отредактируйте подключение и вставьте содержимое подписки из клиента, если провайдер отдаёт неполный список по URL.
+                  {{ t('connections.fewNodesHint') }}
                 </div>
 
                 <SubscriptionNodesTable
@@ -252,26 +293,26 @@
     <q-dialog v-model="dialogOpen" v-bind="mobileDialog" persistent>
       <q-card style="width: min(720px, 95vw); max-width: 95vw;" class="surface-panel dialog-card column no-wrap">
         <q-card-section class="text-h6">
-          {{ editingId ? 'Редактировать подключение' : 'Новое подключение' }}
+          {{ editingId ? t('connections.editConnection') : t('connections.newConnection') }}
         </q-card-section>
         <q-card-section class="col dialog-scroll-body">
-          <q-input v-model="form.name" label="Название" filled class="q-mb-md" />
+          <q-input v-model="form.name" :label="t('connections.name')" filled class="q-mb-md" />
           <q-btn-toggle
             v-model="form.kind"
             spread
             toggle-color="primary"
             class="q-mb-md full-width"
             :options="[
-              { label: 'Прокси', value: 'proxy' },
-              { label: 'Подписка', value: 'subscription' }
+              { label: t('connections.proxy'), value: 'proxy' },
+              { label: t('connections.subscription'), value: 'subscription' }
             ]"
           />
 
           <template v-if="form.kind === 'subscription'">
             <q-input
               v-model="form.subscription_url"
-              label="URL подписки"
-              hint="v2rayN/Hiddify — base64, Clash YAML или список URI"
+              :label="t('connections.subscriptionUrl')"
+              :hint="t('connections.subscriptionUrlHint')"
               type="textarea"
               autogrow
               filled
@@ -280,8 +321,8 @@
             />
             <q-input
               v-model="form.subscription_body"
-              label="Содержимое подписки (если с сервера мало узлов)"
-              hint="Скопируйте из клиента (Clash/v2rayN) — объединится с URL"
+              :label="t('connections.subscriptionContent')"
+              :hint="t('connections.subscriptionContentHint')"
               type="textarea"
               autogrow
               filled
@@ -291,7 +332,7 @@
             />
             <p v-if="parseError" class="text-caption text-negative q-mb-sm">{{ parseError }}</p>
             <p v-else-if="previewNodes.length > 0 && previewNodes.length <= 6" class="text-caption text-warning q-mb-sm">
-              Загружено мало узлов — если в клиенте их больше, вставьте содержимое подписки из v2rayN/Hiddify в поле ниже URL.
+              {{ t('connections.fewNodesLoaded') }}
             </p>
 
             <SubscriptionNodesTable
@@ -305,10 +346,10 @@
               :parse-loading="parseLoading"
               :ping-loading="pingLoading"
               :ping-disabled="!editingId"
-              ping-disabled-hint="Сохраните подключение перед проверкой пинга"
+              :ping-disabled-hint="t('connections.saveBeforePing')"
               :ping-truncated="previewTruncated"
               :ping-tested="previewTested"
-              empty-label="Вставьте URL подписки — узлы загрузятся автоматически"
+              :empty-label="t('connections.pasteUrlEmpty')"
               @ping="pingDialogNodes"
               @ping-node="pingDialogNode"
               @select="selectPreviewNode"
@@ -322,14 +363,14 @@
               toggle-color="primary"
               class="q-mb-md full-width"
               :options="[
-                { label: 'Ссылка (URL)', value: 'url' },
+                { label: t('connections.linkUrl'), value: 'url' },
                 { label: 'Outbound JSON', value: 'json' }
               ]"
             />
             <q-input
               v-if="form.config_type === 'url'"
               v-model="form.share_url"
-              label="Ссылка подключения"
+              :label="t('connections.connectionLink')"
               hint="vless://, ss://, trojan://, hy2://, socks://"
               type="textarea"
               autogrow
@@ -341,7 +382,7 @@
               v-else
               v-model="form.outbound_json"
               label="Outbound JSON"
-              hint='Объект без поля "tag" — тег назначит система'
+              :hint="t('connections.jsonHint')"
               type="textarea"
               autogrow
               filled
@@ -350,11 +391,11 @@
               input-style="font-family: var(--theme-mono); min-height: 160px;"
             />
           </template>
-          <q-toggle v-model="form.enabled" label="Включено" color="positive" />
+          <q-toggle v-model="form.enabled" :label="t('connections.enabled')" color="positive" />
         </q-card-section>
         <q-card-actions align="right">
-          <q-btn flat label="Отмена" v-close-popup />
-          <q-btn color="primary" label="Сохранить" :loading="saving"
+          <q-btn flat :label="t('common.cancel')" v-close-popup />
+          <q-btn color="primary" :label="t('common.save')" :loading="saving"
             :disable="form.kind === 'subscription' && !canSaveSubscription" @click="save" />
         </q-card-actions>
       </q-card>
@@ -365,10 +406,12 @@
 <script setup>
 import { computed, defineComponent, h, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { QBadge, QBtn, QBtnDropdown, QBtnToggle, QItem, QItemSection, QList, QRadio, QSpinner, QTable, QTd, QTr } from 'quasar'
+import { useI18n } from 'vue-i18n'
 import { useQuasar } from 'quasar'
 import api, { ensureCsrf } from '@/boot/axios'
 import { useApplyProgress } from '@/composables/useApplyProgress'
 import { useMobileDialog } from '@/composables/useMobileDialog'
+import { bcp47Locale } from '@/i18n'
 
 const SubscriptionNodesTable = defineComponent({
   name: 'SubscriptionNodesTable',
@@ -386,15 +429,16 @@ const SubscriptionNodesTable = defineComponent({
     pingTested: { type: Number, default: 0 },
     bestPickKey: { type: String, default: null },
     activePickSource: { type: String, default: null },
-    emptyLabel: { type: String, default: 'Нет узлов' }
+    emptyLabel: { type: String, default: '' }
   },
   emits: ['ping', 'select', 'update:mode', 'ping-node'],
   setup (props, { emit }) {
+    const { t } = useI18n()
     const columns = computed(() => {
       const base = [
-        { name: 'name', label: 'Локация', field: 'name', align: 'left', sortable: true },
-        { name: 'type', label: 'Тип', field: 'type', align: 'left' },
-        { name: 'latency_ms', label: 'Пинг', field: 'latency_ms', align: 'right', sortable: true, style: 'width: 140px' }
+        { name: 'name', label: t('connections.location'), field: 'name', align: 'left', sortable: true },
+        { name: 'type', label: t('connections.type'), field: 'type', align: 'left' },
+        { name: 'latency_ms', label: t('connections.ping'), field: 'latency_ms', align: 'right', sortable: true, style: 'width: 140px' }
       ]
       if (props.mode === 'single') {
         return [
@@ -416,7 +460,7 @@ const SubscriptionNodesTable = defineComponent({
       const sourceLabel = (source, testedAt) => {
         if (testedAt) {
           const mins = Math.max(0, Math.round((Date.now() - new Date(testedAt).getTime()) / 60000))
-          if (mins > 0) return `${mins} мин`
+          if (mins > 0) return t('common.minutesShort', { n: mins })
         }
         if (source === 'tcp') return 'TCP'
         return ''
@@ -431,7 +475,7 @@ const SubscriptionNodesTable = defineComponent({
         color: 'primary',
         title: props.pingDisabled
           ? props.pingDisabledHint
-          : (props.pingLoading ? 'Идёт проверка всех узлов' : 'Проверить пинг'),
+          : (props.pingLoading ? t('connections.checkingAllNodes') : t('connections.checkPing')),
         disable: nodePingBlocked.value,
         onClick: (e) => {
           e.stopPropagation()
@@ -471,7 +515,7 @@ const SubscriptionNodesTable = defineComponent({
       rowsPerPageOptions: [0],
       hideBottom: true,
       pagination: { rowsPerPage: 0 },
-      noDataLabel: props.emptyLabel
+      noDataLabel: props.emptyLabel || t('connections.noNodes')
     }, {
       'top-left': () => (props.modeOptions.length
         ? h(QBtnToggle, {
@@ -488,22 +532,22 @@ const SubscriptionNodesTable = defineComponent({
       'top-right': () => h('div', { class: 'row items-center q-gutter-sm' }, [
         props.rows.length
           ? h('span', { class: 'text-caption text-grey-5' }, [
-              `${props.rows.length} узл.`,
-              props.pingTruncated ? ` · пинг ${props.pingTested}` : ''
+              t('connections.nodesCount', { n: props.rows.length }),
+              props.pingTruncated ? t('connections.pingTestedSuffix', { tested: props.pingTested }) : ''
             ])
           : null,
         h(QBtnDropdown, {
           outline: true,
           color: 'primary',
           icon: 'network_check',
-          label: 'Пинг',
+          label: t('connections.ping'),
           dense: true,
           noCaps: true,
           loading: props.pingLoading,
           disable: !props.rows.length || props.pingDisabled || props.pingLoading,
           title: props.pingDisabled
             ? props.pingDisabledHint
-            : (props.pingLoading ? 'Идёт проверка всех узлов' : 'Проверка пинга узлов')
+            : (props.pingLoading ? t('connections.checkingAllNodes') : t('connections.pingNodes'))
         }, {
           default: () => h(QList, { dense: true, style: 'min-width: 160px' }, () => [
             h(QItem, {
@@ -515,7 +559,7 @@ const SubscriptionNodesTable = defineComponent({
                 emit('ping', true)
               }
             }, () => [
-              h(QItemSection, null, () => 'Быстро'),
+              h(QItemSection, null, () => t('connections.fast')),
               h(QItemSection, { side: true, class: 'text-caption text-grey-5' }, () => 'TCP')
             ]),
             h(QItem, {
@@ -527,7 +571,7 @@ const SubscriptionNodesTable = defineComponent({
                 emit('ping', false)
               }
             }, () => [
-              h(QItemSection, null, () => 'Полный'),
+              h(QItemSection, null, () => t('connections.full')),
               h(QItemSection, { side: true, class: 'text-caption text-grey-5' }, () => 'ms')
             ])
           ])
@@ -545,11 +589,11 @@ const SubscriptionNodesTable = defineComponent({
         const isActive = props.bestPickKey === scope.row.key || scope.row.is_active || scope.row.is_best_pick
         const source = scope.row.active_source || props.activePickSource
         const badgeLabel = source === 'user'
-          ? 'выбран'
-          : (source === 'urltest' ? 'авто' : (source === 'cached' ? 'кэш' : 'активный'))
+          ? t('connections.picked')
+          : (source === 'urltest' ? t('connections.auto') : (source === 'cached' ? t('connections.cache') : t('connections.active')))
         const badgeTitle = source === 'user'
-          ? 'Выбрано пользователем'
-          : (source === 'urltest' ? 'Выбрано системой (urltest)' : (source === 'cached' ? 'По кэшу пинга' : 'Активный узел'))
+          ? t('connections.pickedByUser')
+          : (source === 'urltest' ? t('connections.pickedByUrltest') : (source === 'cached' ? t('connections.pickedByCache') : t('connections.activeNode')))
         return h(QTd, scope, () => h('div', { class: 'row items-center no-wrap q-gutter-xs' }, [
           h('span', {
             class: [
@@ -574,6 +618,7 @@ const SubscriptionNodesTable = defineComponent({
   }
 })
 
+const { t, locale } = useI18n()
 const $q = useQuasar()
 const mobileDialog = useMobileDialog()
 const { withApplyProgress } = useApplyProgress()
@@ -597,11 +642,21 @@ const expandedIds = reactive(new Set())
 let parseTimer = null
 const pingTimers = new Map()
 const autoPingRunning = ref(false)
+const AUTO_PING_COOLDOWN_MS = 2 * 60 * 1000
+const AUTO_PING_LAST_AT_KEY = 'awggui:connections:autoPingLastAt'
 const autoPingSession = reactive({
   active: false,
   done: 0,
   total: 0,
   currentName: ''
+})
+const remotePingSession = reactive({
+  active: false,
+  connectionId: null,
+  connectionName: '',
+  tested: 0,
+  total: 0,
+  phase: ''
 })
 const pingStatus = reactive({})
 const pingQueue = []
@@ -609,32 +664,34 @@ const pingQueueActive = ref(false)
 const pingCancelRequested = ref(false)
 const pingProbeRestarting = ref(false)
 let pingAbortController = null
+let remotePingPollTimer = null
 
-const pingIntervalOptions = [
-  { label: 'Выкл', value: 0 },
-  { label: '1 мин', value: 1 },
-  { label: '3 мин', value: 3 },
-  { label: '5 мин', value: 5 },
-  { label: '10 мин', value: 10 },
-  { label: '15 мин', value: 15 },
-  { label: '30 мин', value: 30 },
-  { label: '60 мин', value: 60 }
-]
+const pingIntervalOptions = computed(() => [
+  { label: t('connections.intervalOff'), value: 0 },
+  { label: t('connections.interval1'), value: 1 },
+  { label: t('connections.interval3'), value: 3 },
+  { label: t('connections.interval5'), value: 5 },
+  { label: t('connections.interval10'), value: 10 },
+  { label: t('connections.interval15'), value: 15 },
+  { label: t('connections.interval30'), value: 30 },
+  { label: t('connections.interval60'), value: 60 }
+])
 
-const modeOptions = [
-  { label: 'Одна локация', value: 'single' },
-  { label: 'Лучший пинг (urltest)', value: 'urltest' }
-]
+const modeOptions = computed(() => [
+  { label: t('connections.modeSingle'), value: 'single' },
+  { label: t('connections.modeUrltest'), value: 'urltest' }
+])
 
-const columns = [
+const columns = computed(() => [
   { name: 'expand', label: '', field: 'expand', align: 'left' },
-  { name: 'name', label: 'Название', field: 'name', align: 'left' },
-  { name: 'config_type', label: 'Тип', field: 'config_type', align: 'left' },
-  { name: 'active_node', label: 'Активный узел', field: 'active_node', align: 'left', style: 'min-width: 180px' },
-  { name: 'online', label: 'Онлайн / путь', field: 'online', align: 'left', style: 'min-width: 280px' },
-  { name: 'enabled', label: 'Статус', field: 'enabled', align: 'left' },
+  { name: 'name', label: t('connections.colName'), field: 'name', align: 'left' },
+  { name: 'config_type', label: t('connections.colType'), field: 'config_type', align: 'left' },
+  { name: 'active_node', label: t('connections.colActiveNode'), field: 'active_node', align: 'left', style: 'min-width: 180px' },
+  { name: 'online', label: t('connections.colOnlinePath'), field: 'online', align: 'left', style: 'min-width: 240px' },
+  { name: 'last_checked', label: t('connections.colChecked'), field: 'last_checked', align: 'left', style: 'min-width: 140px' },
+  { name: 'enabled', label: t('connections.colStatus'), field: 'enabled', align: 'left' },
   { name: 'actions', label: '', field: 'actions', align: 'right' }
-]
+])
 
 const form = reactive({
   name: '',
@@ -674,6 +731,7 @@ const canSaveSubscription = computed(() => {
 })
 
 const isAnyPingActive = computed(() =>
+  remotePingSession.active ||
   pingQueueActive.value ||
   pingQueue.length > 0 ||
   autoPingSession.active ||
@@ -701,9 +759,9 @@ watch(() => form.kind, (kind) => {
 
 function subscriptionModeLabel (row) {
   if (row.subscription_mode === 'urltest') {
-    return `urltest · ${row.subscription_nodes_count || 0} узл.`
+    return t('connections.urltestNodes', { n: row.subscription_nodes_count || 0 })
   }
-  return `single · ${row.subscription_nodes_count || 0} узл.`
+  return t('connections.singleNodes', { n: row.subscription_nodes_count || 0 })
 }
 
 function configTypeBadgeColor (row) {
@@ -713,10 +771,10 @@ function configTypeBadgeColor (row) {
 }
 
 function activeNodeBadge (row) {
-  if (row.subscription_pick_source === 'user') return 'выбрано'
-  if (row.subscription_pick_source === 'urltest') return 'авто'
-  if (row.subscription_pick_source === 'cached' || row.subscription_pick_source === 'ping') return 'кэш'
-  return 'активный'
+  if (row.subscription_pick_source === 'user') return t('connections.selected')
+  if (row.subscription_pick_source === 'urltest') return t('connections.auto')
+  if (row.subscription_pick_source === 'cached' || row.subscription_pick_source === 'ping') return t('connections.cache')
+  return t('connections.active')
 }
 
 function activeNodeBadgeColor (row) {
@@ -744,8 +802,8 @@ function subscriptionSummary (row) {
   }
   const ms = row.subscription_pick_latency_ms != null ? ` · ${row.subscription_pick_latency_ms} ms` : ''
   const prefix = row.subscription_pick_source === 'user'
-    ? 'выбрано'
-    : (row.subscription_pick_source === 'cached' || row.subscription_pick_source === 'ping' ? 'кэш' : 'авто')
+    ? t('connections.selected')
+    : (row.subscription_pick_source === 'cached' || row.subscription_pick_source === 'ping' ? t('connections.cache') : t('connections.auto'))
   return `${prefix}: ${row.subscription_pick_name}${ms}`
 }
 
@@ -850,21 +908,53 @@ function formatBytes (n) {
 }
 
 function onlineLabel (row) {
-  if (!row.enabled) return 'выкл'
-  if (row.online === true) return 'онлайн'
-  if (row.online === false) return 'оффлайн'
-  return 'не проверен'
+  if (!row.enabled) return t('common.off')
+  if (row.online === true) return t('common.online')
+  if (row.online === false) return t('common.offlineAlt')
+  return t('connections.notChecked')
 }
 
 function lastCheckedAt (row) {
   return row.kind === 'subscription' ? row.ping_last_checked_at : row.last_tested_at
 }
 
-function formatLastChecked (iso) {
+function parseCheckedDate (iso) {
   if (!iso) return null
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return null
-  return d.toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' })
+  return d
+}
+
+function formatLastChecked (iso) {
+  const d = parseCheckedDate(iso)
+  if (!d) return null
+  return d.toLocaleString(bcp47Locale(locale.value), {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  })
+}
+
+function formatLastCheckedDate (iso) {
+  const d = parseCheckedDate(iso)
+  if (!d) return null
+  return d.toLocaleDateString(bcp47Locale(locale.value), {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric'
+  })
+}
+
+function formatLastCheckedTime (iso) {
+  const d = parseCheckedDate(iso)
+  if (!d) return null
+  return d.toLocaleTimeString(bcp47Locale(locale.value), {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  })
 }
 
 function onlineColor (row) {
@@ -911,7 +1001,7 @@ function compareNodesByLatency (a, b) {
     const bm = b.latency_ms ?? Number.MAX_SAFE_INTEGER
     return am - bm
   }
-  return String(a.name || '').localeCompare(String(b.name || ''), 'ru')
+  return String(a.name || '').localeCompare(String(b.name || ''), bcp47Locale(locale.value))
 }
 
 function sortNodesByLatency (list) {
@@ -978,6 +1068,7 @@ async function consumePingStream (url, payload, onResult, fast = false) {
       headers: {
         'Content-Type': 'application/json',
         Accept: 'application/x-ndjson',
+        'Accept-Language': locale.value === 'en' ? 'en' : 'ru',
         'X-Requested-With': 'XMLHttpRequest',
         ...(match ? { 'X-XSRF-TOKEN': decodeURIComponent(match[1]) } : {})
       },
@@ -991,7 +1082,7 @@ async function consumePingStream (url, payload, onResult, fast = false) {
     throw e
   }
   if (!resp.ok) {
-    let msg = 'Ошибка проверки пинга'
+    let msg = t('connections.pingError')
     try {
       const j = await resp.json()
       msg = j.message || j.error || Object.values(j.errors || {}).flat()[0] || msg
@@ -1003,7 +1094,7 @@ async function consumePingStream (url, payload, onResult, fast = false) {
     throw new Error(msg)
   }
   if (!resp.body) {
-    throw new Error('Пустой ответ сервера')
+    throw new Error(t('connections.emptyServerResponse'))
   }
   const reader = resp.body.getReader()
   const decoder = new TextDecoder()
@@ -1032,7 +1123,7 @@ async function consumePingStream (url, payload, onResult, fast = false) {
             showPingBusyToast(msg.message)
             return { ...meta, cancelled: true }
           }
-          throw new Error(msg.message || 'Ошибка проверки пинга')
+          throw new Error(msg.message || t('connections.pingError'))
         } else if (msg.type === 'done') {
           meta.tested = msg.tested || meta.tested
           meta.truncated = !!msg.truncated
@@ -1067,12 +1158,113 @@ function clearConnectionPingStatus (id) {
   pingStatus[id].phase = ''
 }
 
+function stopRemotePingPoll () {
+  if (remotePingPollTimer) {
+    clearInterval(remotePingPollTimer)
+    remotePingPollTimer = null
+  }
+}
+
+function clearRemotePingUi () {
+  const prevId = remotePingSession.connectionId
+  remotePingSession.active = false
+  remotePingSession.connectionId = null
+  remotePingSession.connectionName = ''
+  remotePingSession.tested = 0
+  remotePingSession.total = 0
+  remotePingSession.phase = ''
+  if (prevId != null) {
+    clearConnectionPingStatus(prevId)
+    if (subscriptionState[prevId]) {
+      subscriptionState[prevId].pingLoading = false
+      subscriptionState[prevId].autoPingActive = false
+    }
+    if (testingId.value === prevId) testingId.value = null
+  }
+}
+
+function applyRemotePingSession (meta) {
+  if (!meta?.active) {
+    clearRemotePingUi()
+    return false
+  }
+
+  const id = meta.connection_id ?? null
+  const prevId = remotePingSession.connectionId
+  if (prevId != null && prevId !== id) {
+    clearConnectionPingStatus(prevId)
+    if (subscriptionState[prevId]) {
+      subscriptionState[prevId].pingLoading = false
+      subscriptionState[prevId].autoPingActive = false
+    }
+    if (testingId.value === prevId) testingId.value = null
+  }
+
+  remotePingSession.active = true
+  remotePingSession.connectionId = id
+  remotePingSession.connectionName = meta.connection_name || ''
+  remotePingSession.tested = Number(meta.tested) || 0
+  remotePingSession.total = Number(meta.total) || 0
+  remotePingSession.phase = meta.phase || t('connections.pingEllipsis')
+
+  if (id != null) {
+    setConnectionPingStatus(id, {
+      active: true,
+      tested: remotePingSession.tested,
+      total: Math.max(remotePingSession.total, 1),
+      phase: remotePingSession.phase
+    })
+    const row = connections.value.find(c => c.id === id)
+    if (row?.kind === 'subscription') {
+      if (!subscriptionState[id]) initSubscriptionState(row, { startMonitor: false })
+      if (subscriptionState[id]) {
+        subscriptionState[id].pingLoading = true
+        subscriptionState[id].autoPingActive = true
+      }
+    } else {
+      testingId.value = id
+    }
+  }
+
+  return true
+}
+
+async function syncRemotePingSession () {
+  try {
+    const { data } = await api.get('/api/resolver/ping-session')
+    if (data?.active) {
+      applyRemotePingSession(data)
+      return true
+    }
+    if (remotePingSession.active) {
+      clearRemotePingUi()
+      await load(true)
+    }
+    return false
+  } catch {
+    return remotePingSession.active
+  }
+}
+
+function startRemotePingPoll () {
+  stopRemotePingPoll()
+  remotePingPollTimer = setInterval(() => {
+    void (async () => {
+      const active = await syncRemotePingSession()
+      if (!active) stopRemotePingPoll()
+    })()
+  }, 2000)
+}
+
 function isPingBusyMessage (message) {
-  return String(message || '').includes('Проверка пинга уже выполняется')
+  const msg = String(message || '')
+  return msg.includes(t('connections.pingAlreadyRunning'))
+    || msg.includes('already running')
+    || msg.includes('уже выполняется')
 }
 
 function showPingBusyToast (message) {
-  const msg = String(message || 'Проверка пинга уже выполняется — подождите').trim()
+  const msg = String(message || t('connections.pingAlreadyRunningWait')).trim()
   if (!msg) return
   $q.notify({
     type: 'warning',
@@ -1117,16 +1309,18 @@ async function stopAndRestartPingProbe () {
   pingCancelRequested.value = true
   pingAbortController?.abort()
   pingQueue.length = 0
+  stopRemotePingPoll()
   resetAllPingUiState()
+  clearRemotePingUi()
   autoPingSession.active = false
   autoPingSession.currentName = ''
   autoPingRunning.value = false
 
   try {
     await api.post('/api/resolver/ping-probe/restart')
-    $q.notify({ type: 'positive', message: 'Пинг остановлен, probe перезапущен', timeout: 4000 })
+    $q.notify({ type: 'positive', message: t('connections.pingStoppedProbeRestarted'), timeout: 4000 })
   } catch (e) {
-    const msg = e?.response?.data?.error || e?.response?.data?.message || e?.message || 'Ошибка перезапуска probe'
+    const msg = e?.response?.data?.error || e?.response?.data?.message || e?.message || t('connections.probeRestartError')
     $q.notify({ type: 'negative', message: msg })
   } finally {
     pingCancelRequested.value = false
@@ -1285,7 +1479,7 @@ async function parseDialogSubscription () {
     previewNodes.value = []
     parseError.value = e?.response?.data?.errors?.url?.[0]
       || Object.values(e?.response?.data?.errors || {}).flat()[0]
-      || 'Не удалось разобрать подписку'
+      || t('connections.parseSubscriptionError')
   } finally {
     parseLoading.value = false
   }
@@ -1293,7 +1487,7 @@ async function parseDialogSubscription () {
 
 async function pingDialogNode (node) {
   if (!editingId.value) {
-    $q.notify({ type: 'warning', message: 'Сохраните подключение перед проверкой пинга' })
+    $q.notify({ type: 'warning', message: t('connections.saveBeforePing') })
     return
   }
   const list = previewNodes.value
@@ -1304,14 +1498,14 @@ async function pingDialogNode (node) {
     patchNodePing(list, node.key, data.result || {})
   } catch (e) {
     const msg = Object.values(e?.response?.data?.errors || {}).flat()[0]
-      || e?.response?.data?.message || 'Ошибка'
+      || e?.response?.data?.message || t('common.error')
     patchNodePing(list, node.key, { latency_ok: false, latency_ms: null, latency_error: msg })
   }
 }
 
 async function pingDialogNodes (fast = false) {
   if (!editingId.value) {
-    $q.notify({ type: 'warning', message: 'Сохраните подключение перед проверкой пинга' })
+    $q.notify({ type: 'warning', message: t('connections.saveBeforePing') })
     return
   }
   await runSavedConnectionPing(editingId.value, previewNodes, {
@@ -1378,7 +1572,7 @@ async function runSavedConnectionPingInner (connectionId, listRef, { setLoading,
     active: true,
     tested: 0,
     total: listRef.value.length,
-    phase: fast ? 'быстрый пинг…' : 'пинг…'
+    phase: fast ? t('connections.fastPing') : t('connections.pingEllipsis')
   })
   markNodesPinging(listRef.value, true)
   onTruncated(false)
@@ -1402,12 +1596,12 @@ async function runSavedConnectionPingInner (connectionId, listRef, { setLoading,
     syncConnectionPick(connectionId, listRef.value)
     if (meta.switchInfo?.switched) {
       await refreshConnectionAfterSwitch(connectionId, meta.switchInfo, silent)
-    } else if (!silent) {
+    } else {
       await reloadConnectionById(connectionId)
     }
     if (!silent) {
       const okCount = listRef.value.filter(n => n.latency_ok).length
-      $q.notify({ type: 'positive', message: `Пинг: онлайн ${okCount} из ${meta.tested || tested}`, timeout: 5000 })
+      $q.notify({ type: 'positive', message: t('connections.pingOnlineOf', { ok: okCount, tested: meta.tested || tested }), timeout: 5000 })
     }
     return meta
   } catch (e) {
@@ -1417,7 +1611,7 @@ async function runSavedConnectionPingInner (connectionId, listRef, { setLoading,
     }
     listRef.value = listRef.value.map(n => (n.pinging ? { ...n, pinging: false } : n))
     if (!silent) {
-      $q.notify({ type: 'negative', message: e.message || 'Ошибка проверки пинга' })
+      $q.notify({ type: 'negative', message: e.message || t('connections.pingError') })
     }
     throw e
   } finally {
@@ -1431,7 +1625,7 @@ async function refreshConnectionAfterSwitch (connectionId, switchInfo, silent) {
   if (switchInfo?.switched && switchInfo.pick_name && !silent) {
     $q.notify({
       type: 'info',
-      message: `Переключено на лучший узел: ${switchInfo.pick_name}`,
+      message: t('connections.switchedToBest', { name: switchInfo.pick_name }),
       timeout: 5000
     })
   }
@@ -1453,7 +1647,7 @@ async function runBackgroundPingForConnection (row, { silent = true, autoApply =
       active: true,
       tested: 0,
       total: st.nodes.length || nodes.length,
-      phase: 'пинг…'
+      phase: t('connections.pingEllipsis')
     })
     st.autoPingActive = true
     const nodesRef = { get value () { return st.nodes }, set value (v) { st.nodes = v } }
@@ -1474,13 +1668,33 @@ async function runBackgroundPingForConnection (row, { silent = true, autoApply =
     }
     return
   }
-  setConnectionPingStatus(row.id, { active: true, tested: 0, total: 1, phase: 'проверка…' })
+  setConnectionPingStatus(row.id, { active: true, tested: 0, total: 1, phase: t('connections.checking') })
   await testConnectionSilent(row)
+}
+
+function shouldSkipAutoPing () {
+  try {
+    const last = Number(localStorage.getItem(AUTO_PING_LAST_AT_KEY))
+    if (!Number.isFinite(last) || last <= 0) return false
+    return Date.now() - last < AUTO_PING_COOLDOWN_MS
+  } catch {
+    return false
+  }
+}
+
+function markAutoPingStarted () {
+  try {
+    localStorage.setItem(AUTO_PING_LAST_AT_KEY, String(Date.now()))
+  } catch {
+    // ignore quota / private mode
+  }
 }
 
 async function runAutoPingAll () {
   if (autoPingRunning.value) return
+  if (shouldSkipAutoPing()) return
   autoPingRunning.value = true
+  markAutoPingStarted()
   const enabled = connections.value.filter(r => r.enabled)
   const subscriptions = enabled.filter(r => r.kind === 'subscription' && (r.subscription_nodes?.length || 0))
   const proxies = enabled.filter(r => r.kind !== 'subscription')
@@ -1497,7 +1711,7 @@ async function runAutoPingAll () {
       try {
         await enqueueAutoPing(() => runBackgroundPingForConnection(row, { silent: true, autoApply: true }))
       } catch (e) {
-        showPingError(e?.message || 'Ошибка автопроверки пинга')
+        showPingError(e?.message || t('connections.autoPingError'))
       } finally {
         autoPingSession.done += 1
       }
@@ -1511,7 +1725,7 @@ async function runAutoPingAll () {
       try {
         await enqueueAutoPing(() => runBackgroundPingForConnection(row, { silent: true, autoApply: false }))
       } catch (e) {
-        showPingError(e?.message || 'Ошибка автопроверки пинга')
+        showPingError(e?.message || t('connections.autoPingError'))
       } finally {
         autoPingSession.done += 1
       }
@@ -1568,10 +1782,10 @@ async function savePingInterval (row) {
       st.pingIntervalMin = data.connection.ping_check_interval_min ?? st.pingIntervalMin
     }
     startPingMonitor(row)
-    $q.notify({ type: 'positive', message: 'Интервал автопроверки сохранён', timeout: 2500 })
+    $q.notify({ type: 'positive', message: t('connections.autoPingIntervalSaved'), timeout: 2500 })
   } catch (e) {
     const msg = Object.values(e?.response?.data?.errors || {}).flat()[0]
-      || e?.response?.data?.message || 'Ошибка сохранения интервала'
+      || e?.response?.data?.message || t('connections.autoPingIntervalSaveError')
     $q.notify({ type: 'negative', message: msg })
   }
 }
@@ -1600,7 +1814,7 @@ async function pingExpandNode (row, node) {
   if (isConnectionPinging(row.id)) return
   if (!subscriptionState[row.id]) initSubscriptionState(row, { startMonitor: false })
   const st = subscriptionState[row.id]
-  setConnectionPingStatus(row.id, { active: true, tested: 0, total: 1, phase: 'пинг узла…' })
+  setConnectionPingStatus(row.id, { active: true, tested: 0, total: 1, phase: t('connections.pingNode') })
   const idx = st.nodes.findIndex(n => n.key === node.key)
   if (idx >= 0) st.nodes.splice(idx, 1, { ...st.nodes[idx], pinging: true, latency_error: null })
   try {
@@ -1613,7 +1827,7 @@ async function pingExpandNode (row, node) {
     const status = e?.response?.status
     const msg = e?.response?.data?.error
       || Object.values(e?.response?.data?.errors || {}).flat()[0]
-      || e?.response?.data?.message || 'Ошибка'
+      || e?.response?.data?.message || t('common.error')
     if (status === 409 || isPingBusyMessage(msg)) {
       showPingBusyToast(msg)
     }
@@ -1674,12 +1888,12 @@ async function refreshSubscription (row) {
     $q.notify({
       type: 'positive',
       message: data.singbox_reloaded
-        ? `Обновлено ${conn.subscription_nodes_count} узл.`
-        : `Подписка актуальна (${conn.subscription_nodes_count} узл.)`
+        ? t('connections.subscriptionUpdated', { n: conn.subscription_nodes_count })
+        : t('connections.subscriptionUpToDate', { n: conn.subscription_nodes_count })
     })
   } catch (e) {
     const msg = Object.values(e?.response?.data?.errors || {}).flat()[0]
-      || e?.response?.data?.message || 'Ошибка обновления'
+      || e?.response?.data?.message || t('connections.updateError')
     $q.notify({ type: 'negative', message: msg })
   } finally {
     st.refreshing = false
@@ -1690,7 +1904,7 @@ async function applySubscription (row) {
   const st = subscriptionState[row.id]
   if (!st || !st.dirty) return
   if (st.mode === 'single' && !st.selected) {
-    $q.notify({ type: 'warning', message: 'Выберите локацию' })
+    $q.notify({ type: 'warning', message: t('connections.selectLocation') })
     return
   }
   st.saving = true
@@ -1708,10 +1922,10 @@ async function applySubscription (row) {
     st.mode = conn.subscription_mode
     st.selected = conn.subscription_selected
     st.dirty = false
-    $q.notify({ type: 'positive', message: 'Стратегия применена' })
+    $q.notify({ type: 'positive', message: t('connections.strategyApplied') })
   } catch (e) {
     const msg = Object.values(e?.response?.data?.errors || {}).flat()[0]
-      || e?.response?.data?.message || 'Ошибка сохранения'
+      || e?.response?.data?.message || t('common.saveError')
     $q.notify({ type: 'negative', message: msg })
   } finally {
     st.saving = false
@@ -1739,7 +1953,7 @@ async function load (silent = false) {
     })
   } catch (e) {
     if (!silent) {
-      $q.notify({ type: 'negative', message: e?.response?.data?.message || 'Ошибка загрузки' })
+      $q.notify({ type: 'negative', message: e?.response?.data?.message || t('common.loadError') })
     }
   } finally {
     if (!silent) loading.value = false
@@ -1755,16 +1969,16 @@ async function testConnection (row) {
     $q.notify({
       type: 'positive',
       message: data.tspu?.likely
-        ? `Онлайн · ${data.latency_ms} ms (ТСПУ-проверка: подозрительно)`
-        : `Онлайн · ${data.latency_ms} ms`
+        ? t('connections.onlineLatencyTspu', { ms: data.latency_ms })
+        : t('connections.onlineLatency', { ms: data.latency_ms })
     })
   } catch (e) {
     const conn = e?.response?.data?.connection
     if (conn) upsertConnection(conn)
     const tspu = e?.response?.data?.tspu
-    const msg = (tspu?.likely ? 'ТСПУ · ' : '')
+    const msg = (tspu?.likely ? t('connections.tspuPrefix') : '')
       + (e?.response?.data?.error || e?.response?.data?.message
-        || Object.values(e?.response?.data?.errors || {}).flat()[0] || 'Соединение недоступно')
+        || Object.values(e?.response?.data?.errors || {}).flat()[0] || t('connections.connectionUnavailable'))
     const status = e?.response?.status
     if (status === 409 || isPingBusyMessage(msg)) {
       showPingBusyToast(msg)
@@ -1778,7 +1992,7 @@ async function testConnection (row) {
 
 async function save () {
   if (form.kind === 'subscription' && !canSaveSubscription.value) {
-    $q.notify({ type: 'warning', message: 'Дождитесь загрузки узлов подписки' })
+    $q.notify({ type: 'warning', message: t('connections.waitSubscriptionNodes') })
     return
   }
 
@@ -1815,10 +2029,10 @@ async function save () {
 
     upsertConnection(data.connection)
     dialogOpen.value = false
-    $q.notify({ type: 'positive', message: 'Сохранено' })
+    $q.notify({ type: 'positive', message: t('common.saved') })
   } catch (e) {
     const msg = e?.response?.data?.message
-      || Object.values(e?.response?.data?.errors || {}).flat()[0] || 'Ошибка сохранения'
+      || Object.values(e?.response?.data?.errors || {}).flat()[0] || t('common.saveError')
     $q.notify({ type: 'negative', message: msg })
   } finally {
     saving.value = false
@@ -1827,8 +2041,8 @@ async function save () {
 
 async function remove (row) {
   $q.dialog({
-    title: 'Удалить подключение?',
-    message: `«${row.name}» будет удалено.`,
+    title: t('connections.deleteTitle'),
+    message: t('connections.deleteConfirm', { name: row.name }),
     cancel: true,
     persistent: true,
   }).onOk(async () => {
@@ -1836,11 +2050,11 @@ async function remove (row) {
       await api.delete(`/api/resolver/connections/${row.id}`)
       delete subscriptionState[row.id]
       expandedIds.delete(row.id)
-      $q.notify({ type: 'positive', message: 'Удалено' })
+      $q.notify({ type: 'positive', message: t('common.deleted') })
       await load()
     } catch (e) {
       const msg = e?.response?.data?.message
-        || Object.values(e?.response?.data?.errors || {}).flat()[0] || 'Ошибка удаления'
+        || Object.values(e?.response?.data?.errors || {}).flat()[0] || t('common.deleteError')
       $q.notify({ type: 'negative', message: msg })
     }
   })
@@ -1849,13 +2063,18 @@ async function remove (row) {
 onMounted(async () => {
   await load()
   await nextTick()
+  const remoteActive = await syncRemotePingSession()
+  if (remoteActive) startRemotePingPoll()
   void api.post('/api/resolver/ping-probe/warmup').catch(() => {})
-  void runAutoPingAll().catch(e => showPingError(e?.message || 'Ошибка автопроверки пинга'))
+  if (!remoteActive) {
+    void runAutoPingAll().catch(e => showPingError(e?.message || t('connections.autoPingError')))
+  }
   restartAllPingMonitors()
 })
 
 onUnmounted(() => {
   if (parseTimer) clearTimeout(parseTimer)
+  stopRemotePingPoll()
   for (const id of [...pingTimers.keys()]) stopPingMonitor(id)
 })
 </script>
@@ -1872,6 +2091,7 @@ onUnmounted(() => {
 .mono { font-family: var(--theme-mono); }
 .full-width { width: 100%; }
 .name-cell { white-space: normal; line-height: 1.35; }
+.last-checked-cell { line-height: 1.3; white-space: nowrap; }
 .traffic { display: flex; flex-direction: column; gap: 2px; font-size: 12px; line-height: 1.3; }
 .traffic .rx { color: #7ee787; }
 .traffic .tx { color: #79c0ff; }

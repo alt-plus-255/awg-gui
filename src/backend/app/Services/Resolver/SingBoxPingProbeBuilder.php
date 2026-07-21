@@ -57,7 +57,7 @@ class SingBoxPingProbeBuilder
     {
         $json = json_encode($config, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
         if ($json === false) {
-            throw new \RuntimeException('Не удалось сериализовать sing-box-ping.json');
+            throw new \RuntimeException(__('resolver.singbox_ping_serialize_failed'));
         }
 
         return $json."\n";

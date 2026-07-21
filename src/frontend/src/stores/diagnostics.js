@@ -1,6 +1,7 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import api from '@/boot/axios'
+import { translate as t } from '@/stores/locale'
 
 export const useDiagnosticsStore = defineStore('diagnostics', () => {
   const status = ref(null)
@@ -84,7 +85,7 @@ export const useDiagnosticsStore = defineStore('diagnostics', () => {
         open: true,
         loading: false,
         content: '',
-        error: e?.response?.data?.message || e.message || 'Не удалось загрузить sing-box.json',
+        error: e?.response?.data?.message || e.message || t('diagnostics.loadSingboxError'),
         updatedAt: null
       }
     }
@@ -105,7 +106,7 @@ export const useDiagnosticsStore = defineStore('diagnostics', () => {
         open: true,
         loading: false,
         configs: [],
-        error: e?.response?.data?.message || e.message || 'Не удалось загрузить AWG конфиги'
+        error: e?.response?.data?.message || e.message || t('diagnostics.loadAwgConfigsError')
       }
     }
   }

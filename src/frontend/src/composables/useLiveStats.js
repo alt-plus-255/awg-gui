@@ -598,9 +598,9 @@ export function onLiveStats (fn) {
   return () => listeners.delete(fn)
 }
 
-export function getLiveIntervalOptions () {
+export function getLiveIntervalOptions (t) {
   return INTERVAL_OPTIONS.map((ms) => ({
-    label: `${ms / 1000} сек`,
+    label: typeof t === 'function' ? t('common.seconds', { n: ms / 1000 }) : `${ms / 1000}s`,
     value: ms
   }))
 }

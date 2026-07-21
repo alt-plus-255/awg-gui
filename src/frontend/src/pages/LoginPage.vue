@@ -2,7 +2,8 @@
   <q-layout view="hHh lpR fFf" class="surface-bg">
     <q-page-container>
       <q-page class="flex flex-center relative-position">
-        <div class="absolute-top-right q-pa-md">
+        <div class="absolute-top-right q-pa-md row items-center no-wrap q-gutter-sm">
+          <LanguageSwitcher />
           <ThemeSwitcher />
         </div>
         <q-card class="q-pa-lg surface-panel login-card">
@@ -10,23 +11,23 @@
             <img src="/icons/logo.png" alt="AWG-GUI" width="40" height="40" class="app-logo" />
             <div class="text-h5">AWG-GUI</div>
           </div>
-          <div class="text-caption text-grey-5 q-mb-lg">Вход в панель администратора AmneziaWG</div>
+          <div class="text-caption text-grey-5 q-mb-lg">{{ t('auth.title') }}</div>
 
           <div v-if="locked" class="lockout-box q-mb-md">
-            <div class="text-subtitle2 q-mb-sm">Вход временно заблокирован</div>
+            <div class="text-subtitle2 q-mb-sm">{{ t('auth.lockedTitle') }}</div>
             <div class="text-body2 q-mb-sm">
-              Слишком много неверных попыток. Повторите позже.
+              {{ t('auth.lockedMessage') }}
             </div>
             <div class="text-h5 text-center mono countdown">{{ countdownLabel }}</div>
             <div class="text-caption text-grey-5 text-center q-mt-sm">
-              Осталось до разблокировки
+              {{ t('auth.lockedRemaining') }}
             </div>
           </div>
 
           <q-form v-else @submit.prevent="onSubmit">
             <q-input
               v-model="username"
-              label="Имя пользователя"
+              :label="t('auth.username')"
 
               filled
               class="q-mb-md"
@@ -35,7 +36,7 @@
             />
             <q-input
               v-model="password"
-              label="Пароль"
+              :label="t('auth.password')"
               type="password"
 
               filled
@@ -47,7 +48,7 @@
             <div v-if="needTotp" class="q-mb-md">
               <q-input
                 v-model="totp"
-                label="Код 2FA"
+                :label="t('auth.twoFactorCode')"
 
                 filled
                 maxlength="6"
@@ -58,12 +59,12 @@
             </div>
 
             <div v-if="captchaRequired" class="q-mb-md">
-              <div class="text-caption text-grey-5 q-mb-sm">Введите цифры с картинки</div>
+              <div class="text-caption text-grey-5 q-mb-sm">{{ t('auth.captchaHint') }}</div>
               <div class="row items-center q-gutter-sm q-mb-sm">
                 <img
                   v-if="captchaImage"
                   :src="captchaImage"
-                  alt="Капча"
+                  :alt="t('auth.captcha')"
                   class="captcha-img"
                 />
                 <q-btn
@@ -78,7 +79,7 @@
               </div>
               <q-input
                 v-model="captchaAnswer"
-                label="Код с картинки"
+                :label="t('auth.captchaCode')"
 
                 filled
                 inputmode="numeric"
@@ -91,7 +92,7 @@
               type="submit"
               color="primary"
               class="full-width"
-              label="Войти"
+              :label="t('auth.login')"
               :loading="loading"
             />
           </q-form>
@@ -103,11 +104,14 @@
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useRouter, useRoute } from 'vue-router'
 import { useQuasar } from 'quasar'
 import { useAuthStore } from '@/stores/auth'
 import ThemeSwitcher from '@/components/ThemeSwitcher.vue'
+import LanguageSwitcher from '@/components/LanguageSwitcher.vue'
 
+const { t } = useI18n()
 const username = ref('admin')
 const password = ref('')
 const totp = ref('')
@@ -198,7 +202,7 @@ async function reloadCaptcha () {
   } catch (e) {
     $q.notify({
       type: 'negative',
-      message: e?.response?.data?.message || 'Не удалось загрузить капчу'
+      message: e?.response?.data?.message || t('auth.captchaLoadError')
     })
   } finally {
     captchaLoading.value = false
@@ -236,7 +240,7 @@ async function onSubmit () {
     applyLoginError(body)
     $q.notify({
       type: 'negative',
-      message: body?.message || body?.errors?.username?.[0] || 'Ошибка входа'
+      message: body?.message || body?.errors?.username?.[0] || t('auth.loginError')
     })
   } finally {
     loading.value = false

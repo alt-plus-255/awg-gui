@@ -5,7 +5,7 @@
         <div class="col">
           <div class="row items-center no-wrap">
             <div class="col">
-              <div class="text-h5">Диагностика</div>
+              <div class="text-h5">{{ t('diagnostics.title') }}</div>
             </div>
             <div class="col-auto lt-md">
               <q-btn
@@ -13,14 +13,14 @@
                 dense
                 color="primary"
                 icon="refresh"
-                label="Обновить статус"
+                :label="t('diagnostics.refreshStatus')"
                 :loading="store.loadingStatus"
                 @click="refreshStatus"
               />
             </div>
           </div>
           <div class="text-body2 text-muted-theme q-mt-xs">
-            Статус контейнеров, конфиги sing-box / AWG и сетевые проверки резолвера и виртуальных сетей.
+            {{ t('diagnostics.description') }}
           </div>
         </div>
         <div class="col-auto gt-sm">
@@ -28,7 +28,7 @@
             flat
             color="primary"
             icon="refresh"
-            label="Обновить статус"
+            :label="t('diagnostics.refreshStatus')"
             :loading="store.loadingStatus"
             @click="refreshStatus"
           />
@@ -39,10 +39,10 @@
         <!-- Left: run + results -->
         <div class="col-12 col-md-7">
           <q-card class="q-pa-md q-mb-md status-card" flat bordered>
-            <div class="text-subtitle2 q-mb-sm">Конфиги для проверки</div>
+            <div class="text-subtitle2 q-mb-sm">{{ t('diagnostics.configsToCheck') }}</div>
             <div class="row items-center q-gutter-xs q-mb-sm">
-              <q-btn dense flat size="sm" color="primary" label="Все" @click="store.selectAllConfigs()" />
-              <q-btn dense flat size="sm" color="primary" label="Сбросить" @click="store.clearConfigSelection()" />
+              <q-btn dense flat size="sm" color="primary" :label="t('diagnostics.all')" @click="store.selectAllConfigs()" />
+              <q-btn dense flat size="sm" color="primary" :label="t('diagnostics.reset')" @click="store.clearConfigSelection()" />
             </div>
             <div class="row q-gutter-xs config-chips">
               <button
@@ -62,7 +62,7 @@
                 <span class="config-chip__iface mono">{{ c.iface }}</span>
               </button>
               <div v-if="!store.configs.length" class="text-caption text-muted-theme">
-                Нет конфигов
+                {{ t('diagnostics.noConfigs') }}
               </div>
             </div>
 
@@ -70,7 +70,7 @@
               class="q-mt-md full-width"
               color="warning"
               icon="troubleshoot"
-              label="Запустить диагностику"
+              :label="t('diagnostics.runDiagnostics')"
               :loading="store.running"
               :disable="!store.selectedConfigIds.length"
               @click="run"
@@ -79,12 +79,12 @@
 
           <div v-if="store.running" class="q-mb-md flex flex-center q-pa-lg running-banner status-card">
             <q-spinner color="warning" size="40px" />
-            <span class="q-ml-md text-muted-theme">Выполняется диагностика…</span>
+            <span class="q-ml-md text-muted-theme">{{ t('diagnostics.running') }}</span>
           </div>
 
           <template v-if="store.result && !store.running">
             <div class="row items-center q-mb-sm">
-              <div class="text-subtitle1 col">Результаты</div>
+              <div class="text-subtitle1 col">{{ t('diagnostics.results') }}</div>
               <q-badge :color="resultBadgeColor" class="q-pa-sm result-badge">
                 {{ resultBadgeLabel }}
               </q-badge>
@@ -129,7 +129,7 @@
             </q-card>
 
             <q-card v-if="store.hints.length" class="q-pa-md q-mb-md status-card hints-card" flat bordered>
-              <div class="text-subtitle2 q-mb-sm">Подсказки</div>
+              <div class="text-subtitle2 q-mb-sm">{{ t('diagnostics.hints') }}</div>
               <ul class="q-my-none text-caption text-soft-theme hints-list">
                 <li v-for="(h, i) in store.hints" :key="i">{{ h }}</li>
               </ul>
@@ -142,7 +142,7 @@
             flat
             bordered
           >
-            Нажмите «Запустить диагностику», чтобы проверить сеть, резолвер и виртуальные сети.
+            {{ t('diagnostics.runHint') }}
           </q-card>
         </div>
 
@@ -150,13 +150,13 @@
         <div class="col-12 col-md-5">
           <q-card class="q-pa-md q-mb-md status-card" flat bordered>
             <div class="row items-center q-mb-sm">
-              <div class="text-subtitle2 col">Статус служб</div>
+              <div class="text-subtitle2 col">{{ t('diagnostics.servicesStatus') }}</div>
               <q-badge
                 v-if="store.status"
                 :color="store.status.ok ? 'positive' : 'negative'"
                 class="q-pa-sm result-badge"
               >
-                {{ store.status.ok ? 'OK' : 'Проблемы' }}
+                {{ store.status.ok ? t('diagnostics.ok') : t('diagnostics.problems') }}
               </q-badge>
               <q-spinner v-if="store.loadingStatus && !store.status" size="18px" color="primary" />
             </div>
@@ -195,7 +195,7 @@
 
             <template v-if="store.ifaces.length">
               <q-separator class="q-my-sm diag-sep" />
-              <div class="text-caption text-muted-theme q-mb-xs">Интерфейсы AWG</div>
+              <div class="text-caption text-muted-theme q-mb-xs">{{ t('diagnostics.awgInterfaces') }}</div>
               <div
                 v-for="iface in store.ifaces"
                 :key="iface.iface"
@@ -218,13 +218,13 @@
           </q-card>
 
           <q-card class="q-pa-md q-mb-md status-card" flat bordered>
-            <div class="text-subtitle2 q-mb-sm">Действия</div>
+            <div class="text-subtitle2 q-mb-sm">{{ t('diagnostics.actions') }}</div>
             <div class="column q-gutter-sm">
               <q-btn
                 outline
                 color="primary"
                 icon="restart_alt"
-                label="Перезапустить AWG"
+                :label="t('diagnostics.restartAwg')"
                 :loading="systemStore.restartBusy"
                 :disable="systemStore.restartBusy"
                 @click="restartAwg"
@@ -233,7 +233,7 @@
                 outline
                 color="warning"
                 icon="power_settings_new"
-                label="Перезапустить службы"
+                :label="t('diagnostics.restartServices')"
                 :loading="systemStore.restartBusy"
                 :disable="systemStore.restartBusy"
                 @click="restartAll"
@@ -242,7 +242,7 @@
                 outline
                 color="primary"
                 icon="data_object"
-                label="Показать sing-box.json"
+                :label="t('diagnostics.showSingboxJson')"
                 :loading="store.singBoxModal.loading"
                 @click="store.openSingBoxConfig()"
               />
@@ -250,7 +250,7 @@
                 outline
                 color="primary"
                 icon="description"
-                label="Показать AWG конфиги"
+                :label="t('diagnostics.showAwgConfigs')"
                 :loading="store.awgModal.loading"
                 @click="store.openAwgConfigs()"
               />
@@ -258,7 +258,7 @@
                 outline
                 color="primary"
                 icon="content_copy"
-                label="Копировать дамп"
+                :label="t('diagnostics.copyDump')"
                 :disable="!store.result"
                 @click="copyDump"
               />
@@ -266,7 +266,7 @@
           </q-card>
 
           <q-card class="q-pa-md status-card" flat bordered>
-            <div class="text-subtitle2 q-mb-sm">Система</div>
+            <div class="text-subtitle2 q-mb-sm">{{ t('diagnostics.system') }}</div>
             <div class="text-caption text-muted-theme sys-grid">
               <div class="q-mb-xs">
                 Endpoint:
@@ -318,7 +318,7 @@
     <q-dialog :model-value="store.awgModal.open" v-bind="mobileDialog" @update:model-value="onAwgOpen">
       <q-card class="config-dialog status-card dialog-card column no-wrap" style="width: min(720px, 95vw); max-width: 95vw;">
         <q-card-section class="row items-center">
-          <div class="text-h6 col">AWG конфиги</div>
+          <div class="text-h6 col">{{ t('diagnostics.awgConfigs') }}</div>
           <q-badge color="primary" outline class="q-mr-sm">masked</q-badge>
           <q-btn flat dense round color="primary" icon="close" v-close-popup />
         </q-card-section>
@@ -327,7 +327,7 @@
             <q-spinner color="primary" size="32px" />
           </div>
           <div v-else-if="store.awgModal.error" class="text-negative">{{ store.awgModal.error }}</div>
-          <div v-else-if="!store.awgModal.configs.length" class="text-muted-theme">Нет файлов awg*.conf</div>
+          <div v-else-if="!store.awgModal.configs.length" class="text-muted-theme">{{ t('diagnostics.noAwgConfFiles') }}</div>
           <div v-else class="awg-config-list">
             <q-expansion-item
               v-for="cfg in store.awgModal.configs"
@@ -339,7 +339,7 @@
               header-class="awg-expand__header"
             >
               <div class="row justify-end q-mb-xs">
-                <q-btn flat dense size="sm" color="primary" icon="content_copy" label="Копировать" @click="copyText(cfg.content)" />
+                <q-btn flat dense size="sm" color="primary" icon="content_copy" :label="t('diagnostics.copy')" @click="copyText(cfg.content)" />
               </div>
               <pre class="config-pre mono">{{ cfg.content }}</pre>
             </q-expansion-item>
@@ -352,12 +352,14 @@
 
 <script setup>
 import { computed, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useQuasar } from 'quasar'
 import { useDiagnosticsStore } from '@/stores/diagnostics'
 import { useSystemStore } from '@/stores/system'
 import { useSettingsStore } from '@/stores/settings'
 import { useMobileDialog } from '@/composables/useMobileDialog'
 
+const { t } = useI18n()
 const $q = useQuasar()
 const mobileDialog = useMobileDialog()
 const store = useDiagnosticsStore()
@@ -373,9 +375,9 @@ const resultBadgeColor = computed(() => {
 
 const resultBadgeLabel = computed(() => {
   const s = store.result?.status
-  if (s === 'success') return 'OK'
-  if (s === 'warning') return 'Есть замечания'
-  return 'Ошибки'
+  if (s === 'success') return t('diagnostics.ok')
+  if (s === 'warning') return t('diagnostics.hasRemarks')
+  return t('diagnostics.errors')
 })
 
 function groupColor (status) {
@@ -391,16 +393,16 @@ function groupIcon (status) {
 }
 
 function groupStatusLabel (status) {
-  if (status === 'success') return 'OK'
-  if (status === 'warning') return 'замечания'
-  return 'ошибки'
+  if (status === 'success') return t('diagnostics.ok')
+  if (status === 'warning') return t('diagnostics.remarks')
+  return t('diagnostics.errorsLower')
 }
 
 async function refreshStatus () {
   try {
     await store.fetchStatus()
   } catch (e) {
-    $q.notify({ type: 'negative', message: e?.response?.data?.message || 'Не удалось загрузить статус' })
+    $q.notify({ type: 'negative', message: e?.response?.data?.message || t('diagnostics.loadStatusError') })
   }
 }
 
@@ -409,38 +411,38 @@ async function run () {
     const data = await store.runDiagnostic()
     $q.notify({
       type: data.ok ? 'positive' : 'warning',
-      message: data.ok ? 'Диагностика: OK' : 'Диагностика: есть замечания'
+      message: data.ok ? t('diagnostics.diagnosticsOk') : t('diagnostics.diagnosticsRemarks')
     })
   } catch (e) {
-    $q.notify({ type: 'negative', message: e?.response?.data?.message || 'Ошибка диагностики' })
+    $q.notify({ type: 'negative', message: e?.response?.data?.message || t('diagnostics.diagnosticsError') })
   }
 }
 
 async function restartAwg () {
   try {
     const data = await systemStore.restartAwg()
-    $q.notify({ type: data.ok === false ? 'warning' : 'positive', message: data.message || 'AWG перезапущен' })
+    $q.notify({ type: data.ok === false ? 'warning' : 'positive', message: data.message || t('diagnostics.awgRestarted') })
     await store.fetchStatus()
   } catch (e) {
-    $q.notify({ type: 'negative', message: e?.response?.data?.message || 'Не удалось перезапустить AWG' })
+    $q.notify({ type: 'negative', message: e?.response?.data?.message || t('diagnostics.restartAwgError') })
   }
 }
 
 async function restartAll () {
   try {
     const data = await systemStore.restartAll()
-    $q.notify({ type: 'warning', message: data.message || 'Перезапуск служб запущен' })
+    $q.notify({ type: 'warning', message: data.message || t('diagnostics.servicesRestartStarted') })
   } catch (e) {
-    $q.notify({ type: 'negative', message: e?.response?.data?.message || 'Не удалось перезапустить службы' })
+    $q.notify({ type: 'negative', message: e?.response?.data?.message || t('diagnostics.restartServicesError') })
   }
 }
 
 async function copyText (text) {
   try {
     await navigator.clipboard.writeText(text || '')
-    $q.notify({ type: 'positive', message: 'Скопировано' })
+    $q.notify({ type: 'positive', message: t('diagnostics.copied') })
   } catch {
-    $q.notify({ type: 'negative', message: 'Не удалось скопировать' })
+    $q.notify({ type: 'negative', message: t('diagnostics.copyFailed') })
   }
 }
 

@@ -2,7 +2,7 @@
   <q-dialog :model-value="modelValue" v-bind="mobileDialog" @update:model-value="$emit('update:modelValue', $event)" @hide="onHide">
     <q-card style="width: min(520px, 95vw); max-width: 520px;" class="share-dialog surface-panel dialog-card column no-wrap">
       <q-card-section class="text-h6 q-pb-sm">
-        Поделиться: {{ peerName }}
+        {{ t('configs.shareTitle', { name: peerName }) }}
       </q-card-section>
 
       <q-card-section v-if="loading" class="row justify-center q-pa-xl col dialog-scroll-body">
@@ -18,8 +18,8 @@
           active-color="primary"
           indicator-color="primary"
         >
-          <q-tab name="qr" label="QR (.conf)" />
-          <q-tab name="conf" label="Конфиг (.conf)" />
+          <q-tab name="qr" :label="t('configs.shareTabQr')" />
+          <q-tab name="conf" :label="t('configs.shareTabConf')" />
         </q-tabs>
 
         <q-tab-panels v-model="tab" animated class="share-panels col dialog-scroll-body">
@@ -30,20 +30,20 @@
                   :src="qrUrl"
                   alt="QR"
                   class="qr-img cursor-pointer"
-                  title="Нажмите для увеличения"
+                  :title="t('configs.qrClickToEnlarge')"
                 />
               </div>
               <div class="row justify-center q-gutter-sm q-mt-sm">
-                <q-btn flat dense color="primary" icon="fullscreen" label="На весь экран" @click="fullscreenOpen = true" />
-                <q-btn flat dense color="primary" icon="download" label="Скачать PNG" :loading="pngDownloading" @click="downloadPng" />
+                <q-btn flat dense color="primary" icon="fullscreen" :label="t('configs.fullscreen')" @click="fullscreenOpen = true" />
+                <q-btn flat dense color="primary" icon="download" :label="t('configs.downloadPng')" :loading="pngDownloading" @click="downloadPng" />
               </div>
               <div class="text-caption text-muted-theme q-mt-sm">
-                QR содержит текст .conf с параметрами обфускации. Сканируйте в AmneziaWG или скопируйте vpn:// ключ ниже.
+                {{ t('configs.qrHint') }}
               </div>
             </div>
 
             <div class="q-mt-md">
-              <div class="text-subtitle2 q-mb-xs">Ключ Amnezia (vpn://)</div>
+              <div class="text-subtitle2 q-mb-xs">{{ t('configs.amneziaKey') }}</div>
               <q-input
                 v-model="vpnUri"
                 type="textarea"
@@ -60,13 +60,13 @@
                     dense
                     icon="content_copy"
                     color="primary"
-                    title="Копировать ключ"
+                    :title="t('configs.copyKey')"
                     @click="copyVpnUri"
                   />
                 </template>
               </q-input>
               <div class="text-caption text-muted-theme q-mt-sm">
-                Amnezia / AmneziaWG → + → вставить из буфера обмена
+                {{ t('configs.amneziaPasteHint') }}
               </div>
             </div>
           </q-tab-panel>
@@ -87,23 +87,23 @@
                   dense
                   icon="content_copy"
                   color="primary"
-                  title="Копировать конфиг"
+                  :title="t('configs.copyConfig')"
                   @click="copyConf"
                 />
               </template>
             </q-input>
             <div class="row q-gutter-sm q-mt-sm">
-              <q-btn flat color="primary" icon="download" label="Скачать .conf" @click="downloadConf" />
+              <q-btn flat color="primary" icon="download" :label="t('configs.downloadConf')" @click="downloadConf" />
             </div>
             <div class="text-caption text-muted-theme q-mt-sm">
-              Запасной вариант: импорт файла .conf в AmneziaWG.
+              {{ t('configs.confFallbackHint') }}
             </div>
           </q-tab-panel>
         </q-tab-panels>
       </template>
 
       <q-card-actions align="right">
-        <q-btn flat color="primary" label="Закрыть" v-close-popup />
+        <q-btn flat color="primary" :label="t('common.close')" v-close-popup />
       </q-card-actions>
     </q-card>
   </q-dialog>
@@ -117,7 +117,7 @@
         <div class="text-caption text-muted-theme q-mt-md">{{ peerName }}</div>
       </q-card-section>
       <q-card-actions align="right">
-        <q-btn flat color="primary" label="Закрыть" v-close-popup />
+        <q-btn flat color="primary" :label="t('common.close')" v-close-popup />
       </q-card-actions>
     </q-card>
   </q-dialog>
@@ -125,6 +125,7 @@
 
 <script setup>
 import { ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useQuasar } from 'quasar'
 import api from '@/boot/axios'
 import { copyText } from '@/utils/clipboard'
@@ -140,6 +141,7 @@ const props = defineProps({
 
 defineEmits(['update:modelValue'])
 
+const { t } = useI18n()
 const $q = useQuasar()
 const mobileDialog = useMobileDialog()
 
@@ -178,7 +180,7 @@ async function loadShareData (configId, clientId) {
     vpnUri.value = typeof uriRes.data === 'string' ? uriRes.data : String(uriRes.data ?? '')
     confText.value = typeof confRes.data === 'string' ? confRes.data : String(confRes.data ?? '')
   } catch (e) {
-    $q.notify({ type: 'negative', message: e?.response?.data?.message || 'Не удалось загрузить данные' })
+    $q.notify({ type: 'negative', message: e?.response?.data?.message || t('configs.loadShareError') })
   } finally {
     loading.value = false
   }
@@ -202,9 +204,9 @@ async function copyVpnUri () {
   if (!vpnUri.value) return
   try {
     await copyText(vpnUri.value)
-    $q.notify({ type: 'positive', message: 'Ключ vpn:// скопирован' })
+    $q.notify({ type: 'positive', message: t('configs.vpnKeyCopied') })
   } catch {
-    $q.notify({ type: 'negative', message: 'Не удалось скопировать' })
+    $q.notify({ type: 'negative', message: t('common.copyFailed') })
   }
 }
 
@@ -212,9 +214,9 @@ async function copyConf () {
   if (!confText.value) return
   try {
     await copyText(confText.value)
-    $q.notify({ type: 'positive', message: 'Конфиг скопирован' })
+    $q.notify({ type: 'positive', message: t('configs.configCopied') })
   } catch {
-    $q.notify({ type: 'negative', message: 'Не удалось скопировать' })
+    $q.notify({ type: 'negative', message: t('common.copyFailed') })
   }
 }
 
@@ -252,7 +254,7 @@ async function downloadPng () {
     a.click()
     URL.revokeObjectURL(url)
   } catch {
-    $q.notify({ type: 'negative', message: 'Не удалось скачать PNG' })
+    $q.notify({ type: 'negative', message: t('configs.pngDownloadError') })
   } finally {
     pngDownloading.value = false
   }

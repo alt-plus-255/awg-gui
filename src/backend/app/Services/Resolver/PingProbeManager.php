@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\Process;
 
 class PingProbeManager
 {
-    public const IDLE_TIMEOUT_SEC = 300;
+    public const IDLE_TIMEOUT_SEC = 600;
 
     public const LAST_ACTIVITY_CACHE_KEY = 'ping_probe:last_activity';
 
@@ -68,7 +68,7 @@ class PingProbeManager
     public function ensureStarted(): void
     {
         if (! is_file($this->configPath())) {
-            throw new \RuntimeException('sing-box-ping.json не найден — сохраните подключение');
+            throw new \RuntimeException(__('resolver.singbox_ping_json_missing'));
         }
 
         if ($this->isRunning() && $this->clash->waitForProbeApi(3, 150)) {
@@ -79,7 +79,7 @@ class PingProbeManager
 
         $this->runScript('start');
         if (! $this->clash->waitForProbeApi(40, 200)) {
-            throw new \RuntimeException('Не удалось запустить sing-box probe для пинга');
+            throw new \RuntimeException(__('resolver.singbox_probe_start_failed'));
         }
         $this->touch();
     }
@@ -136,7 +136,13 @@ class PingProbeManager
         }
 
         $last = $this->lastActivityAt();
-        if ($last === null || (time() - $last) >= self::IDLE_TIMEOUT_SEC) {
+        if ($last === null) {
+            $this->touch();
+
+            return;
+        }
+
+        if ((time() - $last) >= self::IDLE_TIMEOUT_SEC) {
             Log::info('sing-box-ping: idle timeout, stopping probe');
             $this->stop();
         }

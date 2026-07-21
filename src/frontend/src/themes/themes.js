@@ -9,10 +9,10 @@ export const COLOR_MODES = ['dark', 'light', 'system', 'auto']
 export const SCHEMES = ['dark', 'light']
 
 export const colorModeOptions = [
-  { label: 'Тёмная', value: 'dark' },
-  { label: 'Светлая', value: 'light' },
-  { label: 'Как в системе', value: 'system' },
-  { label: 'Автоматически по времени', value: 'auto' }
+  { labelKey: 'dark', value: 'dark' },
+  { labelKey: 'light', value: 'light' },
+  { labelKey: 'system', value: 'system' },
+  { labelKey: 'auto', value: 'auto' }
 ]
 
 export const styles = {
@@ -382,6 +382,190 @@ export const styles = {
         zoneHeaderFill: 'rgba(245, 240, 230, 0.92)'
       }
     }
+  },
+
+  ck: {
+    id: 'ck',
+    label: 'CK',
+    fontFamily: '"Orbitron", Roboto, sans-serif',
+    monoFamily: '"Share Tech Mono", ui-monospace, monospace',
+    scanlines: false,
+    dark: {
+      brand: {
+        primary: '#ff2a6d',
+        secondary: '#1a0a28',
+        accent: '#05d9e8',
+        dark: '#0a0014',
+        positive: '#2ec4a0',
+        negative: '#ff3355',
+        info: '#05d9e8',
+        warning: '#f0c040'
+      },
+      surface: {
+        bg: '#0a0014',
+        panel: '#12081f',
+        panelAlt: '#1a0f2e',
+        hover: '#26183a',
+        border: '#3d2a55',
+        text: '#e8e0f0',
+        textMuted: '#8a7a9a',
+        textSoft: '#c4b8d4',
+        highlight: '#05d9e8',
+        highlightBg: 'rgba(255, 42, 109, 0.18)',
+        warnBg: '#2a1820',
+        glow: 'rgba(255, 42, 109, 0.35)',
+        radius: '2px'
+      },
+      graph: {
+        server: '#05d9e8',
+        online: '#2ec4a0',
+        offline: '#5a4a6a',
+        disabled: '#2a1a3a',
+        peerLink: '#ff2a6d',
+        peerLinkHover: '#ff6a9d',
+        tunnelOnline: '#2ec4a0',
+        tunnelOffline: '#3a2a4a',
+        tunnelDisabled: '#1a1028',
+        label: '#c4b8d4',
+        zoneFill: 'rgba(255, 42, 109, 0.08)',
+        zoneStroke: 'rgba(61, 42, 85, 0.95)',
+        zoneHeaderFill: 'rgba(18, 8, 31, 0.92)'
+      }
+    },
+    light: {
+      brand: {
+        primary: '#d9145a',
+        secondary: '#ebe4f0',
+        accent: '#0088a0',
+        dark: '#f4f0f8',
+        positive: '#1a8a72',
+        negative: '#c62840',
+        info: '#0088a0',
+        warning: '#b8860b'
+      },
+      surface: {
+        bg: '#f4f0f8',
+        panel: '#ffffff',
+        panelAlt: '#ebe4f0',
+        hover: '#ddd4e8',
+        border: '#c4b0d4',
+        text: '#1a1028',
+        textMuted: '#6a5a7a',
+        textSoft: '#3a2a4a',
+        highlight: '#d9145a',
+        highlightBg: 'rgba(217, 20, 90, 0.12)',
+        warnBg: '#fff3e8',
+        glow: 'rgba(217, 20, 90, 0.15)',
+        radius: '2px'
+      },
+      graph: {
+        server: '#0088a0',
+        online: '#1a8a72',
+        offline: '#9a8aa8',
+        disabled: '#ddd4e8',
+        peerLink: '#d9145a',
+        peerLinkHover: '#ff2a6d',
+        tunnelOnline: '#1a8a72',
+        tunnelOffline: '#9a8aa8',
+        tunnelDisabled: '#ddd4e8',
+        label: '#3a2a4a',
+        zoneFill: 'rgba(217, 20, 90, 0.08)',
+        zoneStroke: 'rgba(196, 176, 212, 0.9)',
+        zoneHeaderFill: 'rgba(255, 255, 255, 0.92)'
+      }
+    }
+  },
+
+  ah: {
+    id: 'ah',
+    label: 'AH',
+    fontFamily: '"Russo One", Oswald, Roboto, sans-serif',
+    monoFamily: '"Roboto Mono", ui-monospace, monospace',
+    scanlines: false,
+    dark: {
+      brand: {
+        primary: '#c41e3a',
+        secondary: '#2a1c14',
+        accent: '#d4a84b',
+        dark: '#1a1210',
+        positive: '#6a8a3a',
+        negative: '#e04040',
+        info: '#6a9aba',
+        warning: '#d4a84b'
+      },
+      surface: {
+        bg: '#1a1210',
+        panel: '#241a16',
+        panelAlt: '#2e221c',
+        hover: '#3a2e26',
+        border: '#5a4838',
+        text: '#f2e6d0',
+        textMuted: '#9a8a70',
+        textSoft: '#d4c4a8',
+        highlight: '#d4a84b',
+        highlightBg: 'rgba(196, 30, 58, 0.18)',
+        warnBg: '#2a2010',
+        glow: 'rgba(212, 168, 75, 0.28)',
+        radius: '4px'
+      },
+      graph: {
+        server: '#6a9aba',
+        online: '#6a8a3a',
+        offline: '#6a5a4a',
+        disabled: '#3a3028',
+        peerLink: '#d4a84b',
+        peerLinkHover: '#e8c878',
+        tunnelOnline: '#6a8a3a',
+        tunnelOffline: '#4a3e34',
+        tunnelDisabled: '#2a221c',
+        label: '#d4c4a8',
+        zoneFill: 'rgba(196, 30, 58, 0.08)',
+        zoneStroke: 'rgba(90, 72, 56, 0.9)',
+        zoneHeaderFill: 'rgba(36, 26, 22, 0.92)'
+      }
+    },
+    light: {
+      brand: {
+        primary: '#a81830',
+        secondary: '#f0e8dc',
+        accent: '#b8860b',
+        dark: '#f7f1e6',
+        positive: '#5a7a2a',
+        negative: '#b82828',
+        info: '#3a6a8a',
+        warning: '#b8860b'
+      },
+      surface: {
+        bg: '#f7f1e6',
+        panel: '#fffaf3',
+        panelAlt: '#f0e8dc',
+        hover: '#e4d8c8',
+        border: '#c8b8a0',
+        text: '#2a1c14',
+        textMuted: '#7a6a58',
+        textSoft: '#4a3c30',
+        highlight: '#a81830',
+        highlightBg: 'rgba(168, 24, 48, 0.12)',
+        warnBg: '#fff3e0',
+        glow: 'rgba(184, 134, 11, 0.15)',
+        radius: '4px'
+      },
+      graph: {
+        server: '#3a6a8a',
+        online: '#5a7a2a',
+        offline: '#9a8a78',
+        disabled: '#e4d8c8',
+        peerLink: '#b8860b',
+        peerLinkHover: '#d4a84b',
+        tunnelOnline: '#5a7a2a',
+        tunnelOffline: '#9a8a78',
+        tunnelDisabled: '#e4d8c8',
+        label: '#4a3c30',
+        zoneFill: 'rgba(168, 24, 48, 0.08)',
+        zoneStroke: 'rgba(200, 184, 160, 0.9)',
+        zoneHeaderFill: 'rgba(255, 250, 243, 0.92)'
+      }
+    }
   }
 }
 
@@ -392,7 +576,9 @@ export const bootSurfaceBg = {
   classic: { dark: '#0d1117', light: '#ffffff' },
   crt: { dark: '#010a05', light: '#f4fff7' },
   ds: { dark: '#0c0e10', light: '#eef2f4' },
-  sa: { dark: '#0f0c08', light: '#faf8f4' }
+  sa: { dark: '#0f0c08', light: '#faf8f4' },
+  ck: { dark: '#0a0014', light: '#f4f0f8' },
+  ah: { dark: '#1a1210', light: '#f7f1e6' }
 }
 
 export function parseTimeToMinutes (time) {

@@ -88,7 +88,7 @@
       <template v-if="tooltipNode">
         <div class="text-weight-bold">{{ tooltipNode.name }}</div>
         <div v-if="tooltipNode.isServer" class="text-grey-5">
-          Сервер · {{ tooltipNode.iface }}
+          {{ t('dashboard.graphServerTooltip', { iface: tooltipNode.iface }) }}
         </div>
         <template v-else>
           <div class="text-grey-5">{{ tooltipNode.address }}</div>
@@ -97,9 +97,9 @@
           </div>
           <div>
             <span :class="tooltipNode.online ? 'text-positive' : 'text-grey-5'">
-              {{ tooltipNode.online ? 'онлайн' : 'офлайн' }}
+              {{ tooltipNode.online ? t('common.online') : t('common.offline') }}
             </span>
-            <span v-if="!tooltipNode.enabled" class="text-warning"> · выключен</span>
+            <span v-if="!tooltipNode.enabled" class="text-warning">{{ t('dashboard.graphDisabled') }}</span>
           </div>
           <div v-if="tooltipNode.rxRate + tooltipNode.txRate > 0">
             ↑ {{ formatRate(tooltipNode.rxRate) }} · ↓ {{ formatRate(tooltipNode.txRate) }}
@@ -111,16 +111,16 @@
       </template>
     </div>
     <div class="graph-legend row items-center q-gutter-md">
-      <span><span class="dot dot-server"></span> сервер</span>
-      <span><span class="dot dot-online"></span> пир онлайн</span>
-      <span><span class="dot dot-offline"></span> пир офлайн</span>
-      <span><span class="line line-tunnel"></span> туннель (офлайн)</span>
+      <span><span class="dot dot-server"></span> {{ t('dashboard.graphServer') }}</span>
+      <span><span class="dot dot-online"></span> {{ t('dashboard.graphPeerOnline') }}</span>
+      <span><span class="dot dot-offline"></span> {{ t('dashboard.graphPeerOffline') }}</span>
+      <span><span class="line line-tunnel"></span> {{ t('dashboard.graphTunnelOffline') }}</span>
       <span>
         <svg class="line-anim" width="18" height="10" aria-hidden="true">
           <line x1="0" y1="2" x2="18" y2="2" :stroke="g.tunnelOnline" stroke-width="2" stroke-dasharray="4 4" />
           <line class="line-anim-down" x1="0" y1="8" x2="18" y2="8" :stroke="g.tunnelOnline" stroke-width="2" stroke-dasharray="4 4" />
         </svg>
-        трафик ↑/↓
+        {{ t('dashboard.graphTraffic') }}
       </span>
       <span>
         <svg class="line-peer-dir" width="28" height="8" aria-hidden="true">
@@ -131,23 +131,23 @@
           </defs>
           <line x1="2" y1="4" x2="24" y2="4" :stroke="g.peerLink" stroke-width="1.5" stroke-dasharray="4 3" :marker-end="`url(#${legendArrowId})`" />
         </svg>
-        пир→пир (стрелка: кто ходит к кому)
+        {{ t('dashboard.graphPeerToPeer') }}
       </span>
       <span>
         <svg class="zone-legend" width="22" height="14" aria-hidden="true">
           <rect x="1" y="1" width="20" height="12" rx="3" :fill="g.zoneFill" :stroke="g.zoneStroke" stroke-width="1.5" />
         </svg>
-        зона конфига
+        {{ t('dashboard.graphConfigZone') }}
       </span>
-      <span class="text-grey-6">тянуть заголовок</span>
+      <span class="text-grey-6">{{ t('dashboard.graphDragHeader') }}</span>
     </div>
     <div class="graph-zoom-controls row items-center no-wrap q-gutter-xs">
-      <q-btn dense flat round icon="remove" title="Уменьшить" @click="zoomOut" />
-      <q-btn dense flat round icon="add" title="Увеличить" @click="zoomIn" />
-      <q-btn dense flat round icon="fit_screen" title="Вписать в экран" @click="fitGraphToView" />
+      <q-btn dense flat round icon="remove" :title="t('dashboard.graphZoomOut')" @click="zoomOut" />
+      <q-btn dense flat round icon="add" :title="t('dashboard.graphZoomIn')" @click="zoomIn" />
+      <q-btn dense flat round icon="fit_screen" :title="t('dashboard.graphFit')" @click="fitGraphToView" />
     </div>
-    <div v-if="minimapModel" class="graph-minimap" title="Мини-карта зон">
-      <div class="graph-minimap-header">Зоны · {{ minimapModel.count }}</div>
+    <div v-if="minimapModel" class="graph-minimap" :title="t('dashboard.graphMinimap')">
+      <div class="graph-minimap-header">{{ t('dashboard.graphZones', { count: minimapModel.count }) }}</div>
       <svg
         ref="minimapSvg"
         class="graph-minimap-svg"
@@ -203,6 +203,7 @@
 
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { storeToRefs } from 'pinia'
 import { VNetworkGraph, VEdgeLabel, defineConfigs } from 'v-network-graph'
 import { ForceLayout } from 'v-network-graph/lib/force-layout'
@@ -215,6 +216,7 @@ const props = defineProps({
   fullHeight: { type: Boolean, default: false }
 })
 
+const { t } = useI18n()
 const theme = useThemeStore()
 const { styleId, resolvedScheme } = storeToRefs(theme)
 const g = computed(() => theme.current.graph)

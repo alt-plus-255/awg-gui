@@ -1,6 +1,7 @@
 import { createApp } from 'vue'
 import { Quasar, Notify, Dialog, Loading, Dark } from 'quasar'
-import quasarLang from 'quasar/lang/ru'
+import quasarRu from 'quasar/lang/ru'
+import quasarEn from 'quasar/lang/en-US'
 import iconSet from 'quasar/icon-set/material-icons'
 
 import '@quasar/extras/material-icons/material-icons.css'
@@ -10,19 +11,36 @@ import 'quasar/src/css/index.sass'
 import App from './App.vue'
 import router from './router'
 import { createPinia } from 'pinia'
+import { createAppI18n, DEFAULT_LOCALE, LOCALE_STORAGE_KEY, isValidLocale } from '@/i18n'
 import { useThemeStore } from '@/stores/theme'
+import { useLocaleStore, setI18nInstance } from '@/stores/locale'
 import { useAuthStore } from '@/stores/auth'
 import { useSoundStore } from '@/sounds/store'
 import { installUiSounds } from '@/sounds/install'
 import './css/app.scss'
 
+function readInitialLocale () {
+  try {
+    const stored = localStorage.getItem(LOCALE_STORAGE_KEY)
+    if (isValidLocale(stored)) return stored
+  } catch {
+    // ignore
+  }
+  return DEFAULT_LOCALE
+}
+
+const initialLocale = readInitialLocale()
+const i18n = createAppI18n(initialLocale)
+setI18nInstance(i18n)
+
 const app = createApp(App)
 const pinia = createPinia()
 app.use(pinia)
 app.use(router)
+app.use(i18n)
 app.use(Quasar, {
   plugins: { Notify, Dialog, Loading, Dark },
-  lang: quasarLang,
+  lang: initialLocale === 'en' ? quasarEn : quasarRu,
   iconSet,
   config: {
     brand: {
@@ -41,6 +59,7 @@ app.use(Quasar, {
   }
 })
 
+useLocaleStore(pinia).init()
 useThemeStore(pinia).init()
 useSoundStore(pinia).init()
 installUiSounds({ router, Notify })

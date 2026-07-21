@@ -2,9 +2,9 @@
   <q-dialog :model-value="show" v-bind="mobileDialog" persistent>
     <q-card class="surface-panel dialog-card column no-wrap" style="width: min(520px, 95vw); max-width: 520px;">
       <q-card-section>
-        <div class="text-h6">Службы недоступны</div>
+        <div class="text-h6">{{ t('common.servicesUnavailable') }}</div>
         <div class="text-caption text-grey-5 q-mt-xs">
-          Проверьте состояние контейнеров AWG-GUI и попробуйте перезапустить службы.
+          {{ t('common.servicesUnavailableHint') }}
         </div>
       </q-card-section>
 
@@ -20,18 +20,18 @@
       </q-card-section>
 
       <q-card-actions align="right">
-        <q-btn flat label="Проверить снова" :loading="system.checking" @click="system.checkStatus(true)" />
+        <q-btn flat :label="t('common.checkAgain')" :loading="system.checking" @click="system.checkStatus(true)" />
         <q-btn
           outline
           color="warning"
-          label="Перезапустить AWG"
+          :label="t('common.restartAwg')"
           :loading="system.restartBusy"
           :disable="system.restartBusy"
           @click="onRestartAwg"
         />
         <q-btn
           color="primary"
-          label="Перезапустить всё"
+          :label="t('common.restartAll')"
           :loading="system.restartBusy"
           :disable="system.restartBusy"
           @click="onRestartAll"
@@ -43,11 +43,13 @@
 
 <script setup>
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useQuasar } from 'quasar'
 import { useRoute } from 'vue-router'
 import { useSystemStore } from '@/stores/system'
 import { useMobileDialog } from '@/composables/useMobileDialog'
 
+const { t } = useI18n()
 const $q = useQuasar()
 const mobileDialog = useMobileDialog()
 const route = useRoute()
@@ -60,41 +62,41 @@ const show = computed(() => {
 
 async function onRestartAwg () {
   if (system.restartBusy) {
-    $q.notify({ type: 'warning', message: 'Перезапуск AWG уже выполняется' })
+    $q.notify({ type: 'warning', message: t('common.restartAwgInProgress') })
     return
   }
 
   try {
     const data = await system.restartAwg()
     if (data?.already_restarting) {
-      $q.notify({ type: 'warning', message: data.message || 'Перезапуск AWG уже выполняется' })
+      $q.notify({ type: 'warning', message: data.message || t('common.restartAwgInProgress') })
       return
     }
-    $q.notify({ type: data.ok ? 'positive' : 'negative', message: data.message || 'Готово' })
+    $q.notify({ type: data.ok ? 'positive' : 'negative', message: data.message || t('common.done') })
   } catch (e) {
     const already = e?.response?.status === 409 || e?.response?.data?.already_restarting
     $q.notify({
       type: already ? 'warning' : 'negative',
-      message: e?.response?.data?.message || 'Ошибка перезапуска AWG'
+      message: e?.response?.data?.message || t('common.restartAwgError')
     })
   }
 }
 
 async function onRestartAll () {
   if (system.restartBusy) {
-    $q.notify({ type: 'warning', message: 'Перезапуск уже выполняется' })
+    $q.notify({ type: 'warning', message: t('common.restartInProgress') })
     return
   }
 
   try {
     const data = await system.restartAll()
     if (data?.already_restarting) {
-      $q.notify({ type: 'warning', message: data.message || 'Перезапуск уже выполняется' })
+      $q.notify({ type: 'warning', message: data.message || t('common.restartInProgress') })
       return
     }
-    $q.notify({ type: 'info', message: data.message || 'Перезапуск запущен' })
+    $q.notify({ type: 'info', message: data.message || t('common.restartStarted') })
   } catch (e) {
-    $q.notify({ type: 'negative', message: e?.response?.data?.message || 'Ошибка перезапуска' })
+    $q.notify({ type: 'negative', message: e?.response?.data?.message || t('common.restartError') })
   }
 }
 </script>

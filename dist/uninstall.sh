@@ -19,7 +19,7 @@ die() { echo -e "${RED}[error]${NC} $*" >&2; exit 1; }
 usage() {
   cat <<EOF
 Usage:
-  sudo bash <(wget -O - https://raw.githubusercontent.com/YOUR_ORG/awg-gui/refs/heads/main/dist/uninstall.sh)
+  sudo bash <(wget -O - https://raw.githubusercontent.com/alt-plus-255/awg-gui/refs/heads/main/dist/uninstall.sh)
   sudo bash <(wget -O - .../dist/uninstall.sh) --yes --images
 
 Options:

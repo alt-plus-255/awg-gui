@@ -3,18 +3,18 @@
     <div class="page-wrap">
       <div class="row items-center q-mb-md q-col-gutter-sm">
         <div class="col">
-          <div class="text-h5">Настройки списков</div>
+          <div class="text-h5">{{ t('resolver.listSettingsTitle') }}</div>
           <div class="text-body2 text-grey-5 q-mt-xs">
-            Интервал скачивания community-списков, свои списки и файлы на диске.
+            {{ t('resolver.listSettingsDesc') }}
           </div>
         </div>
         <div class="col-auto">
-          <q-btn flat color="primary" icon="alt_route" label="Резолвер" :to="{ name: 'resolver' }" />
+          <q-btn flat color="primary" icon="alt_route" :label="t('resolver.title')" :to="{ name: 'resolver' }" />
         </div>
       </div>
 
       <q-card class="q-pa-md q-mb-md status-card" flat bordered>
-        <div class="text-subtitle2 q-mb-sm">Интервал синхронизации</div>
+        <div class="text-subtitle2 q-mb-sm">{{ t('resolver.syncInterval') }}</div>
         <div class="row q-col-gutter-md items-end">
           <div class="col-12 col-sm-4 col-md-3">
             <q-input
@@ -22,19 +22,19 @@
               type="number"
               min="5"
               max="10080"
-              label="Минуты"
-              hint="По умолчанию 360 (6 ч). Минимум 5."
+              :label="t('resolver.minutes')"
+              :hint="t('resolver.syncIntervalHint')"
 
               filled
               dense
             />
           </div>
           <div class="col-12 col-sm-auto">
-            <q-btn color="primary" label="Сохранить интервал" :loading="savingInterval" @click="saveInterval" />
+            <q-btn color="primary" :label="t('resolver.saveInterval')" :loading="savingInterval" @click="saveInterval" />
           </div>
           <div class="col-12 col-sm">
             <div class="text-caption text-grey-5">
-              Последняя полная sync:
+              {{ t('resolver.lastFullSync') }}
               <span class="mono">{{ formatTs(lastSyncAt) }}</span>
             </div>
           </div>
@@ -43,7 +43,7 @@
               outline
               color="warning"
               icon="cloud_download"
-              label="Скачать все сейчас"
+              :label="t('resolver.downloadAllNow')"
               :loading="syncingAll"
               :disable="!!syncingTag"
               @click="syncAll"
@@ -54,10 +54,10 @@
 
       <q-card class="q-pa-md status-card" flat bordered>
         <div class="row items-center q-mb-sm q-col-gutter-sm">
-          <div class="col text-subtitle2">Списки</div>
+          <div class="col text-subtitle2">{{ t('resolver.lists') }}</div>
           <div class="col-auto">
-            <q-btn flat dense color="primary" icon="open_in_full" label="Все списки" @click="modalOpen = true" />
-            <q-btn class="q-ml-sm" color="primary" icon="add" label="Свой список" @click="openEdit(null)" />
+            <q-btn flat dense color="primary" icon="open_in_full" :label="t('resolver.allLists')" @click="modalOpen = true" />
+            <q-btn class="q-ml-sm" color="primary" icon="add" :label="t('resolver.customList')" @click="openEdit(null)" />
           </div>
         </div>
 
@@ -87,7 +87,7 @@
           <template #body-cell-kind="props">
             <q-td :props="props">
               <q-badge :color="props.row.kind === 'custom' ? 'teal' : 'grey-7'">
-                {{ props.row.kind === 'custom' ? (props.row.source_url ? 'свой · URL' : 'свой') : 'community' }}
+                {{ props.row.kind === 'custom' ? (props.row.source_url ? t('resolver.kindCustomUrl') : t('resolver.kindCustom')) : t('resolver.kindCommunity') }}
               </q-badge>
             </q-td>
           </template>
@@ -96,7 +96,7 @@
               <span v-if="props.row.on_disk" class="text-positive">
                 {{ formatSize(props.row.size) }}
               </span>
-              <span v-else class="text-negative">нет</span>
+              <span v-else class="text-negative">{{ t('common.none') }}</span>
             </q-td>
           </template>
           <template #body-cell-downloaded_at="props">
@@ -117,7 +117,7 @@
                 :disable="syncingAll || (!!syncingTag && syncingTag !== props.row.tag)"
                 @click="syncOne(props.row.tag)"
               >
-                <q-tooltip>{{ syncingAll ? 'Идёт полная синхронизация' : 'Скачать' }}</q-tooltip>
+                <q-tooltip>{{ syncingAll ? t('resolver.fullSyncInProgress') : t('resolver.download') }}</q-tooltip>
               </q-btn>
               <q-btn
                 v-if="props.row.can_edit"
@@ -129,7 +129,7 @@
                 :disable="syncingAll"
                 @click="openEdit(props.row)"
               >
-                <q-tooltip>Править</q-tooltip>
+                <q-tooltip>{{ t('resolver.editList') }}</q-tooltip>
               </q-btn>
               <q-btn
                 v-if="props.row.can_delete"
@@ -142,7 +142,7 @@
                 :disable="syncingAll"
                 @click="removeList(props.row)"
               >
-                <q-tooltip>Удалить</q-tooltip>
+                <q-tooltip>{{ t('common.delete') }}</q-tooltip>
               </q-btn>
             </q-td>
           </template>
@@ -152,7 +152,7 @@
       <q-dialog v-model="modalOpen" maximized transition-show="slide-up" transition-hide="slide-down">
         <q-card class="surface-panel dialog-card column no-wrap">
           <q-card-section class="row items-center">
-            <div class="text-h6">Все списки</div>
+            <div class="text-h6">{{ t('resolver.allLists') }}</div>
             <q-space />
             <q-btn flat round dense icon="close" v-close-popup />
           </q-card-section>
@@ -162,7 +162,7 @@
                 outline
                 color="warning"
                 icon="cloud_download"
-                label="Скачать все community"
+                :label="t('resolver.downloadAllCommunity')"
                 :loading="syncingAll"
                 :disable="!!syncingTag"
                 @click="syncAll"
@@ -193,14 +193,14 @@
               <template #body-cell-kind="props">
                 <q-td :props="props">
                   <q-badge :color="props.row.kind === 'custom' ? 'teal' : 'grey-7'">
-                    {{ props.row.kind === 'custom' ? (props.row.source_url ? 'свой · URL' : 'свой') : 'community' }}
+                    {{ props.row.kind === 'custom' ? (props.row.source_url ? t('resolver.kindCustomUrl') : t('resolver.kindCustom')) : t('resolver.kindCommunity') }}
                   </q-badge>
                 </q-td>
               </template>
               <template #body-cell-on_disk="props">
                 <q-td :props="props">
                   <span v-if="props.row.on_disk" class="text-positive">{{ formatSize(props.row.size) }}</span>
-                  <span v-else class="text-negative">нет</span>
+                  <span v-else class="text-negative">{{ t('common.none') }}</span>
                 </q-td>
               </template>
               <template #body-cell-downloaded_at="props">
@@ -227,7 +227,7 @@
                     dense
                     icon="edit"
                     color="primary"
-                    label="Править"
+                    :label="t('resolver.editList')"
                     :disable="syncingAll"
                     @click="openEdit(props.row)"
                   />
@@ -240,9 +240,9 @@
 
       <q-dialog v-model="editOpen" v-bind="mobileDialog" persistent>
         <q-card style="min-width: 420px; max-width: 640px" class="surface-panel q-pa-md dialog-card column no-wrap">
-          <div class="text-h6 q-mb-md">{{ editId ? 'Редактировать список' : 'Новый список' }}</div>
+          <div class="text-h6 q-mb-md">{{ editId ? t('resolver.editListTitle') : t('resolver.newListTitle') }}</div>
           <div class="col dialog-scroll-body">
-          <q-input v-model="editForm.name" label="Имя" filled dense class="q-mb-md" />
+          <q-input v-model="editForm.name" :label="t('resolver.listName')" filled dense class="q-mb-md" />
           <q-btn-toggle
             v-model="editForm.mode"
             class="q-mb-md"
@@ -251,32 +251,32 @@
             toggle-color="primary"
 
             :options="[
-              { label: 'Текст', value: 'text' },
-              { label: 'Ссылка', value: 'url' }
+              { label: t('resolver.sourceText'), value: 'text' },
+              { label: t('resolver.sourceUrl'), value: 'url' }
             ]"
           />
           <template v-if="editForm.mode === 'url'">
             <q-input
               v-model="editForm.sourceUrl"
-              label="URL списка"
+              :label="t('resolver.listUrl')"
 
               filled
               dense
               class="q-mb-md"
-              hint="Как community: .srs или текстовый список доменов/CIDR по строкам"
+              :hint="t('resolver.listUrlHint')"
             />
           </template>
           <template v-else>
             <q-input
               v-model="editForm.domainsText"
-              label="Домены"
+              :label="t('resolver.domains')"
               type="textarea"
               :input-style="{ minHeight: '140px' }"
               rows="8"
 
               filled
               class="q-mb-md"
-              hint="По одному домену на строку, например example.com"
+              :hint="t('resolver.domainsListHint')"
             />
             <q-input
               v-model="editForm.cidrsText"
@@ -287,13 +287,13 @@
 
               filled
               class="q-mb-md"
-              hint="По одному на строку: 1.2.3.0/24 или 1.2.3.4"
+              :hint="t('resolver.cidrsListHint')"
             />
           </template>
           </div>
           <div class="row q-gutter-sm justify-end">
-            <q-btn flat label="Отмена" v-close-popup />
-            <q-btn color="primary" label="Сохранить" :loading="savingEdit" @click="saveEdit" />
+            <q-btn flat :label="t('common.cancel')" v-close-popup />
+            <q-btn color="primary" :label="t('common.save')" :loading="savingEdit" @click="saveEdit" />
           </div>
         </q-card>
       </q-dialog>
@@ -302,11 +302,14 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useQuasar } from 'quasar'
 import api from '@/boot/axios'
 import { useMobileDialog } from '@/composables/useMobileDialog'
+import { bcp47Locale } from '@/i18n'
 
+const { t, locale } = useI18n()
 const $q = useQuasar()
 const mobileDialog = useMobileDialog()
 const loading = ref(true)
@@ -329,18 +332,18 @@ const editForm = reactive({
   cidrsText: ''
 })
 
-const columns = [
-  { name: 'label', label: 'Имя', field: 'label', align: 'left' },
-  { name: 'kind', label: 'Тип', field: 'kind', align: 'left' },
-  { name: 'on_disk', label: 'На диске', field: 'on_disk', align: 'left' },
-  { name: 'downloaded_at', label: 'Обновлён', field: 'downloaded_at', align: 'left' },
+const columns = computed(() => [
+  { name: 'label', label: t('resolver.listName'), field: 'label', align: 'left' },
+  { name: 'kind', label: t('resolver.colType'), field: 'kind', align: 'left' },
+  { name: 'on_disk', label: t('resolver.colOnDisk'), field: 'on_disk', align: 'left' },
+  { name: 'downloaded_at', label: t('resolver.colUpdated'), field: 'downloaded_at', align: 'left' },
   { name: 'actions', label: '', field: 'actions', align: 'right' }
-]
+])
 
 function formatTs (iso) {
   if (!iso) return '—'
   try {
-    return new Date(iso).toLocaleString()
+    return new Date(iso).toLocaleString(bcp47Locale(locale.value))
   } catch {
     return iso
   }
@@ -365,7 +368,7 @@ async function load () {
     const { data } = await api.get('/api/resolver/settings')
     applyPayload(data)
   } catch (e) {
-    $q.notify({ type: 'negative', message: e?.response?.data?.message || 'Не удалось загрузить настройки' })
+    $q.notify({ type: 'negative', message: e?.response?.data?.message || t('resolver.loadSettingsError') })
   } finally {
     loading.value = false
   }
@@ -378,11 +381,11 @@ async function saveInterval () {
       sync_interval_minutes: Number(intervalMinutes.value)
     })
     applyPayload(data)
-    $q.notify({ type: 'positive', message: 'Интервал сохранён' })
+    $q.notify({ type: 'positive', message: t('resolver.intervalSaved') })
   } catch (e) {
     const msg = e?.response?.data?.message
       || Object.values(e?.response?.data?.errors || {}).flat()[0]
-      || 'Ошибка сохранения'
+      || t('common.saveError')
     $q.notify({ type: 'negative', message: msg })
   } finally {
     savingInterval.value = false
@@ -395,12 +398,12 @@ async function syncAll () {
   try {
     const { data } = await api.post('/api/resolver/settings/sync-lists')
     applyPayload(data)
-    $q.notify({ type: data.ok === false ? 'warning' : 'positive', message: data.message || 'Списки скачаны' })
+    $q.notify({ type: data.ok === false ? 'warning' : 'positive', message: data.message || t('resolver.listsDownloaded') })
   } catch (e) {
     if (e?.response?.data?.lists) applyPayload(e.response.data)
     $q.notify({
       type: 'negative',
-      message: e?.response?.data?.message || 'Ошибка скачивания'
+      message: e?.response?.data?.message || t('resolver.downloadError')
     })
   } finally {
     syncingAll.value = false
@@ -413,12 +416,12 @@ async function syncOne (tag) {
   try {
     const { data } = await api.post(`/api/resolver/settings/sync-lists/${encodeURIComponent(tag)}`)
     applyPayload(data)
-    $q.notify({ type: 'positive', message: `Скачан: ${tag}` })
+    $q.notify({ type: 'positive', message: t('resolver.downloadedTag', { tag }) })
   } catch (e) {
     if (e?.response?.data?.lists) applyPayload(e.response.data)
     $q.notify({
       type: 'negative',
-      message: e?.response?.data?.message || `Ошибка: ${tag}`
+      message: e?.response?.data?.message || t('resolver.errorTag', { tag })
     })
   } finally {
     syncingTag.value = null
@@ -457,11 +460,11 @@ async function saveEdit () {
     if (data.settings) applyPayload(data.settings)
     else await load()
     editOpen.value = false
-    $q.notify({ type: 'positive', message: 'Список сохранён' })
+    $q.notify({ type: 'positive', message: t('resolver.listSaved') })
   } catch (e) {
     const msg = e?.response?.data?.message
       || Object.values(e?.response?.data?.errors || {}).flat()[0]
-      || 'Ошибка сохранения списка'
+      || t('resolver.listSaveError')
     $q.notify({ type: 'negative', message: msg })
   } finally {
     savingEdit.value = false
@@ -470,8 +473,8 @@ async function saveEdit () {
 
 async function removeList (row) {
   $q.dialog({
-    title: 'Удалить список?',
-    message: `«${row.label}» будет удалён с диска и из конфигов.`,
+    title: t('resolver.deleteListTitle'),
+    message: t('resolver.deleteListConfirm', { label: row.label }),
     cancel: true,
     persistent: true,
   }).onOk(async () => {
@@ -480,9 +483,9 @@ async function removeList (row) {
       const { data } = await api.delete(`/api/resolver/custom-lists/${row.id}`)
       if (data.settings) applyPayload(data.settings)
       else await load()
-      $q.notify({ type: 'positive', message: 'Удалено' })
+      $q.notify({ type: 'positive', message: t('common.deleted') })
     } catch (e) {
-      $q.notify({ type: 'negative', message: e?.response?.data?.message || 'Ошибка удаления' })
+      $q.notify({ type: 'negative', message: e?.response?.data?.message || t('common.deleteError') })
     } finally {
       deletingId.value = null
     }

@@ -48,7 +48,7 @@ class TwoFactorController extends Controller
         $user = $request->user();
         if (! $this->twoFactor->confirm($user, $data['code'])) {
             throw ValidationException::withMessages([
-                'code' => ['Неверный код подтверждения.'],
+                'code' => [__('auth.confirm_code_invalid')],
             ]);
         }
 
@@ -70,13 +70,13 @@ class TwoFactorController extends Controller
 
         if (! Hash::check($data['password'], $user->password)) {
             throw ValidationException::withMessages([
-                'password' => ['Неверный пароль.'],
+                'password' => [__('auth.password_invalid')],
             ]);
         }
 
         if (! $this->twoFactor->verify($user, $data['code'])) {
             throw ValidationException::withMessages([
-                'code' => ['Неверный код двухфакторной аутентификации.'],
+                'code' => [__('auth.two_factor_code_invalid')],
             ]);
         }
 

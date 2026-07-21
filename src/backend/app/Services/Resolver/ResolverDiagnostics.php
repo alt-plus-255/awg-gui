@@ -57,11 +57,11 @@ class ResolverDiagnostics
         $checks[] = [
             'id' => 'singbox_running',
             'ok' => $singBoxRunning,
-            'label' => 'sing-box запущен',
-            'detail' => $singBoxRunning ? 'OK' : 'Процесс не найден',
+            'label' => __('resolver.diag_singbox_running'),
+            'detail' => $singBoxRunning ? 'OK' : __('resolver.diag_process_not_found'),
         ];
         if (! $singBoxRunning) {
-            $hints[] = 'Примените резолвер (Обновить lists) или проверьте контейнер awg.';
+            $hints[] = __('resolver.diag_apply_resolver_hint');
         }
 
         $dnsListening = false;
@@ -97,18 +97,18 @@ class ResolverDiagnostics
             'id' => 'dns_listen',
             'ok' => $dnsListening,
             'label' => 'DNS listen :'.ResolverService::DNS_LISTEN_PORT,
-            'detail' => $dnsListening ? 'sing-box слушает UDP :'.ResolverService::DNS_LISTEN_PORT : 'Порт '.ResolverService::DNS_LISTEN_PORT.' не слушается',
+            'detail' => $dnsListening ? __('resolver.diag_dns_listening', ['port' => ResolverService::DNS_LISTEN_PORT]) : __('resolver.diag_dns_not_listening', ['port' => ResolverService::DNS_LISTEN_PORT]),
         ];
         $checks[] = [
             'id' => 'fakeip_tun',
             'ok' => $tunUp && $fakeipTun,
             'label' => 'FakeIP → TUN '.ResolverService::TUN_IFACE,
             'detail' => $tunUp
-                ? ('TUN up, mark-пакетов≈'.$fakeipHits)
-                : 'TUN '.ResolverService::TUN_IFACE.' не поднят (перезапустите sing-box)',
+                ? __('resolver.diag_tun_up_marks', ['hits' => $fakeipHits])
+                : __('resolver.diag_tun_down', ['iface' => ResolverService::TUN_IFACE]),
         ];
         if ($tunUp && $fakeipHits === 0) {
-            $hints[] = 'Нет marked FakeIP-трафика — откройте YouTube/Telegram на клиенте. DNS должен идти через шлюз (все :53 с VPN перехватываются).';
+            $hints[] = __('resolver.diag_no_fakeip_traffic');
         }
 
         $clashOk = $this->clash->waitForClashApi(5, 150);
@@ -116,7 +116,7 @@ class ResolverDiagnostics
             'id' => 'clash_api',
             'ok' => $clashOk,
             'label' => 'Clash API',
-            'detail' => $clashOk ? 'доступен' : 'недоступен',
+            'detail' => $clashOk ? __('resolver.diag_available') : __('resolver.diag_unavailable'),
         ];
 
         $clashConns = 0;
@@ -130,16 +130,16 @@ class ResolverDiagnostics
             $checks[] = [
                 'id' => 'tun_delivery',
                 'ok' => false,
-                'label' => 'Доставка FakeIP в sing-box',
+                'label' => __('resolver.diag_fakeip_delivery'),
                 'detail' => "mark_hits≈{$fakeipHits}, clash_connections=0",
             ];
-            $hints[] = 'Пакеты маркируются, но сессий в sing-box нет — проверьте ip rule/table '.ResolverService::TUN_TABLE.' и iface '.ResolverService::TUN_IFACE.'.';
+            $hints[] = __('resolver.diag_marked_no_sessions', ['table' => ResolverService::TUN_TABLE, 'iface' => ResolverService::TUN_IFACE]);
         } elseif ($clashConns > 0) {
             $checks[] = [
                 'id' => 'tun_delivery',
                 'ok' => true,
-                'label' => 'Доставка FakeIP в sing-box',
-                'detail' => "активных clash connections={$clashConns}",
+                'label' => __('resolver.diag_fakeip_delivery'),
+                'detail' => __('resolver.diag_active_clash_connections', ['count' => $clashConns]),
             ];
         }
 
@@ -156,10 +156,10 @@ class ResolverDiagnostics
                 'label' => 'Ruleset '.$label,
                 'detail' => $info['exists']
                     ? ($tag.'.srs · '.number_format($info['size']).' B'.($info['mtime'] ? ' · '.$info['mtime'] : ''))
-                    : ($tag.'.srs не найден — нажмите «Обновить lists»'),
+                    : __('resolver.diag_ruleset_missing', ['tag' => $tag]),
             ];
             if (! $info['exists'] || $info['size'] === 0) {
-                $hints[] = "Список «{$label}»: файл {$tag}.srs отсутствует или пуст — обновите lists.";
+                $hints[] = __('resolver.diag_list_file_missing', ['label' => $label, 'tag' => $tag]);
             }
         }
 
@@ -172,7 +172,7 @@ class ResolverDiagnostics
                 'label' => 'Merged domains «'.$cfg->name.'»',
                 'detail' => $ok
                     ? ('merged_cfg_'.$cfg->id.'.json · '.number_format((int) filesize($mergedPath)).' B')
-                    : ('merged_cfg_'.$cfg->id.'.json отсутствует — сохраните резолвер'),
+                    : __('resolver.diag_merged_missing', ['id' => $cfg->id]),
             ];
 
             $ipPath = $this->paths->mergedIpRulesetPath($cfg);
@@ -188,9 +188,9 @@ class ResolverDiagnostics
                     'id' => 'merged_cfg_'.$cfg->id.'_ip',
                     'ok' => false,
                     'label' => 'Merged IPs «'.$cfg->name.'»',
-                    'detail' => 'есть user_subnets, но IP-merge файл отсутствует — сохраните резолвер',
+                    'detail' => __('resolver.diag_ip_merge_missing'),
                 ];
-                $hints[] = 'Для «'.$cfg->name.'» нет IP-merge при заданных подсетях — сохраните резолвер.';
+                $hints[] = __('resolver.diag_ip_merge_hint', ['name' => $cfg->name]);
             }
         }
 
@@ -201,7 +201,7 @@ class ResolverDiagnostics
                 'id' => 'proxy_cidrs_all',
                 'ok' => true,
                 'label' => 'UNION list CIDRs (MARK)',
-                'detail' => "proxy_cidrs_all.lst · {$lineCount} префиксов",
+                'detail' => __('resolver.diag_proxy_cidrs_prefixes', ['count' => $lineCount]),
             ];
         }
 
@@ -224,20 +224,20 @@ class ResolverDiagnostics
                 ];
                 $dnsSamples[$tag] = $sample;
                 if (($sample['ok'] ?? false) && ! $isFake) {
-                    $hints[] = "DNS для {$domain} не FakeIP — проверьте список «{$label}» и переимпорт конфига на телефоне.";
+                    $hints[] = __('resolver.diag_dns_not_fakeip', ['domain' => $domain, 'label' => $label]);
                 } elseif (! ($sample['ok'] ?? false)) {
-                    $hints[] = "Нет DNS-ответа для {$domain} (список «{$label}») — откройте приложение на клиенте или обновите lists.";
+                    $hints[] = __('resolver.diag_dns_no_reply', ['domain' => $domain, 'label' => $label]);
                 }
             }
         }
 
         $clientHints = [
-            'AmneziaWG (iPhone и Android): после включения резолвера удалите сервер и заново импортируйте QR/.conf.',
-            'В .conf должно быть DNS = gateway и AllowedIPs = 0.0.0.0/0 (полный туннель на VDS).',
-            '2ip.ru / сайты вне списков покажут IP VDS; домены из списков — через выбранное VPN-подключение (FakeIP).',
-            'Android: отключите Private DNS / DoH; при проблемах с Telegram — очистите кэш приложения.',
-            'На iPhone отключите iCloud Private Relay на время проверки; откройте сайт из списков (YouTube, Telegram).',
-            'Проверка ТСПУ смотрит TCP+TLS до узла: тишина после ClientHello при живом TCP — типичный признак DPI.',
+            __('resolver.diag_client_hint_reimport'),
+            __('resolver.diag_client_hint_conf'),
+            __('resolver.diag_client_hint_2ip'),
+            __('resolver.diag_client_hint_android'),
+            __('resolver.diag_client_hint_iphone'),
+            __('resolver.diag_client_hint_tspu'),
         ];
 
         $allOk = ! in_array(false, array_column($checks, 'ok'), true);
@@ -282,7 +282,7 @@ SH;
                 return [
                     'ok' => false,
                     'address' => null,
-                    'detail' => 'Нет ответа DNS (dig). Установите bind-tools в образе или откройте сайт с телефона.',
+                    'detail' => __('resolver.diag_dns_dig_no_reply'),
                 ];
             }
 

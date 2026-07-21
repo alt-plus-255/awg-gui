@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { DEFAULT_LOCALE, LOCALE_STORAGE_KEY, isValidLocale } from '@/i18n'
 
 const api = axios.create({
   baseURL: '/',
@@ -11,6 +12,16 @@ const api = axios.create({
 
 let csrfReady = false
 
+function currentLocale () {
+  try {
+    const stored = localStorage.getItem(LOCALE_STORAGE_KEY)
+    if (isValidLocale(stored)) return stored
+  } catch {
+    // ignore
+  }
+  return DEFAULT_LOCALE
+}
+
 export async function ensureCsrf () {
   if (csrfReady) return
   await api.get('/sanctum/csrf-cookie')
@@ -18,6 +29,8 @@ export async function ensureCsrf () {
 }
 
 api.interceptors.request.use(async (config) => {
+  config.headers['Accept-Language'] = currentLocale()
+
   if (['post', 'put', 'patch', 'delete'].includes((config.method || '').toLowerCase())) {
     await ensureCsrf()
     const match = document.cookie.match(/XSRF-TOKEN=([^;]+)/)

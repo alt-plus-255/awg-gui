@@ -144,7 +144,7 @@ class QrCodeService
         }
 
         throw new RuntimeException(
-            'Данные слишком большие для QR-кода. Скопируйте конфиг или скачайте .conf.',
+            __('configs.qr_too_large'),
             0,
             $lastError
         );
