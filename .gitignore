@@ -2,7 +2,7 @@ src/.env
 
 # ── dist/ ─────────────────────────────────────────────────────────────
 # В git коммитятся только маленькие prod-скрипты (install.sh, uninstall.sh).
-# Пользователь: sudo bash <(wget -O - .../dist/install.sh)
+# Пользователь: curl -fsSL .../dist/install.sh | sudo bash
 # install.sh сам скачивает .run из GitHub Releases — не из git.
 #
 # НЕ игнорируем: dist/install.sh, dist/uninstall.sh

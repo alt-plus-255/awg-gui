@@ -13,8 +13,8 @@ GREEN='\033[0;32m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
-log() { echo -e "${CYAN}[install]${NC} $*"; }
-ok() { echo -e "${GREEN}[ok]${NC} $*"; }
+log() { echo -e "${CYAN}[install]${NC} $*" >&2; }
+ok() { echo -e "${GREEN}[ok]${NC} $*" >&2; }
 die() { echo -e "${RED}[error]${NC} $*" >&2; exit 1; }
 
 usage() {

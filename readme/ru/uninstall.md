@@ -5,19 +5,19 @@
 ## Production
 
 ```bash
-sudo bash <(wget -O - https://raw.githubusercontent.com/alt-plus-255/awg-gui/refs/heads/main/dist/uninstall.sh)
+curl -fsSL https://raw.githubusercontent.com/alt-plus-255/awg-gui/refs/heads/main/dist/uninstall.sh | sudo bash
 ```
 
 Также удалить локальные Docker-образы awggui:
 
 ```bash
-sudo bash <(wget -O - https://raw.githubusercontent.com/alt-plus-255/awg-gui/refs/heads/main/dist/uninstall.sh) --yes --images
+curl -fsSL https://raw.githubusercontent.com/alt-plus-255/awg-gui/refs/heads/main/dist/uninstall.sh | sudo bash -s -- --yes --images
 ```
 
 Удалить и каталог установки `/opt/awg-gui`:
 
 ```bash
-sudo bash <(wget -O - https://raw.githubusercontent.com/alt-plus-255/awg-gui/refs/heads/main/dist/uninstall.sh) --yes --images --purge
+curl -fsSL https://raw.githubusercontent.com/alt-plus-255/awg-gui/refs/heads/main/dist/uninstall.sh | sudo bash -s -- --yes --images --purge
 ```
 
 ## Разработка (из исходников)

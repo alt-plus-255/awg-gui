@@ -16,19 +16,26 @@
 Краткая команда — в [README](../../README.md#быстрая-установка-production).
 
 ```bash
-sudo bash <(wget -O - https://raw.githubusercontent.com/alt-plus-255/awg-gui/refs/heads/main/dist/install.sh)
+curl -fsSL https://raw.githubusercontent.com/alt-plus-255/awg-gui/refs/heads/main/dist/install.sh | sudo bash
 ```
 
 Без интерактива (порт панели **8877**, при существующей установке — режим обновления):
 
 ```bash
-sudo bash <(wget -O - https://raw.githubusercontent.com/alt-plus-255/awg-gui/refs/heads/main/dist/install.sh) --yes
+curl -fsSL https://raw.githubusercontent.com/alt-plus-255/awg-gui/refs/heads/main/dist/install.sh | sudo bash -s -- --yes
 ```
 
 Конкретная версия:
 
 ```bash
-sudo AWG_GUI_VERSION=1.0.0 bash <(wget -O - https://raw.githubusercontent.com/alt-plus-255/awg-gui/refs/heads/main/dist/install.sh) --yes
+curl -fsSL https://raw.githubusercontent.com/alt-plus-255/awg-gui/refs/heads/main/dist/install.sh | sudo AWG_GUI_VERSION=1.0.0 bash -s -- --yes
+```
+
+Если `curl` недоступен:
+
+```bash
+wget --no-config -O /tmp/awg-gui-install.sh https://raw.githubusercontent.com/alt-plus-255/awg-gui/refs/heads/main/dist/install.sh
+sudo bash /tmp/awg-gui-install.sh --yes
 ```
 
 Установка распаковывает bundle в `/opt/awg-gui`, загружает Docker-образы и запускает панель.

@@ -16,19 +16,26 @@ Downloads a pre-built release bundle from GitHub Releases. No source checkout, `
 Quick one-liner — see [README](../../README.en.md#quick-install-production).
 
 ```bash
-sudo bash <(wget -O - https://raw.githubusercontent.com/alt-plus-255/awg-gui/refs/heads/main/dist/install.sh)
+curl -fsSL https://raw.githubusercontent.com/alt-plus-255/awg-gui/refs/heads/main/dist/install.sh | sudo bash
 ```
 
 Non-interactive (panel port **8877**, upgrade if already installed):
 
 ```bash
-sudo bash <(wget -O - https://raw.githubusercontent.com/alt-plus-255/awg-gui/refs/heads/main/dist/install.sh) --yes
+curl -fsSL https://raw.githubusercontent.com/alt-plus-255/awg-gui/refs/heads/main/dist/install.sh | sudo bash -s -- --yes
 ```
 
 Specific version:
 
 ```bash
-sudo AWG_GUI_VERSION=1.0.0 bash <(wget -O - https://raw.githubusercontent.com/alt-plus-255/awg-gui/refs/heads/main/dist/install.sh) --yes
+curl -fsSL https://raw.githubusercontent.com/alt-plus-255/awg-gui/refs/heads/main/dist/install.sh | sudo AWG_GUI_VERSION=1.0.0 bash -s -- --yes
+```
+
+If `curl` is unavailable:
+
+```bash
+wget --no-config -O /tmp/awg-gui-install.sh https://raw.githubusercontent.com/alt-plus-255/awg-gui/refs/heads/main/dist/install.sh
+sudo bash /tmp/awg-gui-install.sh --yes
 ```
 
 Installation extracts the bundle to `/opt/awg-gui`, loads Docker images, and starts the panel.
