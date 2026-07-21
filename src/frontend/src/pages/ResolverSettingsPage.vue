@@ -151,11 +151,7 @@
 
       <q-dialog v-model="modalOpen" maximized transition-show="slide-up" transition-hide="slide-down">
         <q-card class="surface-panel dialog-card column no-wrap">
-          <q-card-section class="row items-center">
-            <div class="text-h6">{{ t('resolver.allLists') }}</div>
-            <q-space />
-            <q-btn flat round dense icon="close" v-close-popup />
-          </q-card-section>
+          <DialogHeader :title="t('resolver.allLists')" always-show-close />
           <q-card-section class="q-pt-none col dialog-scroll-body">
             <div class="row q-mb-md">
               <q-btn
@@ -239,9 +235,9 @@
       </q-dialog>
 
       <q-dialog v-model="editOpen" v-bind="mobileDialog" persistent>
-        <q-card style="min-width: 420px; max-width: 640px" class="surface-panel q-pa-md dialog-card column no-wrap">
-          <div class="text-h6 q-mb-md">{{ editId ? t('resolver.editListTitle') : t('resolver.newListTitle') }}</div>
-          <div class="col dialog-scroll-body">
+        <q-card style="min-width: 420px; max-width: 640px" class="surface-panel dialog-card column no-wrap">
+          <DialogHeader :title="editId ? t('resolver.editListTitle') : t('resolver.newListTitle')" />
+          <q-card-section class="col dialog-scroll-body q-pt-none">
           <q-input v-model="editForm.name" :label="t('resolver.listName')" filled dense class="q-mb-md" />
           <q-btn-toggle
             v-model="editForm.mode"
@@ -290,11 +286,11 @@
               :hint="t('resolver.cidrsListHint')"
             />
           </template>
-          </div>
-          <div class="row q-gutter-sm justify-end">
+          </q-card-section>
+          <q-card-actions align="right">
             <q-btn flat :label="t('common.cancel')" v-close-popup />
             <q-btn color="primary" :label="t('common.save')" :loading="savingEdit" @click="saveEdit" />
-          </div>
+          </q-card-actions>
         </q-card>
       </q-dialog>
     </div>
@@ -307,6 +303,7 @@ import { useI18n } from 'vue-i18n'
 import { useQuasar } from 'quasar'
 import api from '@/boot/axios'
 import { useMobileDialog } from '@/composables/useMobileDialog'
+import DialogHeader from '@/components/DialogHeader.vue'
 import { bcp47Locale } from '@/i18n'
 
 const { t, locale } = useI18n()

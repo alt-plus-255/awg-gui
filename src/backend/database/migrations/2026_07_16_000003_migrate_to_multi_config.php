@@ -19,6 +19,11 @@ return new class extends Migration
 
         $settings = DB::table('settings')->pluck('value', 'key');
 
+        // Fresh installs: default config is created by awg:bootstrap with random obfuscation.
+        if (trim((string) ($settings['server_private_key'] ?? '')) === '') {
+            return;
+        }
+
         $subnet = $settings['internal_subnet'] ?? env('INTERNAL_SUBNET', '10.66.66.0/24');
         $serverAddress = $settings['server_address'] ?? '10.66.66.1/24';
         if (! $settings->has('server_address') && preg_match('#^(\d+\.\d+\.\d+)\.(\d+)/(\d+)$#', $subnet, $m)) {

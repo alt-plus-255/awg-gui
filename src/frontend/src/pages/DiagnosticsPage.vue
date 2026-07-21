@@ -293,12 +293,12 @@
     <!-- sing-box modal -->
     <q-dialog :model-value="store.singBoxModal.open" v-bind="mobileDialog" @update:model-value="onSingBoxOpen">
       <q-card class="config-dialog status-card dialog-card column no-wrap" style="width: min(720px, 95vw); max-width: 95vw;">
-        <q-card-section class="row items-center">
-          <div class="text-h6 col">sing-box.json</div>
-          <q-badge color="primary" outline class="q-mr-sm">masked</q-badge>
-          <q-btn flat dense color="primary" icon="content_copy" :disable="!store.singBoxModal.content" @click="copyText(store.singBoxModal.content)" />
-          <q-btn flat dense round color="primary" icon="close" v-close-popup />
-        </q-card-section>
+        <DialogHeader title="sing-box.json" always-show-close>
+          <template #extra>
+            <q-badge color="primary" outline class="q-mr-sm">masked</q-badge>
+            <q-btn flat dense color="primary" icon="content_copy" :disable="!store.singBoxModal.content" @click="copyText(store.singBoxModal.content)" />
+          </template>
+        </DialogHeader>
         <q-card-section class="q-pt-none col dialog-scroll-body">
           <div v-if="store.singBoxModal.loading" class="flex flex-center q-pa-lg">
             <q-spinner color="primary" size="32px" />
@@ -317,11 +317,11 @@
     <!-- AWG configs modal -->
     <q-dialog :model-value="store.awgModal.open" v-bind="mobileDialog" @update:model-value="onAwgOpen">
       <q-card class="config-dialog status-card dialog-card column no-wrap" style="width: min(720px, 95vw); max-width: 95vw;">
-        <q-card-section class="row items-center">
-          <div class="text-h6 col">{{ t('diagnostics.awgConfigs') }}</div>
-          <q-badge color="primary" outline class="q-mr-sm">masked</q-badge>
-          <q-btn flat dense round color="primary" icon="close" v-close-popup />
-        </q-card-section>
+        <DialogHeader :title="t('diagnostics.awgConfigs')" always-show-close>
+          <template #extra>
+            <q-badge color="primary" outline class="q-mr-sm">masked</q-badge>
+          </template>
+        </DialogHeader>
         <q-card-section class="q-pt-none col dialog-scroll-body">
           <div v-if="store.awgModal.loading" class="flex flex-center q-pa-lg">
             <q-spinner color="primary" size="32px" />
@@ -358,6 +358,7 @@ import { useDiagnosticsStore } from '@/stores/diagnostics'
 import { useSystemStore } from '@/stores/system'
 import { useSettingsStore } from '@/stores/settings'
 import { useMobileDialog } from '@/composables/useMobileDialog'
+import DialogHeader from '@/components/DialogHeader.vue'
 
 const { t } = useI18n()
 const $q = useQuasar()

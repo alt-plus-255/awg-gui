@@ -8,16 +8,18 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('resolver_connections', function (Blueprint $table) {
-            $table->id();
-            $table->string('name');
-            $table->text('comment')->nullable();
-            $table->string('config_type', 16)->default('url'); // url | json
-            $table->text('share_url')->nullable();
-            $table->json('outbound');
-            $table->boolean('enabled')->default(true);
-            $table->timestamps();
-        });
+        if (! Schema::hasTable('resolver_connections')) {
+            Schema::create('resolver_connections', function (Blueprint $table) {
+                $table->id();
+                $table->string('name');
+                $table->text('comment')->nullable();
+                $table->string('config_type', 16)->default('url'); // url | json
+                $table->text('share_url')->nullable();
+                $table->json('outbound');
+                $table->boolean('enabled')->default(true);
+                $table->timestamps();
+            });
+        }
 
         Schema::table('awg_configs', function (Blueprint $table) {
             if (! Schema::hasColumn('awg_configs', 'connection_id')) {

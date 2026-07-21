@@ -103,15 +103,66 @@ class AmneziaWgService
         return rtrim(env('HOST_AWG_GUI_DIR', '/host-awg-gui'), '/');
     }
 
-    /** @return array{private:string,public:string} */
+    /**
+     * AmneziaWG uses WireGuard-compatible Curve25519 keys plus obfuscation params (Jc/H/S/I).
+     * Prefer awg-tools inside the AWG container; fall back to PHP when it is not up yet.
+     *
+     * @return array{private:string,public:string}
+     */
     public function generateKeyPair(): array
     {
-        $keypair = sodium_crypto_box_keypair();
-        $secret = sodium_crypto_box_secretkey($keypair);
-        $public = sodium_crypto_box_publickey($keypair);
+        return $this->generateKeyPairViaAwg() ?? $this->generateKeyPairViaSodium();
+    }
+
+    /** @return array{private:string,public:string}|null */
+    private function generateKeyPairViaAwg(): ?array
+    {
+        if (! $this->isContainerRunning()) {
+            return null;
+        }
+
+        $privateResult = Process::timeout(10)->run([
+            'docker', 'exec', $this->containerName(),
+            'awg', 'genkey',
+        ]);
+        if (! $privateResult->successful()) {
+            return null;
+        }
+
+        $private = trim($privateResult->output());
+        if ($private === '') {
+            return null;
+        }
+
+        $publicResult = Process::timeout(10)->input($private."\n")->run([
+            'docker', 'exec', '-i', $this->containerName(),
+            'awg', 'pubkey',
+        ]);
+        if (! $publicResult->successful()) {
+            return null;
+        }
+
+        $public = trim($publicResult->output());
+        if ($public === '') {
+            return null;
+        }
 
         return [
-            'private' => base64_encode($secret),
+            'private' => $private,
+            'public' => $public,
+        ];
+    }
+
+    /** @return array{private:string,public:string} */
+    private function generateKeyPairViaSodium(): array
+    {
+        $private = random_bytes(32);
+        $private[0] = chr(ord($private[0]) & 248);
+        $private[31] = chr((ord($private[31]) & 127) | 64);
+        $public = sodium_crypto_scalarmult_base($private);
+
+        return [
+            'private' => base64_encode($private),
             'public' => base64_encode($public),
         ];
     }
@@ -554,7 +605,7 @@ class AmneziaWgService
     public function generateJunkParams(): array
     {
         $jc = (string) random_int(1, 10);
-        $jmin = random_int(64, 900);
+        $jmin = random_int(64, 1023);
         $jmax = (string) random_int($jmin + 1, 1024);
         $jmin = (string) $jmin;
 
@@ -593,6 +644,82 @@ class AmneziaWgService
         ];
     }
 
+    public function needsObfuscationParams(AwgConfig $config): bool
+    {
+        foreach (['jc', 'jmin', 'jmax', 's1', 's2', 's3', 's4', 'h1', 'h2', 'h3', 'h4'] as $field) {
+            if (trim((string) $config->{$field}) === '') {
+                return true;
+            }
+        }
+
+        return $config->jc === '4'
+            && $config->jmin === '64'
+            && $config->jmax === '80'
+            && $config->s1 === '0'
+            && $config->s2 === '0'
+            && $config->s3 === '0'
+            && $config->s4 === '0'
+            && $config->h1 === '1'
+            && $config->h2 === '2'
+            && $config->h3 === '3'
+            && $config->h4 === '4';
+    }
+
+    public function applyObfuscationParams(AwgConfig $config): bool
+    {
+        if (! $this->needsObfuscationParams($config)) {
+            return false;
+        }
+
+        $config->fill($this->generateJunkParams());
+        $config->save();
+
+        return true;
+    }
+
+    public function needsServerKeys(AwgConfig $config): bool
+    {
+        return trim((string) $config->server_private_key) === ''
+            || trim((string) $config->server_public_key) === '';
+    }
+
+    public function ensureServerKeys(AwgConfig $config): bool
+    {
+        if (! $this->needsServerKeys($config)) {
+            return false;
+        }
+
+        $keys = $this->generateKeyPair();
+        $config->server_private_key = $keys['private'];
+        $config->server_public_key = $keys['public'];
+        $config->save();
+
+        return true;
+    }
+
+    public function needsPeerKeys(AwgConfigPeer $membership): bool
+    {
+        return trim((string) $membership->private_key) === ''
+            || trim((string) $membership->public_key) === '';
+    }
+
+    public function ensurePeerKeys(AwgConfigPeer $membership): bool
+    {
+        if (! $this->needsPeerKeys($membership)) {
+            return false;
+        }
+
+        $keys = $this->generateKeyPair();
+        $membership->private_key = $keys['private'];
+        $membership->public_key = $keys['public'];
+        if (! $membership->preshared_key) {
+            $membership->preshared_key = $this->generatePresharedKey();
+        }
+        $membership->save();
+
+        return true;
+    }
+
     /**
      * Ensure missing settings and a default AWG config exist in the database only.
      *
@@ -622,6 +749,20 @@ class AmneziaWgService
 
             AwgConfig::query()->create($attrs);
             $provisioned = true;
+        } else {
+            foreach (AwgConfig::query()->get() as $config) {
+                if ($this->applyObfuscationParams($config)) {
+                    $provisioned = true;
+                }
+                if ($this->ensureServerKeys($config)) {
+                    $provisioned = true;
+                }
+                foreach (AwgConfigPeer::query()->where('awg_config_id', $config->id)->get() as $membership) {
+                    if ($this->ensurePeerKeys($membership)) {
+                        $provisioned = true;
+                    }
+                }
+            }
         }
 
         return $provisioned;
@@ -709,6 +850,10 @@ class AmneziaWgService
 
     public function buildServerConfig(AwgConfig $config): string
     {
+        if ($this->ensureServerKeys($config)) {
+            $config->refresh();
+        }
+
         $lines = [
             '[Interface]',
             'PrivateKey = '.$config->server_private_key,
@@ -746,6 +891,9 @@ class AmneziaWgService
             ->get();
 
         foreach ($memberships as $membership) {
+            if ($this->ensurePeerKeys($membership)) {
+                $membership->refresh();
+            }
             $lines[] = '[Peer]';
             $lines[] = '# '.($membership->client?->name ?? 'peer');
             $lines[] = 'PublicKey = '.$membership->public_key;
@@ -765,6 +913,13 @@ class AmneziaWgService
         $config = $membership->config;
         if (! $config) {
             throw new RuntimeException('Config not found for membership');
+        }
+
+        if ($this->ensurePeerKeys($membership)) {
+            $membership->refresh();
+        }
+        if ($this->ensureServerKeys($config)) {
+            $config->refresh();
         }
 
         $endpointHost = $this->resolveEndpointHost();

@@ -1,12 +1,10 @@
 <template>
   <q-dialog :model-value="show" v-bind="mobileDialog" persistent>
     <q-card class="surface-panel dialog-card column no-wrap" style="width: min(520px, 95vw); max-width: 520px;">
-      <q-card-section>
-        <div class="text-h6">{{ t('common.servicesUnavailable') }}</div>
-        <div class="text-caption text-grey-5 q-mt-xs">
-          {{ t('common.servicesUnavailableHint') }}
-        </div>
-      </q-card-section>
+      <DialogHeader
+        :title="t('common.servicesUnavailable')"
+        :subtitle="t('common.servicesUnavailableHint')"
+      />
 
       <q-card-section class="col dialog-scroll-body">
         <q-list dense>
@@ -48,6 +46,7 @@ import { useQuasar } from 'quasar'
 import { useRoute } from 'vue-router'
 import { useSystemStore } from '@/stores/system'
 import { useMobileDialog } from '@/composables/useMobileDialog'
+import DialogHeader from '@/components/DialogHeader.vue'
 
 const { t } = useI18n()
 const $q = useQuasar()

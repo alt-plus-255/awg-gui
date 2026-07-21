@@ -10,6 +10,7 @@ PROJECT_NAME=awggui
 SING_BOX_VERSION=1.12.12
 YES=0
 UPGRADE_MODE=0
+REPAIR_MODE=0
 PANEL_PORT_DEFAULT=8877
 AWG_PORT_DEFAULT=51820
 INTERNAL_SUBNET_DEFAULT="10.66.66.0/24"
@@ -286,11 +287,39 @@ detect_existing_install() {
   return 1
 }
 
+detect_install_complete() {
+  if [[ -f /etc/awg-gui/install.state ]]; then
+    return 0
+  fi
+  [[ -x /usr/local/bin/awg-gui ]] || return 1
+  [[ -f /etc/systemd/system/awg-gui.service ]] || return 1
+  local c names
+  names="$(docker ps --format '{{.Names}}' 2>/dev/null || true)"
+  for c in awggui-caddy awggui-app awggui-db awggui-awg; do
+    echo "${names}" | grep -qx "${c}" || return 1
+  done
+  return 0
+}
+
+detect_incomplete_install() {
+  detect_existing_install && ! detect_install_complete
+}
+
 choose_install_mode() {
   if ! detect_existing_install; then
     UPGRADE_MODE=0
+    REPAIR_MODE=0
     return
   fi
+
+  if detect_incomplete_install; then
+    REPAIR_MODE=1
+    UPGRADE_MODE=1
+    warn "Обнаружена незавершённая установка — продолжаем восстановление автоматически ..."
+    return
+  fi
+
+  REPAIR_MODE=0
 
   if [[ "${YES}" -eq 1 ]]; then
     UPGRADE_MODE=1
@@ -308,6 +337,15 @@ choose_install_mode() {
     2) UPGRADE_MODE=1 ;;
     *) log "Установка прервана."; exit 0 ;;
   esac
+}
+
+mark_install_complete() {
+  mkdir -p /etc/awg-gui
+  cat > /etc/awg-gui/install.state <<EOF
+completed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+bundle_version=source
+install_root=${SCRIPT_DIR}
+EOF
 }
 
 detect_public_ip() {
@@ -601,10 +639,18 @@ EOF
   fi
 
   install_cli_and_systemd
+  mark_install_complete
 
   local url="http://${endpoint}:${panel_port}"
   print_helper
-  if [[ "${UPGRADE_MODE}" -eq 1 ]]; then
+  if [[ "${REPAIR_MODE}" -eq 1 ]]; then
+    if [[ -n "${admin_pass}" ]]; then
+      print_credentials "${url}" "${panel_port}" "${admin_pass}"
+    else
+      print_credentials "${url}" "${panel_port}" ""
+    fi
+    ok "Восстановление установки завершено"
+  elif [[ "${UPGRADE_MODE}" -eq 1 ]]; then
     print_credentials "${url}" "${panel_port}" ""
     ok "Upgrade complete"
   else

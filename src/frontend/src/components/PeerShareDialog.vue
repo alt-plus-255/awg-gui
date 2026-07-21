@@ -1,9 +1,7 @@
 <template>
   <q-dialog :model-value="modelValue" v-bind="mobileDialog" @update:model-value="$emit('update:modelValue', $event)" @hide="onHide">
     <q-card style="width: min(520px, 95vw); max-width: 520px;" class="share-dialog surface-panel dialog-card column no-wrap">
-      <q-card-section class="text-h6 q-pb-sm">
-        {{ t('configs.shareTitle', { name: peerName }) }}
-      </q-card-section>
+      <DialogHeader :title="t('configs.shareTitle', { name: peerName })" />
 
       <q-card-section v-if="loading" class="row justify-center q-pa-xl col dialog-scroll-body">
         <q-spinner color="primary" size="40px" />
@@ -102,7 +100,7 @@
         </q-tab-panels>
       </template>
 
-      <q-card-actions align="right">
+      <q-card-actions v-if="$q.screen.gt.sm" align="right">
         <q-btn flat color="primary" :label="t('common.close')" v-close-popup />
       </q-card-actions>
     </q-card>
@@ -110,13 +108,14 @@
 
   <q-dialog v-model="fullscreenOpen" v-bind="mobileDialog">
     <q-card class="share-dialog surface-panel dialog-card column no-wrap" flat>
+      <DialogHeader :title="peerName" />
       <q-card-section class="text-center q-pa-md col dialog-scroll-body flex flex-center">
         <div class="qr-wrap qr-wrap-fullscreen">
           <img v-if="qrUrl" :src="qrUrl" alt="QR" class="qr-img-fullscreen" />
         </div>
         <div class="text-caption text-muted-theme q-mt-md">{{ peerName }}</div>
       </q-card-section>
-      <q-card-actions align="right">
+      <q-card-actions v-if="$q.screen.gt.sm" align="right">
         <q-btn flat color="primary" :label="t('common.close')" v-close-popup />
       </q-card-actions>
     </q-card>
@@ -130,6 +129,7 @@ import { useQuasar } from 'quasar'
 import api from '@/boot/axios'
 import { copyText } from '@/utils/clipboard'
 import { useMobileDialog } from '@/composables/useMobileDialog'
+import DialogHeader from '@/components/DialogHeader.vue'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },

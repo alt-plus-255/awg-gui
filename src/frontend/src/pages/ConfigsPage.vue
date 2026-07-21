@@ -317,10 +317,10 @@
     <!-- Pick config to attach unattached peer -->
     <q-dialog v-model="attachPickOpen" v-bind="mobileDialog" persistent>
       <q-card style="width: min(420px, 95vw); max-width: 95vw;" class="surface-panel dialog-card column no-wrap">
-        <q-card-section class="text-h6">
-          {{ t('configs.attachPeer') }}
-          <div class="text-caption text-grey-5">{{ attachClient?.name }}</div>
-        </q-card-section>
+        <DialogHeader
+          :title="t('configs.attachPeer')"
+          :subtitle="attachClient?.name"
+        />
         <q-card-section class="col dialog-scroll-body">
           <q-select
             v-model="attachConfigId"
@@ -349,7 +349,7 @@
           : 'width: min(480px, 95vw); max-width: 95vw; max-height: 90vh;'"
         class="surface-panel dialog-card column no-wrap"
       >
-        <q-card-section class="text-h6">{{ editingId ? t('configs.editConfig') : t('configs.newConfig') }}</q-card-section>
+        <DialogHeader :title="editingId ? t('configs.editConfig') : t('configs.newConfig')" />
         <q-card-section class="col dialog-scroll-body">
           <div class="row q-col-gutter-md">
             <div class="col-12 col-md-6">
@@ -518,10 +518,10 @@
     <!-- Add / Edit peer -->
     <q-dialog v-model="peerFormOpen" v-bind="mobileDialog" persistent>
       <q-card style="width: min(460px, 95vw); max-width: 95vw;" class="surface-panel dialog-card column no-wrap">
-        <q-card-section class="text-h6">
-          {{ editingPeerId ? t('configs.editPeer') : t('configs.addPeer') }}
-          <div class="text-caption text-grey-5">{{ t('configs.configLabel', { name: activeConfig?.name }) }}</div>
-        </q-card-section>
+        <DialogHeader
+          :title="editingPeerId ? t('configs.editPeer') : t('configs.addPeer')"
+          :subtitle="t('configs.configLabel', { name: activeConfig?.name })"
+        />
         <q-card-section class="col dialog-scroll-body">
           <q-btn-toggle
             v-if="!editingPeerId"
@@ -633,7 +633,7 @@
     <!-- Server .conf -->
     <q-dialog v-model="serverConfOpen" v-bind="mobileDialog" @hide="onServerConfHide">
       <q-card style="width: min(860px, 95vw); max-width: 860px;" class="surface-panel dialog-card column no-wrap">
-        <q-card-section class="text-h6">{{ serverConfTitle }}</q-card-section>
+        <DialogHeader :title="serverConfTitle" />
         <q-card-section class="col dialog-scroll-body">
           <div v-if="serverConfLoading" class="row justify-center q-pa-lg">
             <q-spinner color="primary" size="40px" />
@@ -652,7 +652,7 @@
         <q-card-actions align="right">
           <q-btn flat :label="t('common.copy')" :disable="!serverConfText" @click="copyServerConf" />
           <q-btn flat :label="t('common.download')" :disable="!serverConfText" @click="downloadServerConf" />
-          <q-btn flat :label="t('common.close')" v-close-popup />
+          <q-btn v-if="$q.screen.gt.sm" flat :label="t('common.close')" v-close-popup />
         </q-card-actions>
       </q-card>
     </q-dialog>
@@ -674,6 +674,7 @@ import { useQuasar } from 'quasar'
 import api from '@/boot/axios'
 import { copyText } from '@/utils/clipboard'
 import PeerShareDialog from '@/components/PeerShareDialog.vue'
+import DialogHeader from '@/components/DialogHeader.vue'
 import { useMobileDialog } from '@/composables/useMobileDialog'
 import { useSystemStore } from '@/stores/system'
 
@@ -1242,6 +1243,7 @@ function resetForm () {
   form.client_allowed_ips = '0.0.0.0/0, ::/0'
   form.persistent_keepalive = 25
   form.enabled = true
+  generateJunk()
 }
 
 function openCreate () {
@@ -1543,8 +1545,10 @@ async function deletePeer (row) {
 }
 
 async function downloadConf (config, row) {
-  const res = await api.get(`/api/configs/${config.id}/peers/${row.client_id}/config`, { responseType: 'blob' })
-  const url = URL.createObjectURL(res.data)
+  const { data } = await api.get(`/api/configs/${config.id}/peers/${row.client_id}/config`, { responseType: 'text' })
+  const text = typeof data === 'string' ? data : String(data ?? '')
+  const blob = new Blob([text], { type: 'text/plain;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
   a.download = `${row.name}-${config.name}.conf`

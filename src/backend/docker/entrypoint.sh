@@ -22,7 +22,7 @@ if [[ -n "${DB_HOST:-}" ]]; then
   done
 fi
 
-php artisan migrate --force --no-interaction 2>/dev/null || true
+awg-migrate-locked || echo "[app] migrate failed (continuing boot)" >&2
 
 # Start HTTP ASAP so Caddy does not 502 while bootstrap/ws warm up.
 php artisan serve --host=0.0.0.0 --port=8000 &

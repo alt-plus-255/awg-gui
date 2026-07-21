@@ -24,7 +24,8 @@ RUN composer dump-autoload --optimize \
     && chmod -R ug+rwx storage bootstrap/cache
 
 COPY docker/entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+COPY docker/migrate-locked.sh /usr/local/bin/awg-migrate-locked
+RUN chmod +x /entrypoint.sh /usr/local/bin/awg-migrate-locked
 
 EXPOSE 8000
 ENTRYPOINT ["/entrypoint.sh"]

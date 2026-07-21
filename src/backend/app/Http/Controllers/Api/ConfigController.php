@@ -231,6 +231,8 @@ class ConfigController extends Controller
             'exclusions_mutual' => $data['exclusions_mutual'] ?? false,
             'keepalive' => $data['keepalive'] ?? null,
         ]);
+        $this->awg->ensurePeerKeys($membership);
+        $membership->refresh();
 
         $this->awg->applyConfig($config, withResolver: false);
 

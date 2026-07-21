@@ -292,9 +292,9 @@
 
     <q-dialog v-model="dialogOpen" v-bind="mobileDialog" persistent>
       <q-card style="width: min(720px, 95vw); max-width: 95vw;" class="surface-panel dialog-card column no-wrap">
-        <q-card-section class="text-h6">
-          {{ editingId ? t('connections.editConnection') : t('connections.newConnection') }}
-        </q-card-section>
+        <DialogHeader
+          :title="editingId ? t('connections.editConnection') : t('connections.newConnection')"
+        />
         <q-card-section class="col dialog-scroll-body">
           <q-input v-model="form.name" :label="t('connections.name')" filled class="q-mb-md" />
           <q-btn-toggle
@@ -411,6 +411,7 @@ import { useQuasar } from 'quasar'
 import api, { ensureCsrf } from '@/boot/axios'
 import { useApplyProgress } from '@/composables/useApplyProgress'
 import { useMobileDialog } from '@/composables/useMobileDialog'
+import DialogHeader from '@/components/DialogHeader.vue'
 import { bcp47Locale } from '@/i18n'
 
 const SubscriptionNodesTable = defineComponent({

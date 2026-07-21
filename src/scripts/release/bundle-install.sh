@@ -10,6 +10,7 @@ ENV_EXAMPLE="${RUNTIME_DIR}/.env.example"
 PROJECT_NAME=awggui
 YES=0
 UPGRADE_MODE=0
+REPAIR_MODE=0
 PANEL_PORT_DEFAULT=8877
 AWG_PORT_DEFAULT=51820
 INTERNAL_SUBNET_DEFAULT="10.66.66.0/24"
@@ -193,11 +194,39 @@ detect_existing_install() {
   return 1
 }
 
+detect_install_complete() {
+  if [[ -f /etc/awg-gui/install.state ]]; then
+    return 0
+  fi
+  [[ -x /usr/local/bin/awg-gui ]] || return 1
+  [[ -f /etc/systemd/system/awg-gui.service ]] || return 1
+  local c names
+  names="$(docker ps --format '{{.Names}}' 2>/dev/null || true)"
+  for c in awggui-caddy awggui-app awggui-db awggui-awg; do
+    echo "${names}" | grep -qx "${c}" || return 1
+  done
+  return 0
+}
+
+detect_incomplete_install() {
+  detect_existing_install && ! detect_install_complete
+}
+
 choose_install_mode() {
   if ! detect_existing_install; then
     UPGRADE_MODE=0
+    REPAIR_MODE=0
     return
   fi
+
+  if detect_incomplete_install; then
+    REPAIR_MODE=1
+    UPGRADE_MODE=1
+    warn "Обнаружена незавершённая установка — продолжаем восстановление автоматически ..."
+    return
+  fi
+
+  REPAIR_MODE=0
 
   if [[ "${YES}" -eq 1 ]]; then
     UPGRADE_MODE=1
@@ -215,6 +244,22 @@ choose_install_mode() {
     2) UPGRADE_MODE=1 ;;
     *) log "Установка прервана."; exit 0 ;;
   esac
+}
+
+mark_install_complete() {
+  local version=""
+  for tar_file in "${SCRIPT_DIR}"/images/awggui-all-*.tar; do
+    [[ -f "${tar_file}" ]] || continue
+    version="$(basename "${tar_file}" .tar)"
+    version="${version#awggui-all-}"
+    break
+  done
+  mkdir -p /etc/awg-gui
+  cat > /etc/awg-gui/install.state <<EOF
+completed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+bundle_version=${version:-unknown}
+install_root=${SCRIPT_DIR}
+EOF
 }
 
 detect_public_ip() {
@@ -352,7 +397,7 @@ print_helper() {
   echo "  awg-gui ensure-up"
   echo
   echo -e "${BOLD}Uninstall (production):${NC}"
-  echo "  sudo bash <(wget -O - https://raw.githubusercontent.com/${repo}/refs/heads/main/dist/uninstall.sh)"
+  echo "  curl -fsSL https://raw.githubusercontent.com/${repo}/refs/heads/main/dist/uninstall.sh | sudo bash"
   echo -e "${BOLD}────────────────────────────────────────${NC}"
   echo
 }
@@ -397,13 +442,25 @@ wait_for_app() {
   return 1
 }
 
+wait_for_migrate_lock() {
+  log "Waiting for in-container migrations to finish (if any)..."
+  compose exec -T app bash -c '
+    mkdir -p /var/www/html/storage/framework
+    flock -w "${AWG_GUI_MIGRATE_LOCK_TIMEOUT:-300}" /var/www/html/storage/framework/migrate.lock true
+  ' || warn "Timed out waiting for migration lock"
+}
+
+run_migrations() {
+  log "Running migrations..."
+  compose exec -T app awg-migrate-locked
+}
+
 run_bootstrap() {
   local panel_port="$1" awg_port="$2" endpoint="$3"
   local internal_subnet="$4" peer_dns="$5" allowed_ips="$6"
   local admin_pass="$7"
 
-  log "Running migrations..."
-  compose exec -T app php artisan migrate --force
+  run_migrations
 
   if [[ -n "${admin_pass}" ]]; then
     log "Ensuring admin user..."
@@ -473,6 +530,7 @@ main() {
   compose up -d
 
   wait_for_app || true
+  wait_for_migrate_lock
   run_bootstrap \
     "${panel_port}" "${awg_port}" "${endpoint}" \
     "${internal_subnet}" "${peer_dns}" "${allowed_ips}" \
@@ -490,10 +548,18 @@ EOF
   fi
 
   install_cli_and_systemd
+  mark_install_complete
 
   local url="http://${endpoint}:${panel_port}"
   print_helper
-  if [[ "${UPGRADE_MODE}" -eq 1 ]]; then
+  if [[ "${REPAIR_MODE}" -eq 1 ]]; then
+    if [[ -n "${admin_pass}" ]]; then
+      print_credentials "${url}" "${panel_port}" "${admin_pass}"
+    else
+      print_credentials "${url}" "${panel_port}" ""
+    fi
+    ok "Восстановление установки завершено"
+  elif [[ "${UPGRADE_MODE}" -eq 1 ]]; then
     print_credentials "${url}" "${panel_port}" ""
     ok "Upgrade complete"
   else

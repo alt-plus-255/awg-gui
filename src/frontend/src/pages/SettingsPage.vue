@@ -347,7 +347,7 @@
 
     <q-dialog v-model="twoFactorDisableOpen" v-bind="mobileDialog" persistent>
       <q-card style="width: min(420px, 95vw);" class="surface-panel dialog-card column no-wrap">
-        <q-card-section class="text-h6">{{ t('settings.disable2fa') }}</q-card-section>
+        <DialogHeader :title="t('settings.disable2fa')" />
         <q-card-section class="col dialog-scroll-body">
           <div class="text-caption text-grey-5 q-mb-md">
             {{ t('settings.disable2faHint') }}
@@ -388,7 +388,7 @@
 
     <q-dialog v-model="schemaOpen" v-bind="mobileDialog">
       <q-card style="width: min(720px, 95vw); max-width: 95vw;" class="surface-panel dialog-card column no-wrap">
-        <q-card-section class="text-h6">{{ t('settings.webhookSchemaTitle') }}</q-card-section>
+        <DialogHeader :title="t('settings.webhookSchemaTitle')" />
         <q-card-section class="col dialog-scroll-body">
           <q-markup-table flat dense class="q-mb-md">
             <thead>
@@ -408,7 +408,7 @@
           <pre class="mono schema-pre">{{ JSON.stringify(schema.example || {}, null, 2) }}</pre>
         </q-card-section>
         <q-card-actions align="right">
-          <q-btn flat :label="t('common.close')" v-close-popup />
+          <q-btn v-if="$q.screen.gt.sm" flat :label="t('common.close')" v-close-popup />
         </q-card-actions>
       </q-card>
     </q-dialog>
@@ -425,6 +425,7 @@ import { useLocaleStore } from '@/stores/locale'
 import { useSettingsStore } from '@/stores/settings'
 import { useSoundStore } from '@/sounds/store'
 import { useMobileDialog } from '@/composables/useMobileDialog'
+import DialogHeader from '@/components/DialogHeader.vue'
 import { COLOR_MODES } from '@/themes/themes'
 
 const $q = useQuasar()

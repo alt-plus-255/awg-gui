@@ -84,12 +84,11 @@
 
       <q-dialog v-model="processModalOpen" v-bind="mobileDialog" @hide="stopProcessPolling">
         <q-card class="surface-panel process-modal-card column no-wrap dialog-card">
-          <q-card-section class="row items-center q-pb-none">
-            <div class="text-h6">{{ processModalTitle }}</div>
-            <q-space />
-            <q-spinner-dots v-if="processLoading" size="20px" color="primary" class="q-mr-sm" />
-            <q-btn flat dense round icon="close" v-close-popup />
-          </q-card-section>
+          <DialogHeader :title="processModalTitle" always-show-close>
+            <template #extra>
+              <q-spinner-dots v-if="processLoading" size="20px" color="primary" class="q-mr-sm" />
+            </template>
+          </DialogHeader>
           <q-card-section class="col dialog-scroll-body">
             <div class="text-caption text-grey-5 q-mb-sm">{{ t('dashboard.liveViewHint') }}</div>
             <q-table
@@ -233,11 +232,7 @@
       @show="onGraphDialogShow"
     >
       <q-card class="graph-dialog-card column no-wrap surface-panel">
-        <q-card-section class="row items-center q-pb-sm">
-          <div class="text-h6">{{ t('dashboard.graphTitle') }}</div>
-          <q-space />
-          <q-btn flat round dense icon="close" :aria-label="t('common.close')" v-close-popup />
-        </q-card-section>
+        <DialogHeader :title="t('dashboard.graphTitle')" always-show-close />
         <q-card-section class="col q-pt-none graph-dialog-body">
           <PeerConnectionsGraph
             v-if="graphOpen"
@@ -247,7 +242,7 @@
             :links="links"
           />
         </q-card-section>
-        <q-card-actions class="q-pa-md">
+        <q-card-actions v-if="$q.screen.gt.sm" class="q-pa-md">
           <q-btn class="full-width" outline color="primary" :label="t('common.close')" v-close-popup />
         </q-card-actions>
       </q-card>
@@ -271,6 +266,7 @@ import PeerConnectionsGraph from '@/components/PeerConnectionsGraph.vue'
 import PeerShareDialog from '@/components/PeerShareDialog.vue'
 import { useDashboardData } from '@/composables/useDashboardData'
 import { useMobileDialog } from '@/composables/useMobileDialog'
+import DialogHeader from '@/components/DialogHeader.vue'
 import { bcp47Locale } from '@/i18n'
 import {
   mergeLiveIntoPeers,
@@ -593,8 +589,10 @@ async function toggle (row, enabled) {
 }
 
 async function downloadConf (row) {
-  const res = await api.get(`/api/configs/${row.config_id}/peers/${row.client_id}/config`, { responseType: 'blob' })
-  const url = URL.createObjectURL(res.data)
+  const { data } = await api.get(`/api/configs/${row.config_id}/peers/${row.client_id}/config`, { responseType: 'text' })
+  const text = typeof data === 'string' ? data : String(data ?? '')
+  const blob = new Blob([text], { type: 'text/plain;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
   a.download = `${row.name}.conf`

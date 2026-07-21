@@ -920,19 +920,52 @@ html[data-scheme='light'].theme-scanlines body::after {
   background: radial-gradient(ellipse at center, transparent 70%, rgba(0, 0, 0, 0.08) 100%);
 }
 
+/* Quasar fixed-size scroll: header fixed, body scrolls, footer pinned */
+.q-dialog .dialog-card.column.no-wrap,
+.q-dialog .process-modal-card.column.no-wrap,
+.q-dialog .graph-dialog-card.column.no-wrap {
+  display: flex;
+  flex-direction: column;
+  flex-wrap: nowrap;
+  overflow: hidden;
+  max-height: 90vh;
+}
+
+.q-dialog .dialog-scroll-body,
+.q-dialog .graph-dialog-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+.q-dialog .dialog-header {
+  flex-shrink: 0;
+}
+
+.q-dialog .q-card-actions {
+  flex-shrink: 0;
+}
+
+.q-dialog__inner--maximized .dialog-card,
+.q-dialog__inner--maximized .process-modal-card,
+.q-dialog__inner--maximized .graph-dialog-card {
+  max-height: 100%;
+  height: 100%;
+}
+
 /* Mobile dialogs: fluid width, single-column fields, wrap actions (PC ≥1024px unchanged) */
 @media (max-width: 1023px) {
-  /* Non-fullscreen (e.g. $q.dialog confirms): keep fluid centered cards */
-  .q-dialog__inner:not(.fullscreen) > div,
-  .q-dialog__inner:not(.fullscreen) .q-card {
+  /* Non-maximized (e.g. $q.dialog confirms): keep fluid centered cards */
+  .q-dialog__inner--minimized > div,
+  .q-dialog__inner--minimized .q-card {
     width: min(100%, 95vw) !important;
     min-width: 0 !important;
     max-width: 95vw !important;
   }
 
-  /* Maximized content dialogs: true fullscreen (like graph) */
-  .q-dialog__inner.fullscreen > div,
-  .q-dialog__inner.fullscreen .q-card {
+  /* Maximized content dialogs: true fullscreen */
+  .q-dialog__inner--maximized > div,
+  .q-dialog__inner--maximized .q-card {
     width: 100% !important;
     min-width: 0 !important;
     max-width: 100% !important;
@@ -940,36 +973,32 @@ html[data-scheme='light'].theme-scanlines body::after {
     max-height: 100% !important;
   }
 
-  .q-dialog__inner.fullscreen .dialog-card,
-  .q-dialog__inner.fullscreen .process-modal-card,
-  .q-dialog__inner.fullscreen .graph-dialog-card {
-    display: flex !important;
-    flex-direction: column !important;
-    flex-wrap: nowrap !important;
-    overflow: hidden !important;
-  }
-
-  .q-dialog__inner.fullscreen .dialog-scroll-body {
-    flex: 1 1 auto !important;
-    min-height: 0 !important;
-    overflow: auto !important;
-  }
-
-  .q-dialog__inner.fullscreen .process-modal-card {
+  .q-dialog__inner--maximized .process-modal-card {
     min-width: 0 !important;
   }
 
-  .q-dialog__inner.fullscreen .process-table {
+  .q-dialog__inner--maximized .process-table {
     max-height: none !important;
   }
 
-  .q-dialog__inner.fullscreen .q-card-actions {
-    flex-shrink: 0;
-  }
   .q-dialog .q-card-actions {
     flex-wrap: wrap;
     justify-content: flex-end;
     gap: 4px;
+  }
+
+  .dialog-header {
+    border-bottom: 1px solid var(--surface-border);
+  }
+
+  .dialog-header__close {
+    flex-shrink: 0;
+    min-width: 44px;
+    min-height: 44px;
+    color: var(--surface-highlight) !important;
+    background: var(--surface-highlight-bg);
+    border: 1px solid var(--surface-border);
+    border-radius: var(--surface-radius);
   }
 
   /* Stack breakpoint columns inside dialogs (col / col-auto stay intact) */

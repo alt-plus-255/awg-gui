@@ -177,7 +177,7 @@ main() {
   make_run_bundle
 
   log "Done. Publish dist/awg-gui-${VERSION}-${ARCH}.run to GitHub Releases."
-  log "Users install with: sudo bash <(wget -O - .../dist/install.sh)"
+  log "Users install with: curl -fsSL .../dist/install.sh | sudo bash"
 }
 
 main "$@"
