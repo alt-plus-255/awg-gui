@@ -19,8 +19,8 @@ die() { echo -e "${RED}[error]${NC} $*" >&2; exit 1; }
 usage() {
   cat <<EOF
 Usage:
-  curl -fsSL https://raw.githubusercontent.com/alt-plus-255/awg-gui/refs/heads/main/dist/uninstall.sh | sudo bash -s -- --yes
-  curl -fsSL .../dist/uninstall.sh | sudo bash -s -- --yes --images
+  curl -fsSL https://raw.githubusercontent.com/alt-plus-255/awg-gui/refs/heads/main/dist/uninstall.sh | sudo bash
+  curl -fsSL .../dist/uninstall.sh | sudo bash -s -- --images
 
 Options:
   --yes      Skip confirmation
@@ -46,6 +46,14 @@ ARGS=()
 [[ "${YES}" -eq 1 ]] && ARGS+=(--yes)
 [[ "${REMOVE_IMAGES}" -eq 1 ]] && ARGS+=(--images)
 [[ "${PURGE}" -eq 1 ]] && ARGS+=(--purge)
+
+# curl|bash has no TTY; installed bundle-uninstall.sh may be an older copy
+# that cannot prompt and prints "Aborted" on empty stdin.
+if [[ "${YES}" -ne 1 && ! -t 0 ]]; then
+  log "Non-interactive shell — skipping confirmation (--yes implied for curl|bash)"
+  YES=1
+  ARGS+=(--yes)
+fi
 
 if [[ -x "${INSTALL_DIR}/bundle-uninstall.sh" ]]; then
   log "Using installed bundle uninstaller ..."
