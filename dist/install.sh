@@ -64,17 +64,24 @@ need_downloader() {
   die "curl or wget required"
 }
 
-fetch_url() {
-  local url="$1" dest="$2"
-  if command -v curl >/dev/null 2>&1; then
-    curl -fsSL --progress-bar -o "${dest}" "${url}"
+human_size() {
+  local bytes="${1:-0}"
+  if (( bytes >= 1073741824 )); then
+    awk -v b="${bytes}" 'BEGIN { printf "%.1f GiB", b / 1073741824 }'
+  elif (( bytes >= 1048576 )); then
+    awk -v b="${bytes}" 'BEGIN { printf "%.1f MiB", b / 1048576 }'
+  elif (( bytes >= 1024 )); then
+    awk -v b="${bytes}" 'BEGIN { printf "%.0f KiB", b / 1024 }'
   else
-    wget -q --show-progress -O "${dest}" "${url}"
+    printf '%s B' "${bytes}"
   fi
 }
 
-resolve_release_url() {
-  local arch api tag url
+RELEASE_URL=""
+RELEASE_SIZE_BYTES=0
+
+resolve_release_asset() {
+  local arch api tag json
   arch="$(detect_arch)"
   api="https://api.github.com/repos/${GITHUB_REPO}/releases"
 
@@ -86,7 +93,6 @@ resolve_release_url() {
   fi
 
   log "Fetching release metadata from GitHub (${GITHUB_REPO}) ..."
-  local json
   json="$(curl -fsSL "${api}" 2>/dev/null || true)"
   [[ -n "${json}" ]] || die "Failed to fetch release info from GitHub"
 
@@ -94,14 +100,79 @@ resolve_release_url() {
     die "GitHub API rate limit. Set AWG_GUI_VERSION and retry later, or download .run manually."
   fi
 
-  url="$(echo "${json}" | grep -oE "https://[^\"]+awg-gui-[^\"]+-${arch}\\.run" | head -1)"
-  [[ -n "${url}" ]] || die "Release bundle awg-gui-*-${arch}.run not found for ${GITHUB_REPO}"
+  RELEASE_URL="$(echo "${json}" | grep -oE "https://[^\"]+awg-gui-[^\"]+-${arch}\\.run" | head -1)"
+  RELEASE_SIZE_BYTES="$(echo "${json}" | awk -v arch="${arch}" '
+    $0 ~ "\"name\": \"awg-gui-.*-" arch "\\.run\"" { want=1; next }
+    want && /"size":/ {
+      match($0, /[0-9]+/)
+      if (RSTART) { print substr($0, RSTART, RLENGTH); exit }
+    }
+  ')"
+  [[ -n "${RELEASE_URL}" ]] || die "Release bundle awg-gui-*-${arch}.run not found for ${GITHUB_REPO}"
+  [[ "${RELEASE_SIZE_BYTES}" =~ ^[0-9]+$ ]] || RELEASE_SIZE_BYTES=0
+}
 
-  printf '%s' "${url}"
+fetch_url_with_progress() {
+  local url="$1" dest="$2" expected="${3:-0}" label total
+  label="[install] Downloading"
+  [[ "${expected}" -gt 0 ]] && total="$(human_size "${expected}")"
+
+  if command -v curl >/dev/null 2>&1; then
+    if [[ -t 2 ]]; then
+      log "Bundle download started${total:+ (${total})} — progress below:"
+      curl -fL --progress-bar -o "${dest}" "${url}"
+      echo >&2
+      return 0
+    fi
+
+    log "Bundle download started${total:+ (${total})} — updating size every 3s ..."
+    curl -fL -o "${dest}" "${url}" &
+    local pid=$!
+    while kill -0 "${pid}" 2>/dev/null; do
+      if [[ -f "${dest}" ]]; then
+        local cur; cur=$(stat -c%s "${dest}" 2>/dev/null || echo 0)
+        if [[ "${expected}" -gt 0 ]]; then
+          local pct=$(( cur * 100 / expected ))
+          printf '\r%s: %s / %s (%s%%)  ' "${label}" "$(human_size "${cur}")" "${total}" "${pct}" >&2
+        else
+          printf '\r%s: %s  ' "${label}" "$(human_size "${cur}")" >&2
+        fi
+      fi
+      sleep 3
+    done
+    wait "${pid}"
+    echo >&2
+    return 0
+  fi
+
+  if [[ -t 2 ]]; then
+    log "Bundle download started${total:+ (${total})} — progress below:"
+    wget --no-config --show-progress -O "${dest}" "${url}"
+    echo >&2
+    return 0
+  fi
+
+  log "Bundle download started${total:+ (${total})} — updating size every 3s ..."
+  wget --no-config -O "${dest}" "${url}" &
+  local pid=$!
+  while kill -0 "${pid}" 2>/dev/null; do
+    if [[ -f "${dest}" ]]; then
+      local cur; cur=$(stat -c%s "${dest}" 2>/dev/null || echo 0)
+      if [[ "${expected}" -gt 0 ]]; then
+        local pct=$(( cur * 100 / expected ))
+        printf '\r%s: %s / %s (%s%%)  ' "${label}" "$(human_size "${cur}")" "${total}" "${pct}" >&2
+      else
+        printf '\r%s: %s  ' "${label}" "$(human_size "${cur}")" >&2
+      fi
+    fi
+    sleep 3
+  done
+  wait "${pid}"
+  echo >&2
 }
 
 download_bundle() {
-  local dest dir url
+  local dest dir url size_bytes filename
   dir="$(mktemp -d /tmp/awg-gui-install.XXXXXX)"
   dest="${dir}/bundle.run"
 
@@ -110,10 +181,17 @@ download_bundle() {
     cp "${BUNDLE_LOCAL}" "${dest}"
     ok "Using local bundle ${BUNDLE_LOCAL}"
   else
-    url="$(resolve_release_url)"
-    log "Downloading ${url} ..."
-    fetch_url "${url}" "${dest}"
-    ok "Download complete"
+    resolve_release_asset
+    url="${RELEASE_URL}"
+    size_bytes="${RELEASE_SIZE_BYTES}"
+    filename="${url##*/}"
+    if [[ "${size_bytes}" -gt 0 ]]; then
+      log "Downloading ${filename} ($(human_size "${size_bytes}")) ..."
+    else
+      log "Downloading ${filename} ..."
+    fi
+    fetch_url_with_progress "${url}" "${dest}" "${size_bytes}"
+    ok "Download complete ($(human_size "$(stat -c%s "${dest}")"))"
   fi
 
   chmod +x "${dest}"

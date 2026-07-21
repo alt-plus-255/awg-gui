@@ -493,13 +493,25 @@ wait_for_app() {
   return 1
 }
 
+wait_for_migrate_lock() {
+  log "Waiting for in-container migrations to finish (if any)..."
+  compose exec -T app bash -c '
+    mkdir -p /var/www/html/storage/framework
+    flock -w "${AWG_GUI_MIGRATE_LOCK_TIMEOUT:-300}" /var/www/html/storage/framework/migrate.lock true
+  ' || warn "Timed out waiting for migration lock"
+}
+
+run_migrations() {
+  log "Running migrations..."
+  compose exec -T app awg-migrate-locked
+}
+
 run_bootstrap() {
   local panel_port="$1" awg_port="$2" endpoint="$3"
   local internal_subnet="$4" peer_dns="$5" allowed_ips="$6"
   local admin_pass="$7"
 
-  log "Running migrations..."
-  compose exec -T app php artisan migrate --force
+  run_migrations
 
   if [[ -n "${admin_pass}" ]]; then
     log "Ensuring admin user..."
@@ -571,6 +583,7 @@ main() {
   compose up -d
 
   wait_for_app || true
+  wait_for_migrate_lock
   run_bootstrap \
     "${panel_port}" "${awg_port}" "${endpoint}" \
     "${internal_subnet}" "${peer_dns}" "${allowed_ips}" \
