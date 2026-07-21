@@ -47,10 +47,20 @@ done
 
 [[ "$(id -u)" -eq 0 ]] || die "Run as root (sudo)"
 
-if [[ "${YES}" -ne 1 ]]; then
+confirm_uninstall() {
+  if [[ "${YES}" -eq 1 ]]; then
+    return 0
+  fi
+  if [[ ! -t 0 ]]; then
+    die "No interactive terminal for confirmation. Re-run with --yes, for example:
+  curl -fsSL .../dist/uninstall.sh | sudo bash -s -- --yes"
+  fi
+  local ans=""
   read -r -p "Remove awggui containers, volumes, CLI and systemd unit? [y/N]: " ans
   [[ "${ans}" =~ ^[Yy]$ ]] || { echo "Aborted"; exit 0; }
-fi
+}
+
+confirm_uninstall
 
 compose_down() {
   local args=(down -v --remove-orphans)

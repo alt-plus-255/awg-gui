@@ -19,7 +19,7 @@ die() { echo -e "${RED}[error]${NC} $*" >&2; exit 1; }
 usage() {
   cat <<EOF
 Usage:
-  curl -fsSL https://raw.githubusercontent.com/alt-plus-255/awg-gui/refs/heads/main/dist/uninstall.sh | sudo bash
+  curl -fsSL https://raw.githubusercontent.com/alt-plus-255/awg-gui/refs/heads/main/dist/uninstall.sh | sudo bash -s -- --yes
   curl -fsSL .../dist/uninstall.sh | sudo bash -s -- --yes --images
 
 Options:
@@ -63,10 +63,20 @@ fi
 
 log "No production install found at ${INSTALL_DIR} — running fallback cleanup ..."
 
-if [[ "${YES}" -ne 1 ]]; then
+confirm_uninstall() {
+  if [[ "${YES}" -eq 1 ]]; then
+    return 0
+  fi
+  if [[ ! -t 0 ]]; then
+    die "No interactive terminal for confirmation. Re-run with --yes, for example:
+  curl -fsSL .../dist/uninstall.sh | sudo bash -s -- --yes"
+  fi
+  local ans=""
   read -r -p "Remove awggui containers, volumes, CLI and systemd? [y/N]: " ans
   [[ "${ans}" =~ ^[Yy]$ ]] || { echo "Aborted"; exit 0; }
-fi
+}
+
+confirm_uninstall
 
 COMPOSE_FILE="${COMPOSE_FILE:-${INSTALL_DIR}/runtime/docker-compose.yml}"
 ENV_FILE="${ENV_FILE:-${INSTALL_DIR}/runtime/.env}"

@@ -63,12 +63,6 @@ Virtual network configs: isolated subnet, “allow all” / “isolation” poli
 
 For **Server** configs (not virtual networks): route traffic by domain and subnet via sing-box — community lists ([allow-domains](https://github.com/itdoginfo/allow-domains)), custom domains and CIDR. Internet exit point is a **Connection** (VLESS, subscription, etc.).
 
-<p align="center">
-  <img src="readme/assets/resolver/resolver-overview.png" alt="Resolver page in AWG-GUI panel" width="420">
-  &nbsp;
-  <img src="readme/assets/resolver/resolver-modes.png" alt="Resolver routing mode selection" width="420">
-</p>
-
 Two routing modes (toggle on each config card on the **Resolver** page):
 
 #### 1. Full tunnel on VDS — default

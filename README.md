@@ -63,12 +63,6 @@ sudo bash /tmp/awg-gui-install.sh --yes
 
 Для конфигов типа **Сервер** (не для виртуальных сетей): маршрутизация трафика по доменам и подсетям через sing-box — community-списки ([allow-domains](https://github.com/itdoginfo/allow-domains)), свои домены и CIDR. Точка выхода в интернет — **Подключение** (VLESS, подписка и т.п.).
 
-<p align="center">
-  <img src="readme/assets/resolver/resolver-overview.png" alt="Страница резолвера в панели AWG-GUI" width="420">
-  &nbsp;
-  <img src="readme/assets/resolver/resolver-modes.png" alt="Выбор режима маршрутизации резолвера" width="420">
-</p>
-
 Два режима работы (переключатель в настройках конфига на странице **Резолвер**):
 
 #### 1. Полный туннель на VDS — режим по умолчанию
