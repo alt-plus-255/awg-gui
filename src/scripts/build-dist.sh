@@ -9,6 +9,8 @@ RELEASE="${SRC}/scripts/release"
 STAGING="${DIST}/.staging"
 SING_BOX_VERSION=1.12.12
 MARIADB_IMAGE=mariadb:11.4
+DOCKER_PROXY_IMAGE=tecnativa/docker-socket-proxy:0.3.0
+CERTBOT_IMAGE=certbot/certbot:v3.0.0
 PROJECT_NAME=awggui
 
 VERSION="${1:-}"
@@ -69,30 +71,50 @@ ensure_sing_box_vendor() {
   curl -fsSL -o "${dest}" "${url}"
 }
 
+require_free_gb() {
+  local need_gb="$1"
+  local avail_kb avail_gb
+  avail_kb="$(df -Pk "${ROOT}" | awk 'NR==2 {print $4}')"
+  avail_gb=$((avail_kb / 1024 / 1024))
+  if (( avail_gb < need_gb )); then
+    die "Need >= ${need_gb}G free on disk (have ~${avail_gb}G). Free space and retry."
+  fi
+  log "Disk OK: ~${avail_gb}G free"
+}
+
 compose_build() {
   log "Building Docker images (this may take a while) ..."
   COMPOSE_PARALLEL_LIMIT=1 docker compose -p "${PROJECT_NAME}" -f "${SRC}/docker-compose.yml" build
+  # Drop intermediate build layers so export has room on small disks
+  docker builder prune -af >/dev/null 2>&1 || true
 }
 
 tag_images() {
   local svc
-  for svc in caddy app awg; do
+  for svc in caddy app awg panel-ops; do
     docker tag "${PROJECT_NAME}-${svc}" "awggui-${svc}:${VERSION}"
   done
   docker pull "${MARIADB_IMAGE}"
+  docker pull "${DOCKER_PROXY_IMAGE}"
+  docker pull "${CERTBOT_IMAGE}"
 }
 
 export_images() {
   local bundle_dir="${STAGING}/bundle"
   mkdir -p "${bundle_dir}/images"
-  local tar="${bundle_dir}/images/awggui-all-${VERSION}.tar"
+  # gzip stream avoids a multi-GB uncompressed tar on small VDS disks
+  local tar="${bundle_dir}/images/awggui-all-${VERSION}.tar.gz"
   log "Exporting images to ${tar} ..."
+  require_free_gb 2
   docker save \
     "awggui-caddy:${VERSION}" \
     "awggui-app:${VERSION}" \
     "awggui-awg:${VERSION}" \
+    "awggui-panel-ops:${VERSION}" \
     "${MARIADB_IMAGE}" \
-    -o "${tar}"
+    "${DOCKER_PROXY_IMAGE}" \
+    "${CERTBOT_IMAGE}" \
+    | gzip -1 > "${tar}"
 }
 
 assemble_runtime() {
@@ -121,14 +143,15 @@ assemble_runtime() {
 
 make_run_bundle() {
   local out="${DIST}/awg-gui-${VERSION}-${ARCH}.run"
-  local payload="${STAGING}/payload.tar.gz"
 
   log "Creating self-extracting bundle ${out} ..."
-  tar czf "${payload}" -C "${STAGING}/bundle" .
-
-  cat "${RELEASE}/run-header.sh" "${payload}" > "${out}"
+  require_free_gb 1
+  # Stream header+payload into .run — no intermediate payload.tar.gz on disk
+  {
+    cat "${RELEASE}/run-header.sh"
+    tar czf - -C "${STAGING}/bundle" .
+  } > "${out}"
   chmod +x "${out}"
-  rm -f "${payload}"
 
   if command -v sha256sum >/dev/null 2>&1; then
     sha256sum "${out}" > "${out}.sha256"
@@ -169,12 +192,15 @@ main() {
 
   trap cleanup EXIT
 
+  require_free_gb 3
   ensure_sing_box_vendor
   compose_build
   tag_images
   assemble_runtime
   export_images
   make_run_bundle
+  # staging cleaned by EXIT trap; prune again after heavy export
+  docker builder prune -af >/dev/null 2>&1 || true
 
   log "Done. Publish dist/awg-gui-${VERSION}-${ARCH}.run to GitHub Releases."
   log "Users install with: curl -fsSL .../dist/install.sh | sudo bash"

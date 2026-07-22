@@ -269,6 +269,7 @@
                 </div>
 
                 <SubscriptionNodesTable
+                  :key="`nodes-${props.row.id}-${(subscriptionState[props.row.id]?.nodes || []).length}-${props.row.subscription_fetched_at || ''}`"
                   :rows="subscriptionState[props.row.id]?.nodes || []"
                   :mode="subscriptionState[props.row.id]?.mode"
                   :mode-options="modeOptions"
@@ -1443,6 +1444,7 @@ function openEdit (row) {
   form.config_type = row.config_type || 'url'
   form.share_url = row.share_url || ''
   form.subscription_url = row.subscription_url || ''
+  form.subscription_body = row.subscription_body || ''
   editOriginalSubscriptionUrl.value = row.subscription_url || ''
   form.subscription_mode = row.subscription_mode || 'urltest'
   form.subscription_selected = row.subscription_selected || null
@@ -1862,10 +1864,40 @@ async function pingExpandNodes (row, fast = false) {
 function upsertConnection (conn) {
   const idx = connections.value.findIndex(c => c.id === conn.id)
   if (idx >= 0) {
-    connections.value[idx] = conn
+    // Replace in place so QTable row cells (count, pick, etc.) refresh without reload.
+    connections.value.splice(idx, 1, conn)
   } else {
     connections.value.push(conn)
   }
+  syncSubscriptionStateFromConnection(conn)
+}
+
+/**
+ * Keep expanded subscription node table in sync with API payload (no page reload).
+ */
+function syncSubscriptionStateFromConnection (conn) {
+  if (!conn || conn.kind !== 'subscription') return
+
+  const id = conn.id
+  const nodes = sortNodesByLatency((conn.subscription_nodes || []).map(n => ({ ...n })))
+  const st = subscriptionState[id]
+
+  if (!st) {
+    if (expandedIds.has(id)) {
+      initSubscriptionState(conn, { startMonitor: false })
+    }
+    return
+  }
+
+  st.nodes = nodes
+  st.baselineMode = conn.subscription_mode
+  st.baselineSelected = conn.subscription_selected
+  st.mode = conn.subscription_mode
+  st.selected = conn.subscription_selected
+  st.pingIntervalMin = conn.ping_check_interval_min ?? st.pingIntervalMin
+  st.dirty = false
+  st.pingTruncated = false
+  st.pingTested = 0
 }
 
 async function refreshSubscription (row) {
@@ -1880,12 +1912,6 @@ async function refreshSubscription (row) {
     )
     const conn = data.connection
     upsertConnection(conn)
-    st.nodes = (conn.subscription_nodes || []).map(n => ({ ...n }))
-    st.baselineMode = conn.subscription_mode
-    st.baselineSelected = conn.subscription_selected
-    st.mode = conn.subscription_mode
-    st.selected = conn.subscription_selected
-    st.dirty = false
     $q.notify({
       type: 'positive',
       message: data.singbox_reloaded
@@ -1916,13 +1942,7 @@ async function applySubscription (row) {
         subscription_selected: st.mode === 'single' ? st.selected : null
       })
     )
-    const conn = data.connection
-    upsertConnection(conn)
-    st.baselineMode = conn.subscription_mode
-    st.baselineSelected = conn.subscription_selected
-    st.mode = conn.subscription_mode
-    st.selected = conn.subscription_selected
-    st.dirty = false
+    upsertConnection(data.connection)
     $q.notify({ type: 'positive', message: t('connections.strategyApplied') })
   } catch (e) {
     const msg = Object.values(e?.response?.data?.errors || {}).flat()[0]

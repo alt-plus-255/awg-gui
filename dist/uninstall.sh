@@ -104,7 +104,7 @@ if [[ -f "${COMPOSE_FILE}" ]]; then
   fi
 fi
 
-for c in awggui-caddy awggui-app awggui-db awggui-awg; do docker rm -f "$c" 2>/dev/null || true; done
+for c in awggui-caddy awggui-app awggui-db awggui-awg awggui-docker-proxy awggui-panel-ops awggui-certbot; do docker rm -f "$c" 2>/dev/null || true; done
 for v in awggui_db_data awggui_awg_config awggui_app_storage; do docker volume rm -f "$v" 2>/dev/null || true; done
 docker network rm awggui_net 2>/dev/null || true
 rm -f /usr/local/bin/awg-gui

@@ -11,6 +11,14 @@ export PHP_INI_SCAN_DIR="/usr/local/etc/php/conf.d:/tmp/php-extra"
 mkdir -p storage/framework/{cache,sessions,views} storage/logs bootstrap/cache
 chown -R www-data:www-data storage bootstrap/cache 2>/dev/null || true
 
+if [[ -d /awg ]]; then
+  chown -R www-data:www-data /awg 2>/dev/null || chmod -R g+rwX /awg 2>/dev/null || true
+fi
+
+run_www_data() {
+  su -s /bin/bash www-data -c "$*"
+}
+
 # Wait for DB
 if [[ -n "${DB_HOST:-}" ]]; then
   echo "[app] Waiting for database ${DB_HOST}:${DB_PORT:-3306}..."
@@ -25,15 +33,15 @@ fi
 awg-migrate-locked || echo "[app] migrate failed (continuing boot)" >&2
 
 # Start HTTP ASAP so Caddy does not 502 while bootstrap/ws warm up.
-php artisan serve --host=0.0.0.0 --port=8000 &
+run_www_data "php artisan serve --host=0.0.0.0 --port=8000" &
 SERVE_PID=$!
 
-php artisan awg:bootstrap --no-interaction 2>/dev/null || true
+run_www_data "php artisan awg:bootstrap --no-interaction" 2>/dev/null || true
 
 # Background scheduler (resolver:refresh hourly, etc.)
-php artisan schedule:work --verbose &
+run_www_data "php artisan schedule:work --verbose" &
 
 # AWG live stats WebSocket
-php artisan awg:ws-serve &
+run_www_data "php artisan awg:ws-serve" &
 
 wait "${SERVE_PID}"

@@ -483,6 +483,7 @@ class ResolverConnectionController extends Controller
             'config_type' => 'url',
             'share_url' => null,
             'subscription_url' => $data['subscription_url'],
+            'subscription_body' => $this->normalizedSubscriptionBody($data['subscription_body'] ?? null),
             'subscription_mode' => $mode,
             'subscription_selected' => $mode === ResolverConnection::MODE_SINGLE ? $selected : null,
             'subscription_nodes' => $nodes,
@@ -515,17 +516,19 @@ class ResolverConnectionController extends Controller
 
         $urlChanged = isset($data['subscription_url']) && $data['subscription_url'] !== $connection->subscription_url;
         $forceRefresh = ! empty($data['refresh_subscription']);
-        $bodyProvided = array_key_exists('subscription_body', $data) && trim((string) $data['subscription_body']) !== '';
+        $bodyProvided = array_key_exists('subscription_body', $data);
+        $body = $bodyProvided
+            ? $this->normalizedSubscriptionBody($data['subscription_body'] ?? null)
+            : $connection->subscription_body;
 
         if ($urlChanged || $forceRefresh || $bodyProvided || empty($connection->subscription_nodes)) {
             $nodes = $this->fetchSubscriptionNodes(
                 $url,
-                $bodyProvided ? (string) $data['subscription_body'] : null,
+                $body !== null && $body !== '' ? $body : null,
             );
             $connection->subscription_url = $url;
-            if (! $this->singBoxFingerprint->nodesEqual($connection->subscription_nodes, $nodes)) {
-                $connection->subscription_nodes = $nodes;
-            }
+            $connection->subscription_body = $body;
+            $connection->subscription_nodes = $nodes;
             $connection->subscription_fetched_at = now();
         } else {
             $nodes = $connection->subscription_nodes ?? [];
@@ -552,6 +555,16 @@ class ResolverConnectionController extends Controller
                 'subscription_url' => [$e->getMessage()],
             ]);
         }
+    }
+
+    private function normalizedSubscriptionBody(mixed $body): ?string
+    {
+        if ($body === null) {
+            return null;
+        }
+        $trimmed = trim((string) $body);
+
+        return $trimmed !== '' ? $trimmed : null;
     }
 
     /**
@@ -960,6 +973,7 @@ class ResolverConnectionController extends Controller
             'config_type' => $c->config_type,
             'share_url' => $c->share_url,
             'subscription_url' => $c->subscription_url,
+            'subscription_body' => $c->subscription_body,
             'subscription_mode' => $c->subscription_mode,
             'subscription_selected' => $c->subscription_selected,
             'subscription_selected_name' => $selectedName,

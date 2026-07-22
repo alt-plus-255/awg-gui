@@ -8,16 +8,6 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class AwgConfig extends Model
 {
-    public const ROUTING_MODE_VDS_SPLIT = 'vds_split';
-
-    public const ROUTING_MODE_CLIENT_SPLIT = 'client_split';
-
-    /** @var list<string> */
-    public const ROUTING_MODES = [
-        self::ROUTING_MODE_VDS_SPLIT,
-        self::ROUTING_MODE_CLIENT_SPLIT,
-    ];
-
     protected $fillable = [
         'name',
         'type',
@@ -35,7 +25,6 @@ class AwgConfig extends Model
         'persistent_keepalive',
         'enabled',
         'resolver_enabled',
-        'resolver_routing_mode',
         'resolver_reject_quic',
         'community_lists',
         'user_domains',
@@ -90,18 +79,4 @@ class AwgConfig extends Model
         return $this->type === 'server' && (bool) $this->resolver_enabled;
     }
 
-    public function resolverRoutingMode(): string
-    {
-        $mode = (string) ($this->resolver_routing_mode ?: self::ROUTING_MODE_VDS_SPLIT);
-
-        return in_array($mode, self::ROUTING_MODES, true)
-            ? $mode
-            : self::ROUTING_MODE_VDS_SPLIT;
-    }
-
-    public function isClientSplitResolver(): bool
-    {
-        return $this->isResolverEnabled()
-            && $this->resolverRoutingMode() === self::ROUTING_MODE_CLIENT_SPLIT;
-    }
 }

@@ -8,7 +8,7 @@ use RuntimeException;
 
 class SubscriptionFetcher
 {
-    private const SCHEME_PATTERN = '(?:vless|ss|trojan|hysteria2|hy2|socks5?|socks)';
+    private const SCHEME_PATTERN = '(?:vless|vmess|ss|trojan|hysteria2|hy2|socks5?|socks)';
 
     private const USER_AGENT = 'v2rayN/6.38';
 
@@ -18,6 +18,8 @@ class SubscriptionFetcher
     ) {}
 
     /**
+     * Download the exact subscription URL and parse every node line-by-line.
+     *
      * @return list<array{key: string, name: string, type: string, server: string, port: int, outbound: array<string, mixed>}>
      */
     public function fetch(string $url): array
@@ -29,23 +31,7 @@ class SubscriptionFetcher
             ]);
         }
 
-        $bodies = [];
-        foreach ($this->subscriptionUrlVariants($url) as $variantUrl) {
-            try {
-                $body = $this->download($variantUrl);
-                if ($body !== '') {
-                    $bodies[] = $body;
-                }
-            } catch (\Throwable) {
-                continue;
-            }
-        }
-
-        if ($bodies === []) {
-            throw new RuntimeException(__('resolver.subscription_fetch_failed'));
-        }
-
-        return $this->parseBodies($bodies);
+        return $this->parseBody($this->download($url));
     }
 
     /**
@@ -53,46 +39,19 @@ class SubscriptionFetcher
      */
     public function fetchMerged(string $url, ?string $body = null): array
     {
-        $nodes = [];
-        $seen = [];
-        $errors = [];
-
         $url = trim($url);
+        $body = $body !== null ? trim($body) : '';
+
+        // Prefer the exact URL content. Body is only a fallback when URL is empty.
         if ($url !== '') {
-            try {
-                foreach ($this->fetch($url) as $node) {
-                    if (isset($seen[$node['key']])) {
-                        continue;
-                    }
-                    $seen[$node['key']] = true;
-                    $nodes[] = $node;
-                }
-            } catch (\Throwable $e) {
-                $errors[] = $e->getMessage();
-            }
+            return $this->fetch($url);
         }
 
-        if ($body !== null && trim($body) !== '') {
-            try {
-                foreach ($this->parseBody(trim($body)) as $node) {
-                    if (isset($seen[$node['key']])) {
-                        continue;
-                    }
-                    $seen[$node['key']] = true;
-                    $nodes[] = $node;
-                }
-            } catch (\Throwable $e) {
-                $errors[] = $e->getMessage();
-            }
+        if ($body !== '') {
+            return $this->parseBody($body);
         }
 
-        if ($nodes === []) {
-            throw new RuntimeException(
-                $errors !== [] ? implode('; ', $errors) : __('resolver.subscription_parse_failed')
-            );
-        }
-
-        return $nodes;
+        throw new RuntimeException(__('resolver.subscription_parse_failed'));
     }
 
     /**
@@ -105,67 +64,74 @@ class SubscriptionFetcher
             throw new RuntimeException(__('resolver.subscription_body_empty'));
         }
 
-        return $this->parseBodies([$body]);
+        $decoded = $this->tryBase64Decode($body);
+        if ($decoded !== null) {
+            $body = $decoded;
+        }
+
+        // 1) Line-by-line share URIs (vless://, ss://, ...) — primary path for vpnd-like subs.
+        $nodes = $this->parseShareUriLines($body);
+        if ($nodes !== []) {
+            return $nodes;
+        }
+
+        // 2) Clash YAML
+        $clashNodes = $this->clashParser->parse($body);
+        if (is_array($clashNodes) && $clashNodes !== []) {
+            return $clashNodes;
+        }
+
+        // 3) sing-box JSON
+        $singBoxNodes = $this->parseSingBoxJsonOutbounds($body);
+        if ($singBoxNodes !== []) {
+            return $singBoxNodes;
+        }
+
+        throw new RuntimeException(__('resolver.subscription_no_nodes'));
     }
 
     /**
-     * @param  list<string>  $bodies
+     * One node per non-empty share-URI line (comments / blanks skipped).
+     *
      * @return list<array{key: string, name: string, type: string, server: string, port: int, outbound: array<string, mixed>}>
      */
-    private function parseBodies(array $bodies): array
+    private function parseShareUriLines(string $body): array
     {
         $nodes = [];
         $seen = [];
 
-        foreach ($bodies as $body) {
-            $clashNodes = $this->clashParser->parse($body);
-            if (is_array($clashNodes)) {
-                foreach ($clashNodes as $node) {
-                    if (isset($seen[$node['key']])) {
-                        continue;
-                    }
-                    $seen[$node['key']] = true;
-                    $nodes[] = $node;
-                }
+        foreach (preg_split("/\r\n|\n|\r/", $body) ?: [] as $line) {
+            $line = trim($line);
+            if ($line === '' || str_starts_with($line, '#')) {
+                continue;
+            }
+            if (! $this->isShareUri($line)) {
+                continue;
             }
 
-            $uris = $this->extractUris($body);
-            foreach ($uris as $uri) {
-                try {
-                    $outbound = $this->parser->normalize($this->parser->fromShareUrl($uri));
-                } catch (\Throwable) {
-                    continue;
-                }
-                if (empty($outbound['type']) || empty($outbound['server'])) {
-                    continue;
-                }
-                $key = $this->nodeKey($uri);
-                if (isset($seen[$key])) {
-                    continue;
-                }
-                $seen[$key] = true;
-                $nodes[] = [
-                    'key' => $key,
-                    'name' => $this->nodeName($uri, $outbound),
-                    'type' => (string) $outbound['type'],
-                    'server' => (string) $outbound['server'],
-                    'port' => (int) ($outbound['server_port'] ?? 0),
-                    'outbound' => $outbound,
-                ];
+            try {
+                $outbound = $this->parser->normalize($this->parser->fromShareUrl($line));
+            } catch (\Throwable) {
+                continue;
+            }
+            if (empty($outbound['type']) || empty($outbound['server'])) {
+                continue;
             }
 
-            $singBoxNodes = $this->parseSingBoxJsonOutbounds($body);
-            foreach ($singBoxNodes as $node) {
-                if (isset($seen[$node['key']])) {
-                    continue;
-                }
-                $seen[$node['key']] = true;
-                $nodes[] = $node;
+            $key = $this->nodeKey($line);
+            if (isset($seen[$key])) {
+                continue;
             }
-        }
+            $seen[$key] = true;
 
-        if ($nodes === []) {
-            throw new RuntimeException(__('resolver.subscription_no_nodes'));
+            $nodes[] = [
+                'key' => $key,
+                'name' => $this->nodeName($line, $outbound),
+                'type' => (string) $outbound['type'],
+                'server' => (string) $outbound['server'],
+                'port' => (int) ($outbound['server_port'] ?? 0),
+                'outbound' => $outbound,
+            ];
         }
 
         return $nodes;
@@ -208,65 +174,6 @@ class SubscriptionFetcher
         throw new RuntimeException(__('resolver.subscription_fetch_failed_with_error', ['error' => $lastError ?? 'unknown']), 0);
     }
 
-    /** @return list<string> */
-    private function subscriptionUrlVariants(string $url): array
-    {
-        $variants = [$url];
-        if (preg_match('~^(https?://[^/]+/subscription)/(?:vless|clash|mihomo|meta|sing-box|singbox)/([^/?]+)~i', $url, $m)) {
-            $base = $m[1];
-            $token = $m[2];
-            foreach (['vless', 'clash', 'mihomo', 'sing-box', ''] as $fmt) {
-                $variants[] = $fmt === ''
-                    ? "{$base}/{$token}"
-                    : "{$base}/{$fmt}/{$token}";
-            }
-        }
-
-        return array_values(array_unique($variants));
-    }
-
-    /**
-     * @return list<string>
-     */
-    private function extractUris(string $body): array
-    {
-        $decoded = $this->tryBase64Decode($body);
-        if ($decoded !== null) {
-            $body = $decoded;
-        }
-
-        $uris = [];
-        $pattern = '#'.self::SCHEME_PATTERN.'://#i';
-        if (preg_match_all($pattern, $body, $matches, PREG_OFFSET_CAPTURE)) {
-            $starts = $matches[0];
-            $count = count($starts);
-            for ($i = 0; $i < $count; $i++) {
-                $begin = $starts[$i][1];
-                $end = ($i + 1 < $count) ? $starts[$i + 1][1] : strlen($body);
-                $uri = trim(substr($body, $begin, $end - $begin));
-                if ($uri !== '' && $this->isShareUri($uri)) {
-                    $uris[] = $uri;
-                }
-            }
-        }
-
-        if ($uris !== []) {
-            return array_values(array_unique($uris));
-        }
-
-        foreach (preg_split("/\r\n|\n|\r/", $body) ?: [] as $line) {
-            $line = trim($line);
-            if ($line === '' || str_starts_with($line, '#')) {
-                continue;
-            }
-            if ($this->isShareUri($line)) {
-                $uris[] = $line;
-            }
-        }
-
-        return array_values(array_unique($uris));
-    }
-
     /**
      * @return list<array{key: string, name: string, type: string, server: string, port: int, outbound: array<string, mixed>}>
      */
@@ -288,7 +195,11 @@ class SubscriptionFetcher
 
         $nodes = [];
         foreach ($outbounds as $ob) {
-            if (! is_array($ob) || empty($ob['type']) || ($ob['type'] ?? '') === 'direct') {
+            if (! is_array($ob) || empty($ob['type'])) {
+                continue;
+            }
+            $type = (string) $ob['type'];
+            if (in_array($type, ['direct', 'block', 'dns', 'selector', 'urltest', 'fallback'], true)) {
                 continue;
             }
             try {

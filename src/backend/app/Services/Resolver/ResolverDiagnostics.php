@@ -3,7 +3,7 @@
 namespace App\Services\Resolver;
 
 use App\Services\AmneziaWg\AmneziaWgService;
-use Illuminate\Support\Facades\Process;
+use App\Services\Docker\DockerRuntime;
 
 class ResolverDiagnostics
 {
@@ -38,6 +38,7 @@ class ResolverDiagnostics
 
     public function __construct(
         private AmneziaWgService $awg,
+        private DockerRuntime $docker,
         private ResolverPaths $paths,
         private ClashApiClient $clash,
     ) {}
@@ -69,14 +70,16 @@ class ResolverDiagnostics
         $fakeipHits = 0;
         $tunUp = false;
         try {
-            $r = Process::timeout(10)->run([
-                'docker', 'exec', $container,
-                'sh', '-c',
-                'ss -ulnp | grep -q ":'.ResolverService::DNS_LISTEN_PORT.' " && echo DNS_OK; '
-                .'ip link show '.ResolverService::TUN_IFACE.' >/dev/null 2>&1 && echo TUN_OK; '
-                .'iptables -t mangle -L PREROUTING -n -v 2>/dev/null | grep -E "MARK|'.ResolverService::FAKEIP_CIDR.'" || true; '
-                .'iptables -t nat -L PREROUTING -n -v 2>/dev/null | grep "dpt:53" || true',
-            ]);
+            $r = $this->docker->exec(
+                $container,
+                ['sh', '-c',
+                    'ss -ulnp | grep -q ":'.ResolverService::DNS_LISTEN_PORT.' " && echo DNS_OK; '
+                    .'ip link show '.ResolverService::TUN_IFACE.' >/dev/null 2>&1 && echo TUN_OK; '
+                    .'iptables -t mangle -L PREROUTING -n -v 2>/dev/null | grep -E "MARK|'.ResolverService::FAKEIP_CIDR.'" || true; '
+                    .'iptables -t nat -L PREROUTING -n -v 2>/dev/null | grep "dpt:53" || true',
+                ],
+                timeout: 10,
+            );
             $out = $r->output();
             $dnsListening = str_contains($out, 'DNS_OK');
             $tunUp = str_contains($out, 'TUN_OK');
@@ -273,10 +276,11 @@ echo "$OUT"
 SH;
 
         try {
-            $r = Process::timeout(15)->run([
-                'docker', 'exec', $container,
-                'sh', '-c', $script, '_', $gateway, $domain,
-            ]);
+            $r = $this->docker->exec(
+                $container,
+                ['sh', '-c', $script, '_', $gateway, $domain],
+                timeout: 15,
+            );
             $addr = trim($r->output());
             if ($addr === '' || ! filter_var($addr, FILTER_VALIDATE_IP)) {
                 return [

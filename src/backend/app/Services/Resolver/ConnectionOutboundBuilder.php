@@ -43,19 +43,18 @@ class ConnectionOutboundBuilder
                 }
 
                 $childTags = [];
-                $i = 1;
+                $i = 0;
                 foreach ($nodes as $node) {
                     if (! is_array($node)) {
                         continue;
                     }
-                    $childTag = $conn->childOutboundTag($i);
-                    if (isset($tagsAdded[$childTag])) {
-                        $i++;
-
-                        continue;
-                    }
                     $ob = $node['outbound'] ?? [];
                     if (! is_array($ob) || empty($ob['type'])) {
+                        continue;
+                    }
+                    $i++;
+                    $childTag = $conn->childOutboundTag($i);
+                    if (isset($tagsAdded[$childTag])) {
                         continue;
                     }
                     $ob = $this->parser->normalize($ob);
@@ -64,7 +63,6 @@ class ConnectionOutboundBuilder
                     $outbounds[] = $ob;
                     $tagsAdded[$childTag] = true;
                     $childTags[] = $childTag;
-                    $i++;
                 }
 
                 if ($childTags !== []) {
@@ -104,22 +102,7 @@ class ConnectionOutboundBuilder
     public function resolveNodeTag(ResolverConnection $conn, string $nodeKey): ?string
     {
         if ($conn->isUrltestMode()) {
-            $i = 1;
-            foreach (is_array($conn->subscription_nodes) ? $conn->subscription_nodes : [] as $node) {
-                if (! is_array($node)) {
-                    continue;
-                }
-                if (($node['key'] ?? '') === $nodeKey) {
-                    if ($i > self::MAX_NODES_PER_SUBSCRIPTION) {
-                        return null;
-                    }
-
-                    return $conn->childOutboundTag($i);
-                }
-                $i++;
-            }
-
-            return null;
+            return $conn->childTagForNodeKey($nodeKey);
         }
 
         if ($conn->isSubscription() && $conn->subscription_mode === ResolverConnection::MODE_SINGLE) {
@@ -145,21 +128,23 @@ class ConnectionOutboundBuilder
 
         if ($conn->isUrltestMode()) {
             $out = [];
-            $i = 1;
+            $i = 0;
             foreach (is_array($conn->subscription_nodes) ? $conn->subscription_nodes : [] as $node) {
-                if ($i > self::MAX_NODES_PER_SUBSCRIPTION) {
+                if ($i >= self::MAX_NODES_PER_SUBSCRIPTION) {
                     break;
                 }
                 if (! is_array($node) || empty($node['key'])) {
-                    $i++;
-
                     continue;
                 }
+                $ob = $node['outbound'] ?? [];
+                if (! is_array($ob) || empty($ob['type'])) {
+                    continue;
+                }
+                $i++;
                 $out[] = [
                     'key' => (string) $node['key'],
                     'tag' => $conn->childOutboundTag($i),
                 ];
-                $i++;
             }
 
             return $out;

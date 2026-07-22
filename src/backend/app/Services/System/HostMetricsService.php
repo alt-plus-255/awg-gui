@@ -2,11 +2,13 @@
 
 namespace App\Services\System;
 
+use App\Services\Docker\DockerRuntime;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Process;
 
 class HostMetricsService
 {
+    public function __construct(private DockerRuntime $docker) {}
+
     private const CPU_CACHE_KEY = 'host_metrics.cpu_snapshot';
 
     private const PROC_CPU_CACHE_KEY = 'host_metrics.proc_cpu_snapshot';
@@ -234,9 +236,7 @@ class HostMetricsService
      */
     public function dockerStats(): array
     {
-        $result = Process::timeout(8)->run([
-            'docker', 'stats', '--no-stream', '--format', '{{json .}}',
-        ]);
+        $result = $this->docker->stats(timeout: 8);
 
         if (! $result->successful()) {
             return [];

@@ -84,6 +84,7 @@ class ClashSubscriptionParser
 
         return match ($type) {
             'vless' => $this->vlessFromClash($p, $server, $port),
+            'vmess' => $this->vmessFromClash($p, $server, $port),
             'trojan' => [
                 'type' => 'trojan',
                 'server' => $server,
@@ -113,6 +114,30 @@ class ClashSubscriptionParser
             ],
             default => throw new \InvalidArgumentException("unsupported clash type: {$type}"),
         };
+    }
+
+    /** @param  array<string, mixed>  $p */
+    private function vmessFromClash(array $p, string $server, int $port): array
+    {
+        $ob = [
+            'type' => 'vmess',
+            'server' => $server,
+            'server_port' => $port,
+            'uuid' => (string) ($p['uuid'] ?? ''),
+            'security' => (string) ($p['cipher'] ?? 'auto'),
+            'alter_id' => (int) ($p['alterId'] ?? $p['alter_id'] ?? 0),
+        ];
+        $network = strtolower((string) ($p['network'] ?? 'tcp'));
+        $tls = $this->clashTls($p);
+        if ($tls !== []) {
+            $ob['tls'] = $tls['tls'];
+        }
+        $transport = $this->clashTransport($p, $network);
+        if ($transport !== null) {
+            $ob['transport'] = $transport;
+        }
+
+        return $ob;
     }
 
     /** @param  array<string, mixed>  $p */

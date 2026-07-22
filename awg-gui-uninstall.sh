@@ -77,7 +77,7 @@ compose_down() {
 
 fallback_remove_containers() {
   local c
-  for c in awggui-caddy awggui-app awggui-db awggui-awg; do
+  for c in awggui-caddy awggui-app awggui-db awggui-awg awggui-docker-proxy awggui-panel-ops awggui-certbot; do
     docker rm -f "$c" 2>/dev/null || true
   done
 }

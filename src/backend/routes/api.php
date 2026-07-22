@@ -17,6 +17,7 @@ use Illuminate\Support\Facades\Route;
 
 Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:30,1');
 Route::get('/login/status', [AuthController::class, 'loginStatus'])->middleware('throttle:60,1');
+Route::get('/login/info', [AuthController::class, 'loginInfo'])->middleware('throttle:60,1');
 Route::get('/login/captcha', [AuthController::class, 'captcha'])->middleware('throttle:30,1');
 Route::post('/logout', [AuthController::class, 'logout']);
 Route::get('/me', [AuthController::class, 'me']);

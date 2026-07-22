@@ -180,10 +180,15 @@ env_get() {
   fi
 }
 
+EXPECTED_CONTAINERS=(
+  awggui-caddy awggui-app awggui-db awggui-awg
+  awggui-docker-proxy awggui-panel-ops awggui-certbot
+)
+
 detect_existing_install() {
   local c names
   names="$(docker ps -a --format '{{.Names}}' 2>/dev/null || true)"
-  for c in awggui-caddy awggui-app awggui-db awggui-awg; do
+  for c in "${EXPECTED_CONTAINERS[@]}"; do
     if echo "${names}" | grep -qx "${c}"; then
       return 0
     fi
@@ -202,7 +207,7 @@ detect_install_complete() {
   [[ -f /etc/systemd/system/awg-gui.service ]] || return 1
   local c names
   names="$(docker ps --format '{{.Names}}' 2>/dev/null || true)"
-  for c in awggui-caddy awggui-app awggui-db awggui-awg; do
+  for c in "${EXPECTED_CONTAINERS[@]}"; do
     echo "${names}" | grep -qx "${c}" || return 1
   done
   return 0
@@ -248,9 +253,11 @@ choose_install_mode() {
 
 mark_install_complete() {
   local version=""
-  for tar_file in "${SCRIPT_DIR}"/images/awggui-all-*.tar; do
+  local tar_file=""
+  for tar_file in "${SCRIPT_DIR}"/images/awggui-all-*.tar.gz "${SCRIPT_DIR}"/images/awggui-all-*.tar; do
     [[ -f "${tar_file}" ]] || continue
-    version="$(basename "${tar_file}" .tar)"
+    version="$(basename "${tar_file}" .tar.gz)"
+    version="$(basename "${version}" .tar)"
     version="${version#awggui-all-}"
     break
   done
@@ -342,17 +349,34 @@ write_env_from_example() {
   env_set "INTERNAL_SUBNET" "${internal_subnet}" "${ENV_FILE}"
   env_set "PEER_DNS" "${peer_dns}" "${ENV_FILE}"
   env_set "ALLOWED_IPS" "${allowed_ips}" "${ENV_FILE}"
+  env_set "PANEL_OPS_TOKEN" "$(openssl rand -hex 32 2>/dev/null || rand_secret 64)" "${ENV_FILE}"
   env_set "SANCTUM_STATEFUL_DOMAINS" \
     "${endpoint},${endpoint}:${panel_port},${endpoint}:7443,localhost,localhost:${panel_port},127.0.0.1,127.0.0.1:${panel_port}" \
     "${ENV_FILE}"
 }
 
+ensure_panel_ops_token() {
+  [[ -f "${ENV_FILE}" ]] || return 0
+  local token
+  token="$(env_get PANEL_OPS_TOKEN "${ENV_FILE}")"
+  if [[ -n "${token}" ]]; then
+    return 0
+  fi
+  token="$(openssl rand -hex 32 2>/dev/null || rand_secret 64)"
+  env_set "PANEL_OPS_TOKEN" "${token}" "${ENV_FILE}"
+  ok "Generated PANEL_OPS_TOKEN in ${ENV_FILE}"
+}
+
+remove_legacy_certbot_container() {
+  docker rm -f awggui-certbot 2>/dev/null || true
+}
+
 load_images() {
   local tar_file=""
-  for tar_file in "${SCRIPT_DIR}"/images/awggui-all-*.tar; do
+  for tar_file in "${SCRIPT_DIR}"/images/awggui-all-*.tar.gz "${SCRIPT_DIR}"/images/awggui-all-*.tar; do
     [[ -f "${tar_file}" ]] && break
   done
-  [[ -f "${tar_file}" ]] || die "Missing ${SCRIPT_DIR}/images/awggui-all-*.tar"
+  [[ -f "${tar_file}" ]] || die "Missing ${SCRIPT_DIR}/images/awggui-all-*.tar.gz"
 
   log "Loading Docker images from ${tar_file} ..."
   docker load -i "${tar_file}"
@@ -524,6 +548,9 @@ main() {
 
   mkdir -p /etc/awg-gui
   seed_host_ssl_files
+  env_merge_missing_keys
+  ensure_panel_ops_token
+  remove_legacy_certbot_container
   load_images
 
   log "Starting containers ..."

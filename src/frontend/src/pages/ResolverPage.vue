@@ -129,15 +129,6 @@
                   </template>
                 </q-select>
 
-                <q-option-group
-                  v-model="forms[props.row.id].resolver_routing_mode"
-                  :options="routingModeOptions"
-                  color="primary"
-                  type="radio"
-                  class="q-mb-sm"
-                  :disable="!forms[props.row.id].resolver_enabled"
-                />
-
                 <q-input
                   v-model="forms[props.row.id].resolver_dns"
                   label="DNS (sing-box / upstream)"
@@ -269,10 +260,8 @@
                     <span v-if="firstEnabledGateway" class="text-grey-5">({{ firstEnabledGateway }})</span>
                   </li>
                   <li>{{ t('resolver.checkAllowedIps') }}</li>
-                  <li>{{ t('resolver.checkAllowedIpsSplit') }}</li>
                   <li>{{ t('resolver.checkPrivateDns') }}</li>
                   <li>{{ t('resolver.check2ip') }}</li>
-                  <li>{{ t('resolver.check2ipSplit') }}</li>
                 </ul>
               </q-card-section>
             </q-card>
@@ -287,9 +276,7 @@
           >
             <q-card flat class="faq-section-body">
               <q-card-section class="text-body2 text-grey-4">
-                <div class="q-mb-sm">{{ t('resolver.modeVdsSplitHint') }}</div>
-                <div class="q-mb-sm">{{ t('resolver.modeClientSplitHint') }}</div>
-                <div>{{ t('resolver.modeClientSplitCidrWarning') }}</div>
+                <div>{{ t('resolver.modeVdsSplitHint') }}</div>
               </q-card-section>
             </q-card>
           </q-expansion-item>
@@ -454,11 +441,6 @@ const firstEnabledGateway = computed(() => {
   return cfg?.gateway_ip || null
 })
 
-const routingModeOptions = computed(() => [
-  { label: t('resolver.modeVdsSplit'), value: 'vds_split' },
-  { label: t('resolver.modeClientSplit'), value: 'client_split' }
-])
-
 function formatTs (iso) {
   if (!iso) return '—'
   try {
@@ -513,7 +495,6 @@ function validateSubnet (cidr) {
 function formSnapshot (form) {
   return {
     resolver_enabled: !!form.resolver_enabled,
-    resolver_routing_mode: form.resolver_routing_mode === 'client_split' ? 'client_split' : 'vds_split',
     resolver_reject_quic: !!form.resolver_reject_quic,
     connection_id: form.connection_id || null,
     resolver_dns: String(form.resolver_dns || '1.1.1.1').trim(),
@@ -526,7 +507,6 @@ function formSnapshot (form) {
 function syncForm (cfg) {
   forms[cfg.id] = {
     resolver_enabled: !!cfg.resolver_enabled,
-    resolver_routing_mode: cfg.resolver_routing_mode === 'client_split' ? 'client_split' : 'vds_split',
     resolver_reject_quic: !!cfg.resolver_reject_quic,
     connection_id: cfg.connection_id || null,
     resolver_dns: cfg.resolver_dns || '1.1.1.1',
@@ -585,15 +565,6 @@ function previewAllowed (configId) {
   const cfg = serverConfigs.value.find(c => c.id === configId)
   if (!form || !cfg) return ''
   if (!form.resolver_enabled) return cfg.client_allowed_ips_preview || ''
-  if (form.resolver_routing_mode === 'client_split') {
-    const parts = ['198.18.0.0/15']
-    if (cfg.gateway_ip) parts.push(`${cfg.gateway_ip}/32`)
-    for (const cidr of form.user_subnets || []) {
-      const c = String(cidr || '').trim()
-      if (c) parts.push(c.includes('/') ? c : `${c}/32`)
-    }
-    return [...new Set(parts)].join(', ')
-  }
   return '0.0.0.0/0, ::/0'
 }
 
@@ -624,7 +595,6 @@ async function save (id) {
     const { data } = await withApplyProgress('resolver-save', () =>
       api.put(`/api/resolver/configs/${id}`, {
         resolver_enabled: form.resolver_enabled,
-        resolver_routing_mode: form.resolver_routing_mode === 'client_split' ? 'client_split' : 'vds_split',
         resolver_reject_quic: form.resolver_reject_quic,
         connection_id: form.connection_id,
         resolver_dns: form.resolver_dns,

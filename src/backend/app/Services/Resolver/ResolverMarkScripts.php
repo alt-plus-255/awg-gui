@@ -3,13 +3,14 @@
 namespace App\Services\Resolver;
 
 use App\Services\AmneziaWg\AmneziaWgService;
+use App\Services\Docker\DockerRuntime;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Process;
 
 class ResolverMarkScripts
 {
     public function __construct(
         private AmneziaWgService $awg,
+        private DockerRuntime $docker,
         private ResolverFileHelper $files,
     ) {}
 
@@ -223,10 +224,11 @@ SH;
 
         try {
             $container = $this->awg->containerName();
-            $result = Process::timeout(5)->run([
-                'docker', 'exec', $container,
-                'cat', '/usr/local/bin/reload-singbox-ping.sh',
-            ]);
+            $result = $this->docker->exec(
+                $container,
+                ['cat', '/usr/local/bin/reload-singbox-ping.sh'],
+                timeout: 5,
+            );
             if ($result->successful()) {
                 $sources[] = trim($result->output());
             }
@@ -345,14 +347,16 @@ SH;
         $container = $this->awg->containerName();
         $quoted = implode(' ', array_map('escapeshellarg', $clean));
         try {
-            Process::timeout(60)->run([
-                'docker', 'exec', $container,
-                'sh', '-c',
-                'for iface in '.$quoted.'; do '
-                .'sh /config/resolver-unmark.sh "$iface" 2>/dev/null || true; '
-                .'sh /config/resolver-mark.sh "$iface" 2>/dev/null || true; '
-                .'done',
-            ]);
+            $this->docker->exec(
+                $container,
+                ['sh', '-c',
+                    'for iface in '.$quoted.'; do '
+                    .'sh /config/resolver-unmark.sh "$iface" 2>/dev/null || true; '
+                    .'sh /config/resolver-mark.sh "$iface" 2>/dev/null || true; '
+                    .'done',
+                ],
+                timeout: 60,
+            );
         } catch (\Throwable $e) {
             Log::warning('resolver mark refresh: '.$e->getMessage());
         }

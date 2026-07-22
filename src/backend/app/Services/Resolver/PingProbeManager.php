@@ -3,9 +3,9 @@
 namespace App\Services\Resolver;
 
 use App\Services\AmneziaWg\AmneziaWgService;
+use App\Services\Docker\DockerRuntime;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Process;
 
 class PingProbeManager
 {
@@ -17,6 +17,7 @@ class PingProbeManager
 
     public function __construct(
         private AmneziaWgService $awg,
+        private DockerRuntime $docker,
         private ClashApiClient $clash,
         private ResolverPaths $paths,
     ) {}
@@ -51,10 +52,11 @@ class PingProbeManager
     public function isRunning(): bool
     {
         try {
-            $r = Process::timeout(5)->run([
-                'docker', 'exec', $this->awg->containerName(),
-                'sh', '-c', 'test -f /run/sing-box-ping.pid && kill -0 "$(cat /run/sing-box-ping.pid)" 2>/dev/null',
-            ]);
+            $r = $this->docker->exec(
+                $this->awg->containerName(),
+                ['sh', '-c', 'test -f /run/sing-box-ping.pid && kill -0 "$(cat /run/sing-box-ping.pid)" 2>/dev/null'],
+                timeout: 5,
+            );
 
             return $r->successful();
         } catch (\Throwable) {
@@ -153,10 +155,11 @@ class PingProbeManager
         $script = $this->pingScriptPath();
         $inContainer = $this->containerScriptPath($script);
 
-        $result = Process::timeout(30)->run([
-            'docker', 'exec', $this->awg->containerName(),
-            $inContainer, $action,
-        ]);
+        $result = $this->docker->exec(
+            $this->awg->containerName(),
+            [$inContainer, $action],
+            timeout: 30,
+        );
 
         if (! $result->successful()) {
             $err = trim($result->errorOutput()."\n".$result->output());

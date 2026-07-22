@@ -27,6 +27,6 @@ The **Connections** view shows a graph of VN peer connectivity: who can talk to 
 
 ## Client configs
 
-VN peers get ready-made `.conf` / QR files with the virtual subnet. Split-tunnel resolver is **not** used for VN — see [resolver.md](resolver.md).
+VN peers get ready-made `.conf` / QR files with the virtual subnet. The resolver is **not** used for VN — see [resolver.md](resolver.md).
 
 Create configs and attach peers on the [Configs & peers](configs-and-peers.md) page.

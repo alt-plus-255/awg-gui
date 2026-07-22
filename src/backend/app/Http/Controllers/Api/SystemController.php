@@ -4,15 +4,16 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Services\AmneziaWg\AmneziaWgService;
+use App\Services\Docker\DockerRuntime;
 use App\Services\System\HostMetricsService;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Process;
 
 class SystemController extends Controller
 {
     public function __construct(
         private AmneziaWgService $awg,
         private HostMetricsService $hostMetrics,
+        private DockerRuntime $docker,
     ) {}
 
     public function status()
@@ -87,8 +88,8 @@ class SystemController extends Controller
 
     public function restartAll()
     {
-        Process::start([
-            'docker', 'restart',
+        $this->docker->start([
+            'restart',
             $this->awg->containerName(),
             'awggui-caddy',
         ]);

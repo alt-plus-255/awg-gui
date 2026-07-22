@@ -7,10 +7,10 @@ use App\Models\AwgConfigPeer;
 use App\Models\ResolverConnection;
 use App\Models\Setting;
 use App\Services\AmneziaWg\AmneziaWgService;
+use App\Services\Docker\DockerRuntime;
 use App\Services\Resolver\PingProbeManager;
 use App\Services\Resolver\ResolverPaths;
 use App\Services\Resolver\ResolverService;
-use Illuminate\Support\Facades\Process;
 
 class DiagnosticsService
 {
@@ -19,6 +19,9 @@ class DiagnosticsService
         ['name' => 'awggui-app', 'label' => 'panel_api'],
         ['name' => 'awggui-db', 'label' => 'MariaDB'],
         ['name' => 'awggui-caddy', 'label' => 'Caddy'],
+        ['name' => 'awggui-docker-proxy', 'label' => 'docker_proxy'],
+        ['name' => 'awggui-panel-ops', 'label' => 'panel_ops'],
+        ['name' => 'awggui-certbot', 'label' => 'certbot'],
     ];
 
     private const MASK_JSON_KEYS = [
@@ -34,6 +37,7 @@ class DiagnosticsService
 
     public function __construct(
         private AmneziaWgService $awg,
+        private DockerRuntime $docker,
         private ResolverService $resolver,
     ) {}
 
@@ -226,10 +230,11 @@ class DiagnosticsService
         $detail = __('system.awg_container_not_running');
         if ($this->awg->isContainerRunning()) {
             try {
-                $r = Process::timeout(10)->run([
-                    'docker', 'exec', $this->awg->containerName(),
-                    'sh', '-c', 'pgrep -x sing-box >/dev/null && echo yes || echo no',
-                ]);
+                $r = $this->docker->exec(
+                    $this->awg->containerName(),
+                    ['sh', '-c', 'pgrep -x sing-box >/dev/null && echo yes || echo no'],
+                    timeout: 10,
+                );
                 $running = trim($r->output()) === 'yes';
                 $detail = $running ? __('system.process_running') : __('system.process_not_found');
             } catch (\Throwable $e) {
@@ -290,10 +295,11 @@ class DiagnosticsService
         }
 
         try {
-            $r = Process::timeout(8)->run([
-                'docker', 'exec', $this->awg->containerName(),
-                'sh', '-c', 'ip link show '.$iface.' >/dev/null 2>&1 && echo yes || echo no',
-            ]);
+            $r = $this->docker->exec(
+                $this->awg->containerName(),
+                ['sh', '-c', 'ip link show '.$iface.' >/dev/null 2>&1 && echo yes || echo no'],
+                timeout: 8,
+            );
 
             return trim($r->output()) === 'yes';
         } catch (\Throwable) {
@@ -304,10 +310,11 @@ class DiagnosticsService
     private function awgShowAvailable(string $iface): bool
     {
         try {
-            $r = Process::timeout(8)->run([
-                'docker', 'exec', $this->awg->containerName(),
-                'awg', 'show', $iface,
-            ]);
+            $r = $this->docker->exec(
+                $this->awg->containerName(),
+                ['awg', 'show', $iface],
+                timeout: 8,
+            );
 
             return $r->successful();
         } catch (\Throwable) {

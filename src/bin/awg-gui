@@ -14,7 +14,7 @@ INSTALL_ROOT="${INSTALL_ROOT:-}"
 COMPOSE_FILE="${COMPOSE_FILE:-${INSTALL_ROOT}/src/docker-compose.yml}"
 ENV_FILE="${ENV_FILE:-${INSTALL_ROOT}/src/.env}"
 PROJECT_NAME="${PROJECT_NAME:-awggui}"
-EXPECTED_SERVICES=(caddy app db awg)
+EXPECTED_SERVICES=(caddy app db awg docker-proxy panel-ops certbot)
 
 log() { echo "[awg-gui] $*"; }
 err() { echo "[awg-gui] ERROR: $*" >&2; }
@@ -174,6 +174,7 @@ awg-gui — AmneziaWG GUI control
 Usage:
   awg-gui help
   awg-gui status
+  awg-gui info
   awg-gui ensure-up
   awg-gui restart awg|panel|all
   awg-gui password [--random] [--password=SECRET]
@@ -188,6 +189,9 @@ Endpoint:
   awg-gui endpoint 203.0.113.10       Set public endpoint (IP or hostname)
   awg-gui endpoint 203.0.113.10 51821   Set endpoint and AWG UDP port
   awg-gui endpoint --auto             Use auto-detect for public endpoint
+
+Panel:
+  awg-gui info                        Show panel URL, host, port, and login (no password)
 
 Password:
   awg-gui password                  Generate a random admin password (default)
@@ -206,6 +210,43 @@ EOF
 cmd_status() {
   require_root
   compose ps
+}
+
+cmd_info() {
+  require_root
+  if [[ ! -f "${COMPOSE_FILE}" ]]; then
+    err "Compose file not found: ${COMPOSE_FILE}"
+    return 1
+  fi
+
+  if ! wait_docker 10; then
+    err "Docker daemon not ready"
+    return 1
+  fi
+
+  if ! docker inspect -f '{{.State.Running}}' "awggui-app" 2>/dev/null | grep -q true; then
+    load_webhook
+    local host="${PANEL_DOMAIN:-}"
+    if [[ -z "${host}" ]]; then
+      host="${SERVER_ENDPOINT:-}"
+      if [[ -z "${host}" || "${host}" == "auto" ]]; then
+        host="$(hostname -I 2>/dev/null | awk '{print $1}')"
+        host="${host:-127.0.0.1}"
+      fi
+    fi
+    local port="${PANEL_PORT:-8877}"
+    if [[ "${SSL_ENABLED:-0}" == "1" && -n "${PANEL_DOMAIN:-}" ]]; then
+      port="${PANEL_HTTPS_PORT:-7443}"
+    fi
+    log "Panel access info (offline fallback):"
+    echo "  URL:      $(panel_url)"
+    echo "  Host:     ${host}"
+    echo "  Port:     ${port}"
+    echo "  Login:    admin"
+    return 0
+  fi
+
+  compose exec -T app php artisan panel:info
 }
 
 cmd_ensure_up() {
@@ -240,7 +281,7 @@ cmd_ensure_up() {
   sleep 3
   if ! services_running; then
     send_failure_webhook "service_unhealthy" "Services still not running after compose up" \
-      '{"services":["caddy","app","db","awg"]}'
+      '{"services":["caddy","app","db","awg","docker-proxy","panel-ops","certbot"]}'
     return 1
   fi
 
@@ -487,6 +528,7 @@ main() {
   case "${cmd}" in
     help|-h|--help) cmd_help ;;
     status) cmd_status ;;
+    info) cmd_info ;;
     ensure-up) cmd_ensure_up ;;
     restart) cmd_restart "$@" ;;
     password) cmd_password "$@" ;;

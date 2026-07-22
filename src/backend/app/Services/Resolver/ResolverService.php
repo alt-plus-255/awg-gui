@@ -5,8 +5,8 @@ namespace App\Services\Resolver;
 use App\Models\AwgConfig;
 use App\Models\ResolverConnection;
 use App\Services\AmneziaWg\AmneziaWgService;
+use App\Services\Docker\DockerRuntime;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Process;
 use Illuminate\Validation\ValidationException;
 use RuntimeException;
 
@@ -71,6 +71,7 @@ class ResolverService
 
     public function __construct(
         private AmneziaWgService $awg,
+        private DockerRuntime $docker,
         private ResolverPaths $paths,
         private ResolverFileHelper $files,
         private MergedRulesetWriter $mergedRulesets,
@@ -139,42 +140,10 @@ class ResolverService
         return $addr !== '' ? $addr : '10.66.66.1';
     }
 
-    /**
-     * Compact AllowedIPs for client_split mode.
-     * Community ip_cidr intentionally omitted — kept only on VDS.
-     *
-     * @return list<string>
-     */
-    public function clientSplitAllowedIps(AwgConfig $config): array
-    {
-        $ips = [self::FAKEIP_CIDR, $this->gatewayIp($config).'/32'];
-
-        foreach ($config->user_subnets ?? [] as $cidr) {
-            $cidr = trim((string) $cidr);
-            if ($cidr === '') {
-                continue;
-            }
-            if (! str_contains($cidr, '/')) {
-                if (filter_var($cidr, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
-                    $cidr .= '/32';
-                } else {
-                    continue;
-                }
-            }
-            $ips[] = $cidr;
-        }
-
-        return array_values(array_unique($ips));
-    }
-
     public function clientAllowedIpsPreview(AwgConfig $config): string
     {
         if (! $config->resolver_enabled) {
             return (string) ($config->client_allowed_ips ?: '');
-        }
-
-        if ($config->resolverRoutingMode() === AwgConfig::ROUTING_MODE_CLIENT_SPLIT) {
-            return implode(', ', $this->clientSplitAllowedIps($config));
         }
 
         return '0.0.0.0/0, ::/0';
@@ -389,10 +358,11 @@ class ResolverService
     public function isSingBoxRunning(): bool
     {
         try {
-            $r = Process::timeout(10)->run([
-                'docker', 'exec', $this->awg->containerName(),
-                'sh', '-c', 'pgrep -x sing-box >/dev/null && echo yes || echo no',
-            ]);
+            $r = $this->docker->exec(
+                $this->awg->containerName(),
+                ['sh', '-c', 'pgrep -x sing-box >/dev/null && echo yes || echo no'],
+                timeout: 10,
+            );
 
             return trim($r->output()) === 'yes';
         } catch (\Throwable) {
@@ -553,8 +523,10 @@ class ResolverService
 
             try {
                 $hashBefore = $fingerprint->hash($conn);
-                $nodes = $fetcher->fetchMerged($url);
+                $body = trim((string) ($conn->subscription_body ?? ''));
+                $nodes = $fetcher->fetchMerged($url, $body !== '' ? $body : null);
                 $existingNodes = is_array($conn->subscription_nodes) ? $conn->subscription_nodes : [];
+                // Exact replace from URL contents — do not keep stale / invented nodes.
                 if (! $fingerprint->nodesEqual($existingNodes, $nodes)) {
                     $conn->subscription_nodes = $nodes;
                 }
@@ -601,6 +573,32 @@ class ResolverService
         }
 
         return $anyChanged;
+    }
+
+    /**
+     * Merge subscription nodes by key: fetched updates existing, unseen existing nodes are kept.
+     *
+     * @param  list<array<string, mixed>>  $existing
+     * @param  list<array<string, mixed>>  $fetched
+     * @return list<array<string, mixed>>
+     */
+    public function mergeSubscriptionNodes(array $existing, array $fetched): array
+    {
+        $byKey = [];
+        foreach ($existing as $node) {
+            if (! is_array($node) || empty($node['key'])) {
+                continue;
+            }
+            $byKey[(string) $node['key']] = $node;
+        }
+        foreach ($fetched as $node) {
+            if (! is_array($node) || empty($node['key'])) {
+                continue;
+            }
+            $byKey[(string) $node['key']] = $node;
+        }
+
+        return array_values($byKey);
     }
 
     /**
@@ -1015,7 +1013,8 @@ class ResolverService
             return 'direct';
         }
         if ($conn->isUrltestMode()) {
-            return $this->routingOutboundTag($conn);
+            // Use urltest parent tag so sing-box picks the live node dynamically.
+            return $conn->outboundTag();
         }
         if (is_array($conn->outbound) && ! empty($conn->outbound['type'])) {
             return $conn->outboundTag();
@@ -1051,11 +1050,11 @@ class ResolverService
         $container = $this->awg->containerName();
         try {
             // Prefer volume copy (list CIDR routes) so AWG image rebuild is not required.
-            Process::timeout(30)->run([
-                'docker', 'exec', $container,
-                'sh', '-c',
-                'if [ -x /config/reload-singbox.sh ]; then /config/reload-singbox.sh; else /usr/local/bin/reload-singbox.sh; fi',
-            ]);
+            $this->docker->exec(
+                $container,
+                ['sh', '-c', 'if [ -x /config/reload-singbox.sh ]; then /config/reload-singbox.sh; else /usr/local/bin/reload-singbox.sh; fi'],
+                timeout: 30,
+            );
         } catch (\Throwable $e) {
             Log::warning('reload-singbox: '.$e->getMessage());
         }
@@ -1140,7 +1139,6 @@ class ResolverService
                     'type' => $c->type,
                     'enabled' => (bool) $c->enabled,
                     'resolver_enabled' => (bool) $c->resolver_enabled,
-                    'resolver_routing_mode' => $c->resolverRoutingMode(),
                     'resolver_reject_quic' => (bool) $c->resolver_reject_quic,
                     'connection_id' => $c->connection_id,
                     'connection_name' => $conn?->name,
