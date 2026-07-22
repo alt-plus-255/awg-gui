@@ -2,93 +2,104 @@
 
 **Languages:** [Русский](../ru/resolver.md) | [English](resolver.md) | [README](../../README.en.md)
 
-The **Resolver** page in AWG-GUI configures routing for **Server** configs. Virtual networks do **not** use the resolver.
+The **Resolver** page in AWG-GUI configures routing for **Server** configs. [Virtual networks](virtual-networks.md) do **not** use the resolver.
 
-## Overview
+The resolver is a “smart VPN via VDS”: all client traffic goes to the server (`AllowedIPs = 0.0.0.0/0`), while domains from selected lists exit through a separate **Connection** (VLESS, VMess, subscription, etc.) instead of the VDS IP.
 
-1. **sing-box** with FakeIP and rulesets runs inside the AWG container on the VDS.
-2. Community lists ([allow-domains](https://github.com/itdoginfo/allow-domains)) are downloaded to disk (`rulesets/*.srs`) — **List settings** page.
-3. Each server config picks a **Connection** — internet exit point (VLESS, VMess, subscription, etc.).
-4. With the resolver enabled, the client `.conf` gets `DNS = gateway` and `AllowedIPs` for the selected mode.
+## Panel pages
 
-## Two routing modes
+| Page | Purpose |
+|------|---------|
+| **Resolver** | Enable resolver on a server config, pick lists, custom domains/CIDRs, connection, DNS upstream, QUIC blocking |
+| **Connections** | Internet exit points for sing-box (outbounds) |
+| **List settings** | Download community rulesets (`.srs`), sync interval, custom lists |
+| **Diagnostics** | Check sing-box, on-disk rulesets, DNS → FakeIP |
 
-### 1. Full tunnel on VDS (`vds_split`) — default
+## How it works
 
-**In the panel:** “Full tunnel on VDS (AllowedIPs 0.0.0.0/0)”.
+1. **sing-box** with FakeIP (`198.18.0.0/15`) and rulesets runs inside the AWG container on the VDS.
+2. Community lists ([allow-domains](https://github.com/itdoginfo/allow-domains)) are downloaded to disk (`rulesets/*.srs`) — **List settings**.
+3. Each server config on **Resolver** picks a **Connection** — upstream for listed domains.
+4. The client gets a `.conf` / QR with `DNS = gateway` and `AllowedIPs = 0.0.0.0/0, ::/0`.
 
-**Client `.conf`:**
+```mermaid
+flowchart LR
+  Client[AmneziaWG client] -->|all traffic| VDS[VDS / AWG]
+  VDS -->|DNS query| FakeIP[sing-box FakeIP]
+  FakeIP -->|listed domain| Conn[Connection]
+  FakeIP -->|domain outside lists| VDSip[Exit via VDS IP]
+  Conn --> Internet[Internet]
+  VDSip --> Internet
 ```
-DNS = gateway
+
+## Client config
+
+With the resolver enabled, the `.conf` contains:
+
+```
+DNS = <gateway>
 AllowedIPs = 0.0.0.0/0, ::/0
 ```
 
-**Behavior:**
+`<gateway>` is the server address in the AWG subnet (e.g. `10.66.66.1`).
+
+## Traffic routing
 
 | Traffic | Route |
 |---------|-------|
 | All client traffic | Via AmneziaWG to VDS |
 | Listed domains (FakeIP) | sing-box → selected **Connection** |
 | Sites outside lists, Speedtest, 2ip.ru | From **VDS server IP** |
-| IP-CIDR from community lists | Proxied on VDS (full support) |
+| IP-CIDR from community lists | Proxied on VDS |
+| Custom subnets (CIDR) | Handled on VDS in sing-box rules |
 
-**When to use:** full VPN via VDS, but blocked resources (Telegram, YouTube…) exit through a separate upstream connection instead of the VDS IP.
+Use when you want a classic “full VPN via server”, but blocked resources (Telegram, YouTube, Meta…) exit through a separate upstream connection.
 
-### 2. Split-tunnel (`client_split`) — test mode
+## Quick setup
 
-> **Split-tunnel is currently in test mode.** It works and is available in the panel, but behavior and limits may still change. For stable production use, prefer **full tunnel on VDS**.
+1. **List settings** — download the community lists you need (or create custom ones).
+2. **Connections** — add and verify an exit point (VLESS / subscription / …).
+3. **Resolver** — expand a server config:
+   - enable the resolver;
+   - select a **Connection**;
+   - pick at least one list, custom domain, or subnet;
+   - optionally set DNS upstream and “Block QUIC”;
+   - click **Save**.
+4. On the phone, **delete** the old AmneziaWG server and **re-import** the QR / `.conf`.
 
-**In the panel:** “Split-tunnel (lists only via VDS)”.
+Without re-import, the client may keep old `DNS` / `AllowedIPs` — lists will not work.
 
-**Client `.conf`:**
-```
-DNS = gateway
-AllowedIPs = 198.18.0.0/15, <gateway>/32
-```
-Plus custom subnets from “Custom subnets” if added.
+## Lists
 
-**Behavior:**
+- **Community lists** — YouTube, Meta, Telegram, Discord, TikTok, etc. Sync in **List settings** (default interval 6 h). **Save** on the Resolver page does **not** download lists over HTTP.
+- **Custom domains and subnets** — on the config card on **Resolver**.
+- **Mutually exclusive lists** — `russia_inside`, `russia_outside`, `ukraine_inside`: only one from this group can be selected at a time.
+- **Block QUIC** — forces TCP for FakeIP domains (UDP/443), useful for YouTube and other listed services.
 
-| Traffic | Route |
-|---------|-------|
-| Listed domains (FakeIP) + DNS | Through tunnel → **Connection** |
-| All other traffic | **Direct from client** (SIM/Wi‑Fi) |
-| 2ip.ru, Speedtest | **Client** IP, not VDS |
-| IP-CIDR from community lists | **Not** proxied (direct IP without DNS → FakeIP does not apply) |
+## Connections
 
-**When to use:** only listed resources need VPN; the rest of the internet stays off-tunnel with carrier/Wi‑Fi IP.
+The resolver is **not** applied without a selected, enabled connection. Create a connection on **Connections**, then assign it in the config settings.
 
-**Split limitation:** for full IP-CIDR support from community lists, use full tunnel on VDS.
+## Phone check
 
-## Lists and connections
+| Check | Expected result |
+|-------|-----------------|
+| 2ip.ru | **VDS** IP, not the client |
+| Site / app from a list | Works via the VPN connection |
+| `DNS` in `.conf` | Server `gateway` |
+| `AllowedIPs` | `0.0.0.0/0, ::/0` |
+| Private DNS (Android) | Disabled |
+| iCloud Private Relay (iPhone) | Disabled while testing |
 
-- **Community lists** — YouTube, Meta, Telegram, Discord, etc.; sync in **List settings** (default interval 6 h).
-- **Custom domains and subnets** — on the config card on the Resolver page.
-- **Connections** — separate page; resolver is not applied without a selected connection.
-- **Block QUIC** — forces TCP for FakeIP domains (like YouTube QUIC reject, but for all selected lists).
-
-## AmneziaWG: re-import config
-
-**iPhone and Android:** after **enabling**, **disabling**, or **changing** the resolver mode:
-
-1. Delete the server in AmneziaWG.
-2. Re-import QR or `.conf` from the panel.
-
-Without re-import, old `AllowedIPs` remain — lists (Telegram, YouTube, Meta…) will not work.
-
-**Phone check:**
-
-| Mode | 2ip.ru | Listed domain |
-|------|--------|---------------|
-| Full tunnel | VDS IP | Via VPN connection |
-| Split-tunnel | Client IP | Via VPN connection |
+Do not test list routing with Speedtest — open a specific site or app from a selected list.
 
 ## Diagnostics and common issues
 
-- **iPhone:** disable iCloud Private Relay while testing.
+- **Diagnostics** page — sing-box, on-disk `.srs`, DNS → FakeIP for enabled lists.
 - **Android:** disable Private DNS / DoH; if Telegram fails, clear the app cache.
-- Do not test “full VPN” with Speedtest — open a site from the lists.
-- The **Diagnostics** button checks sing-box, `.srs` files on disk, and DNS → FakeIP for each enabled list.
+- **iPhone:** disable iCloud Private Relay.
+- Make sure community lists are downloaded (**List settings** → “On disk”).
+- After changing endpoint, UDP port, or resolver settings — re-export / re-import configs on devices.
 
 ## sing-box in the AWG image
 

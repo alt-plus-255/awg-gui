@@ -3,11 +3,14 @@
 namespace App\Services\Resolver;
 
 use App\Services\AmneziaWg\AmneziaWgService;
-use Illuminate\Support\Facades\Process;
+use App\Services\Docker\DockerRuntime;
 
 class ClashApiClient
 {
-    public function __construct(private AmneziaWgService $awg) {}
+    public function __construct(
+        private AmneziaWgService $awg,
+        private DockerRuntime $docker,
+    ) {}
 
     /**
      * @return array{ok: bool, status: int, body: ?array, raw: string, error: ?string}
@@ -140,12 +143,12 @@ class ClashApiClient
                 'url' => ResolverService::DELAY_TEST_URL,
                 'timeout' => $timeoutMs,
             ]);
-            $running[$key] = Process::timeout($procTimeout)->start([
-                'docker', 'exec', $container,
+            $running[$key] = $this->docker->start([
+                'exec', $container,
                 'curl', '-sS', '-m', (string) $curlTimeout,
                 '-w', '___HTTP_STATUS___%{http_code}',
                 $url,
-            ]);
+            ], timeout: $procTimeout);
         }
 
         while ($running !== []) {
@@ -200,12 +203,15 @@ class ClashApiClient
         $url = 'http://'.$addr.$path.$qs;
 
         try {
-            $r = Process::timeout($timeoutSec + 5)->run([
-                'docker', 'exec', $this->awg->containerName(),
-                'curl', '-sS', '-m', (string) $timeoutSec,
-                '-w', '___HTTP_STATUS___%{http_code}',
-                $url,
-            ]);
+            $r = $this->docker->exec(
+                $this->awg->containerName(),
+                [
+                    'curl', '-sS', '-m', (string) $timeoutSec,
+                    '-w', '___HTTP_STATUS___%{http_code}',
+                    $url,
+                ],
+                timeout: $timeoutSec + 5,
+            );
             $out = $r->output();
             if ($out === '' || $out === false) {
                 return [

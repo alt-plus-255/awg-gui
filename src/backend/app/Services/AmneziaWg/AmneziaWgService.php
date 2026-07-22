@@ -7,9 +7,9 @@ use App\Models\AwgConfigPeer;
 use App\Models\Setting;
 use App\Models\VpnClient;
 use App\Services\Resolver\ResolverService;
+use App\Services\Docker\DockerRuntime;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Process;
 use RuntimeException;
 
 class AmneziaWgService
@@ -19,6 +19,8 @@ class AmneziaWgService
 
     /** @var array<string, string> */
     private array $clientAllowedIpsStringCache = [];
+
+    public function __construct(private DockerRuntime $docker) {}
 
     public function primeConfigPeerCache(AwgConfig $config): void
     {
@@ -62,7 +64,7 @@ class AmneziaWgService
     public function isContainerRunning(?string $name = null): bool
     {
         $name = $name ?? $this->containerName();
-        $result = Process::run(['docker', 'inspect', '-f', '{{.State.Running}}', $name]);
+        $result = $this->docker->run(['inspect', '-f', '{{.State.Running}}', $name]);
 
         return $result->successful() && trim($result->output()) === 'true';
     }
@@ -121,10 +123,11 @@ class AmneziaWgService
             return null;
         }
 
-        $privateResult = Process::timeout(10)->run([
-            'docker', 'exec', $this->containerName(),
-            'awg', 'genkey',
-        ]);
+        $privateResult = $this->docker->exec(
+            $this->containerName(),
+            ['awg', 'genkey'],
+            timeout: 10,
+        );
         if (! $privateResult->successful()) {
             return null;
         }
@@ -134,10 +137,12 @@ class AmneziaWgService
             return null;
         }
 
-        $publicResult = Process::timeout(10)->input($private."\n")->run([
-            'docker', 'exec', '-i', $this->containerName(),
-            'awg', 'pubkey',
-        ]);
+        $publicResult = $this->docker->execInteractive(
+            $this->containerName(),
+            ['awg', 'pubkey'],
+            timeout: 10,
+            input: $private."\n",
+        );
         if (! $publicResult->successful()) {
             return null;
         }
@@ -575,13 +580,7 @@ class AmneziaWgService
         }
 
         if ($config->isResolverEnabled()) {
-            if ($config->isClientSplitResolver()) {
-                // Split-tunnel: only FakeIP + gateway (+ user_subnets) in client AllowedIPs.
-                // Community ip_cidr stay on VDS (MARK/sing-box); not in peer .conf.
-                return app(ResolverService::class)->clientSplitAllowedIps($config);
-            }
-
-            // vds_split (default): full tunnel to VDS — non-list MASQUERADE → VDS IP.
+            // Full tunnel to VDS — non-list MASQUERADE → VDS IP.
             // List domains use FakeIP → sing-box → user VPN. Never put list CIDRs here.
             return ['0.0.0.0/0', '::/0'];
         }
@@ -1135,10 +1134,10 @@ class AmneziaWgService
     private function dumpStatsForIface(string $iface): array
     {
         $byPub = [];
-        $result = Process::run([
-            'docker', 'exec', $this->containerName(),
-            'awg', 'show', $iface, 'dump',
-        ]);
+        $result = $this->docker->exec(
+            $this->containerName(),
+            ['awg', 'show', $iface, 'dump'],
+        );
 
         if (! $result->successful()) {
             Log::warning('awg stats dump failed', [
@@ -1560,9 +1559,7 @@ class AmneziaWgService
         try {
             $this->applyConfig();
 
-            $result = Process::timeout(60)->run([
-                'docker', 'restart', $this->containerName(),
-            ]);
+            $result = $this->docker->restart($this->containerName(), timeout: 60);
 
             return [
                 'ok' => $result->successful(),

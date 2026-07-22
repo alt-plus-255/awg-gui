@@ -4,7 +4,7 @@ namespace App\Services\Resolver;
 
 use App\Models\AwgConfig;
 use App\Services\AmneziaWg\AmneziaWgService;
-use Illuminate\Support\Facades\Process;
+use App\Services\Docker\DockerRuntime;
 use RuntimeException;
 
 class MergedRulesetWriter
@@ -18,6 +18,7 @@ class MergedRulesetWriter
 
     public function __construct(
         private AmneziaWgService $awg,
+        private DockerRuntime $docker,
         private ResolverPaths $paths,
         private ResolverFileHelper $files,
     ) {}
@@ -74,12 +75,15 @@ class MergedRulesetWriter
 
         $outName = '.decompile_'.$tag.'.json';
         $container = $this->awg->containerName();
-        $r = Process::timeout(60)->run([
-            'docker', 'exec', $container,
-            'sing-box', 'rule-set', 'decompile',
-            '-o', '/config/rulesets/'.$outName,
-            '/config/rulesets/'.$tag.'.srs',
-        ]);
+        $r = $this->docker->exec(
+            $container,
+            [
+                'sing-box', 'rule-set', 'decompile',
+                '-o', '/config/rulesets/'.$outName,
+                '/config/rulesets/'.$tag.'.srs',
+            ],
+            timeout: 60,
+        );
 
         if (! $r->successful() || ! is_file($cachePath)) {
             @unlink($cachePath);

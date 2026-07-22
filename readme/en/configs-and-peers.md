@@ -16,7 +16,7 @@ Config types:
 
 | Type | Purpose |
 |------|---------|
-| **Server** | Classic VPN: clients reach the internet via the server (or split-tunnel via the [resolver](resolver.md)) |
+| **Server** | Classic VPN: clients reach the internet via the server (or via the [resolver](resolver.md)) |
 | **Virtual network** | Isolated LAN between peers — see [virtual-networks.md](virtual-networks.md) |
 
 When creating a config the panel automatically allocates a free `iface` and UDP port.

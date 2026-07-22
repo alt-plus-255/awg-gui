@@ -3,19 +3,23 @@
 namespace App\Services\AmneziaWg;
 
 use App\Models\Setting;
+use App\Services\Docker\DockerRuntime;
+use App\Services\Docker\PanelOpsClient;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Process;
 use RuntimeException;
 
 class SslCertificateService
 {
-    private const CERTBOT_CONTAINER = 'awggui-certbot';
-
     private const CHALLENGE_WAIT_SECONDS = 90;
 
     private const CERTBOT_FINISH_SECONDS = 180;
 
-    public function __construct(private AmneziaWgService $awg) {}
+    public function __construct(
+        private AmneziaWgService $awg,
+        private DockerRuntime $docker,
+        private PanelOpsClient $panelOps,
+        private CertbotProcessTracker $certbot,
+    ) {}
 
     public function hostGuiDir(): string
     {
@@ -188,7 +192,7 @@ class SslCertificateService
         $this->awg->assertDomainPointsToPublicIp($domain, $endpoint);
 
         $existing = $this->readPendingChallenge();
-        if ($existing !== null && $this->isCertbotRunning()) {
+        if ($existing !== null && $this->certbot->isRunning()) {
             Setting::setValue('ssl_email', $email);
             Setting::setValue('ssl_status', 'pending');
             Setting::setValue('ssl_error', '');
@@ -210,13 +214,9 @@ class SslCertificateService
         $this->removeFile($this->challengeDir().'/done');
         $this->removeFile($this->challengeDir().'/abort');
 
-        $args = [
-            'docker', 'run', '-d',
-            '--name', self::CERTBOT_CONTAINER,
-            '-v', '/etc/awg-gui/certs:/etc/letsencrypt',
-            '-v', '/etc/awg-gui/certbot/hooks:/hooks:ro',
-            '-v', '/etc/awg-gui/certbot/challenge:/challenge',
-            'certbot/certbot',
+        $this->certbot->clearExitCode();
+
+        $certbotArgs = [
             'certonly',
             '--manual',
             '--preferred-challenges', 'dns',
@@ -231,10 +231,19 @@ class SslCertificateService
         ];
 
         if ($forceRenew || is_readable($this->hostGuiDir().'/certs/live/panel/fullchain.pem')) {
-            $args[] = '--force-renewal';
+            $certbotArgs[] = '--force-renewal';
         }
 
-        $start = Process::timeout(60)->run($args);
+        if (! $this->docker->containerRunning($this->certbot->containerName())) {
+            Setting::setValue('ssl_status', 'error');
+            Setting::setValue('ssl_error', __('settings.certbot_start_failed'));
+            throw new RuntimeException(Setting::getValue('ssl_error'));
+        }
+
+        $start = $this->docker->execDetached(
+            $this->certbot->containerName(),
+            array_merge(['/hooks/run-certbot.sh'], $certbotArgs),
+        );
         if (! $start->successful()) {
             Setting::setValue('ssl_status', 'error');
             $err = trim($start->errorOutput() ?: $start->output()) ?: __('settings.certbot_start_failed');
@@ -249,9 +258,9 @@ class SslCertificateService
                 return array_merge($challenge, ['email' => $email]);
             }
 
-            if (! $this->isCertbotRunning()) {
-                $logs = $this->certbotLogs();
-                $this->cleanupCertbotContainer();
+            if (! $this->certbot->isRunning()) {
+                $logs = $this->certbot->logs();
+                $this->certbot->clearExitCode();
                 if ($this->hasLiveCertificate() || str_contains($logs, 'Successfully received certificate')) {
                     $this->activateInstalledCertificate();
 
@@ -285,7 +294,7 @@ class SslCertificateService
     public function completeIssue(): array
     {
         $challenge = $this->readPendingChallenge();
-        if ($challenge === null && ! $this->isCertbotRunning()) {
+        if ($challenge === null && ! $this->certbot->isRunning()) {
             $recovered = $this->recoverIfCertificateExists();
             if ($recovered !== null) {
                 return $recovered;
@@ -300,19 +309,19 @@ class SslCertificateService
 
         $deadline = time() + self::CERTBOT_FINISH_SECONDS;
         while (time() < $deadline) {
-            if (! $this->isCertbotRunning()) {
+            if (! $this->certbot->isRunning()) {
                 break;
             }
             usleep(500_000);
         }
 
-        if ($this->isCertbotRunning()) {
+        if ($this->certbot->isRunning()) {
             throw new RuntimeException(__('settings.certbot_still_running'));
         }
 
-        $exit = $this->certbotExitCode();
-        $logs = $this->certbotLogs();
-        $this->cleanupCertbotContainer();
+        $exit = $this->certbot->exitCode();
+        $logs = $this->certbot->logs();
+        $this->certbot->clearExitCode();
 
         $liveOk = $this->hasLiveCertificate();
         $logsSayOk = str_contains($logs, 'Successfully received certificate')
@@ -390,11 +399,10 @@ class SslCertificateService
             @file_put_contents($dir.'/abort', '1');
         }
 
-        if ($this->isCertbotRunning()) {
-            Process::timeout(30)->run(['docker', 'rm', '-f', self::CERTBOT_CONTAINER]);
-        } else {
-            $this->cleanupCertbotContainer();
+        if ($this->certbot->isRunning()) {
+            $this->certbot->stopProcess();
         }
+        $this->certbot->clearExitCode();
 
         foreach (['ready', 'done', 'abort', 'domain', 'validation', 'failed'] as $name) {
             $this->removeFile($dir.'/'.$name);
@@ -407,41 +415,21 @@ class SslCertificateService
 
     public function recreateCaddy(): void
     {
-        $composeDir = rtrim((string) env('HOST_COMPOSE_DIR', '/compose'), '/');
-        $composeFile = $composeDir.'/docker-compose.yml';
-        $envFile = $composeDir.'/.env';
-
-        if (! is_file($composeFile) || ! is_file($envFile)) {
-            Log::warning('compose files not reachable for caddy recreate', [
-                'compose' => $composeFile,
-                'env' => $envFile,
-            ]);
-            $this->reloadCaddy();
-
-            return;
-        }
-
-        $result = Process::timeout(180)->run([
-            'docker', 'compose',
-            '-p', 'awggui',
-            '--env-file', $envFile,
-            '-f', $composeFile,
-            'up', '-d', '--force-recreate', '--no-deps', 'caddy',
-        ]);
-
-        if (! $result->successful()) {
-            $err = trim($result->errorOutput() ?: $result->output());
-            Log::error('caddy recreate failed', ['err' => $err]);
-            throw new RuntimeException($err !== '' ? $err : __('settings.caddy_recreate_failed'));
+        try {
+            $this->panelOps->recreateCaddy();
+        } catch (\Throwable $e) {
+            Log::error('caddy recreate failed', ['err' => $e->getMessage()]);
+            throw new RuntimeException($e->getMessage() !== '' ? $e->getMessage() : __('settings.caddy_recreate_failed'));
         }
     }
 
     public function reloadCaddy(): void
     {
-        $result = Process::timeout(30)->run([
-            'docker', 'exec', 'awggui-caddy',
-            'caddy', 'reload', '--config', '/etc/caddy/Caddyfile',
-        ]);
+        $result = $this->docker->exec(
+            'awggui-caddy',
+            ['caddy', 'reload', '--config', '/etc/caddy/Caddyfile'],
+            timeout: 30,
+        );
 
         if (! $result->successful()) {
             $err = trim($result->errorOutput() ?: $result->output());
@@ -503,36 +491,6 @@ class SslCertificateService
         return gmdate('c', (int) $cert['validTo_time_t']);
     }
 
-    private function isCertbotRunning(): bool
-    {
-        $result = Process::run(['docker', 'inspect', '-f', '{{.State.Running}}', self::CERTBOT_CONTAINER]);
-
-        return $result->successful() && trim($result->output()) === 'true';
-    }
-
-    private function certbotExitCode(): int
-    {
-        $result = Process::run(['docker', 'inspect', '-f', '{{.State.ExitCode}}', self::CERTBOT_CONTAINER]);
-        if (! $result->successful()) {
-            return 1;
-        }
-
-        return (int) trim($result->output());
-    }
-
-    private function certbotLogs(): string
-    {
-        $result = Process::timeout(15)->run(['docker', 'logs', '--tail', '80', self::CERTBOT_CONTAINER]);
-        $out = trim($result->output()."\n".$result->errorOutput());
-
-        return mb_substr($out, 0, 2000);
-    }
-
-    private function cleanupCertbotContainer(): void
-    {
-        Process::timeout(30)->run(['docker', 'rm', '-f', self::CERTBOT_CONTAINER]);
-    }
-
     private function ensureHostLayout(): void
     {
         foreach ([
@@ -586,8 +544,22 @@ rm -f /challenge/failed
 SH);
         }
 
+        $wrapper = $this->hooksDir().'/run-certbot.sh';
+        if (! is_file($wrapper)) {
+            file_put_contents($wrapper, <<<'SH'
+#!/bin/sh
+set -eu
+rm -f /challenge/exit_code
+exec certbot "$@"
+status=$?
+echo "${status}" > /challenge/exit_code
+exit "${status}"
+SH);
+        }
+
         @chmod($auth, 0755);
         @chmod($cleanup, 0755);
+        @chmod($wrapper, 0755);
     }
 
     private function buildHttpCaddyfile(): string

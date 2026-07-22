@@ -63,9 +63,9 @@ Virtual network configs: isolated subnet, “allow all” / “isolation” poli
 
 For **Server** configs (not virtual networks): route traffic by domain and subnet via sing-box — community lists ([allow-domains](https://github.com/itdoginfo/allow-domains)), custom domains and CIDR. Internet exit point is a **Connection** (VLESS, subscription, etc.).
 
-Two routing modes (toggle on each config card on the **Resolver** page):
+Resolver on the **Resolver** page:
 
-#### 1. Full tunnel on VDS — default
+#### Full tunnel on VDS
 
 `AllowedIPs = 0.0.0.0/0, ::/0` · `DNS = gateway`
 
@@ -78,21 +78,7 @@ Two routing modes (toggle on each config card on the **Resolver** page):
 
 Use when you want a classic “full VPN via server”, with blocked resources exiting through a separate upstream connection.
 
-#### 2. Split-tunnel — lists only via VDS
-
-> **Test mode.** The feature works but may change; use full tunnel on VDS for production.
-
-`AllowedIPs = 198.18.0.0/15, <gateway>/32` (+ custom subnets) · `DNS = gateway`
-
-| Traffic | Route |
-|---------|-------|
-| Listed domains (FakeIP) + DNS | Through tunnel → **Connection** |
-| **All other** traffic | **Direct from client** (SIM/Wi‑Fi; 2ip.ru = phone IP) |
-| IP-CIDR from community lists | **Not** proxied (direct IPs without DNS lookup) |
-
-Use when only listed resources should go through VPN; everything else stays off-tunnel.
-
-**After enabling or changing mode:** delete the server in AmneziaWG and **re-import** QR/`.conf` — lists will not work without re-import.
+**After enabling or disabling:** delete the server in AmneziaWG and **re-import** QR/`.conf` — lists will not work without re-import.
 
 → [Details: resolver, diagnostics, re-import](readme/en/resolver.md)
 
@@ -107,7 +93,7 @@ Use when only listed resources should go through VPN; everything else stays off-
 | [Webhook](readme/en/webhook.md) | Failure notification JSON schema |
 | [Configs & peers](readme/en/configs-and-peers.md) | Multi-config, attach/detach, export |
 | [Virtual networks](readme/en/virtual-networks.md) | VN, zones, exclusions |
-| [Resolver](readme/en/resolver.md) | Two modes (full tunnel / split), diagnostics, re-import |
+| [Resolver](readme/en/resolver.md) | Full tunnel, lists, connections, diagnostics |
 | [Project structure](readme/en/project-structure.md) | Directories, Docker containers |
 
 Русский: [readme/ru/](readme/ru/)

@@ -3,7 +3,9 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Setting;
 use App\Models\User;
+use App\Services\AmneziaWg\AmneziaWgService;
 use App\Services\CaptchaService;
 use App\Services\LoginProtectionService;
 use App\Services\TwoFactorService;
@@ -23,6 +25,11 @@ class AuthController extends Controller
     public function loginStatus(Request $request): JsonResponse
     {
         return response()->json($this->protection->status($request->ip() ?? '0.0.0.0'));
+    }
+
+    public function loginInfo(AmneziaWgService $awg): JsonResponse
+    {
+        return response()->json(self::panelAccessInfo($awg));
     }
 
     public function captcha(): JsonResponse
@@ -158,6 +165,23 @@ class AuthController extends Controller
             'name' => $user->name,
             'email' => $user->email,
             'two_factor_enabled' => $this->twoFactor->isEnabled($user),
+        ];
+    }
+
+    /**
+     * @return array{host: string, port: string, https_port: string, panel_url: string, ssl_enabled: bool, username: string}
+     */
+    public static function panelAccessInfo(AmneziaWgService $awg): array
+    {
+        $sslEnabled = filter_var(Setting::getValue('ssl_enabled', '0'), FILTER_VALIDATE_BOOLEAN);
+
+        return [
+            'host' => $awg->resolvePanelHost(),
+            'port' => (string) Setting::getValue('panel_port', env('PANEL_PORT', '8877')),
+            'https_port' => $awg->resolvePanelHttpsPort(),
+            'panel_url' => $awg->resolvePanelUrl(),
+            'ssl_enabled' => $sslEnabled,
+            'username' => User::query()->orderBy('id')->value('username') ?? 'admin',
         ];
     }
 }

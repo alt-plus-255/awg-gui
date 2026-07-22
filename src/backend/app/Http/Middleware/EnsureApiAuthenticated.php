@@ -36,6 +36,10 @@ class EnsureApiAuthenticated
             return true;
         }
 
+        if ($request->isMethod('GET') && $request->is('api/login/info')) {
+            return true;
+        }
+
         if ($request->isMethod('GET') && $request->is('api/login/captcha')) {
             return true;
         }

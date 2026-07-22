@@ -180,8 +180,14 @@ function stopCountdown () {
 async function refreshStatus () {
   statusLoading.value = true
   try {
-    const data = await auth.loginStatus()
-    applyStatus(data)
+    const [statusData, infoData] = await Promise.all([
+      auth.loginStatus(),
+      auth.loginInfo().catch(() => null)
+    ])
+    applyStatus(statusData)
+    if (infoData?.username) {
+      username.value = infoData.username
+    }
     if (captchaRequired.value && !captchaImage.value) {
       await reloadCaptcha()
     }

@@ -49,6 +49,11 @@ export const useAuthStore = defineStore('auth', () => {
     return data
   }
 
+  async function loginInfo () {
+    const { data } = await api.get('/api/login/info')
+    return data
+  }
+
   async function fetchCaptcha () {
     const { data } = await api.get('/api/login/captcha')
     return data
@@ -88,6 +93,7 @@ export const useAuthStore = defineStore('auth', () => {
     checking,
     fetchMe,
     loginStatus,
+    loginInfo,
     fetchCaptcha,
     login,
     logout,

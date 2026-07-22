@@ -25,7 +25,6 @@ class ResolverController extends Controller
     {
         $data = $request->validate([
             'resolver_enabled' => ['required', 'boolean'],
-            'resolver_routing_mode' => ['sometimes', 'string', 'in:vds_split,client_split'],
             'resolver_reject_quic' => ['sometimes', 'boolean'],
             'connection_id' => ['nullable', 'integer', 'exists:resolver_connections,id'],
             'resolver_dns' => ['sometimes', 'nullable', 'string', 'max:255'],
@@ -37,9 +36,6 @@ class ResolverController extends Controller
             'user_subnets.*' => ['string', 'max:64'],
         ]);
 
-        if (array_key_exists('resolver_routing_mode', $data)) {
-            $config->resolver_routing_mode = $data['resolver_routing_mode'];
-        }
         if (array_key_exists('resolver_reject_quic', $data)) {
             $config->resolver_reject_quic = (bool) $data['resolver_reject_quic'];
         }
@@ -115,12 +111,7 @@ class ResolverController extends Controller
         $config->save();
         $this->awg->applyConfig($config, refreshSubscriptions: false);
 
-        $needsClientReimport = $config->wasChanged('resolver_enabled')
-            || $config->wasChanged('resolver_routing_mode')
-            || (
-                $config->resolverRoutingMode() === AwgConfig::ROUTING_MODE_CLIENT_SPLIT
-                && $config->wasChanged('user_subnets')
-            );
+        $needsClientReimport = $config->wasChanged('resolver_enabled');
 
         return response()->json([
             'ok' => true,

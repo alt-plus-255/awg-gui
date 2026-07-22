@@ -22,6 +22,7 @@ class ResolverConnection extends Model
         'config_type',
         'share_url',
         'subscription_url',
+        'subscription_body',
         'subscription_mode',
         'subscription_selected',
         'subscription_nodes',
@@ -92,10 +93,7 @@ class ResolverConnection extends Model
         }
 
         $i = 0;
-        foreach (is_array($this->subscription_nodes) ? $this->subscription_nodes : [] as $node) {
-            if (! is_array($node)) {
-                continue;
-            }
+        foreach ($this->validSubscriptionNodes() as $node) {
             $i++;
             if ($i === $index) {
                 return $node;
@@ -113,6 +111,41 @@ class ResolverConnection extends Model
     public function isUrltestMode(): bool
     {
         return $this->isSubscription() && $this->subscription_mode === self::MODE_URLTEST;
+    }
+
+    /**
+     * Subscription nodes that have a usable sing-box outbound.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function validSubscriptionNodes(): array
+    {
+        $out = [];
+        foreach (is_array($this->subscription_nodes) ? $this->subscription_nodes : [] as $node) {
+            if (! is_array($node)) {
+                continue;
+            }
+            $ob = $node['outbound'] ?? [];
+            if (! is_array($ob) || empty($ob['type'])) {
+                continue;
+            }
+            $out[] = $node;
+        }
+
+        return $out;
+    }
+
+    public function childTagForNodeKey(string $nodeKey): ?string
+    {
+        $i = 0;
+        foreach ($this->validSubscriptionNodes() as $node) {
+            $i++;
+            if ((string) ($node['key'] ?? '') === $nodeKey) {
+                return $this->childOutboundTag($i);
+            }
+        }
+
+        return null;
     }
 
     public function pingCheckIntervalMin(): int
