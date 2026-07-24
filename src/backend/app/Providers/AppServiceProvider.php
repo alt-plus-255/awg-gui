@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use App\Services\AmneziaWg\AmneziaWgService;
+use App\Services\AmneziaWg\Versions\AwgVersionRegistry;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\ServiceProvider;
 
@@ -13,7 +14,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        $this->app->singleton(AwgVersionRegistry::class);
     }
 
     /**

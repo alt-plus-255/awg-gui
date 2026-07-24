@@ -70,7 +70,12 @@ return [
     'singbox_probe_start_failed' => 'Не удалось запустить sing-box probe для пинга',
 
     // SingBoxOutboundParser
-    'config_type_url_or_json' => 'Тип конфигурации: url или json',
+    'config_type_url_or_json' => 'Тип конфигурации: url, json или awg',
+    'awg_conf_required' => 'Вставьте конфиг AmneziaWG / WireGuard',
+    'awg_conf_missing_interface' => 'В конфиге должна быть секция [Interface]',
+    'awg_conf_missing_peer' => 'В конфиге должна быть секция [Peer]',
+    'awg_conf_missing_field' => 'Отсутствует обязательное поле: :field',
+    'awg_protocol_version_invalid' => 'Неизвестная версия протокола AmneziaWG',
     'outbound_json_required' => 'Укажите outbound JSON',
     'outbound_json_object_expected' => 'Ожидается JSON-объект outbound sing-box',
     'outbound_type_required' => 'В outbound обязательно поле type',

@@ -48,6 +48,7 @@ Route::post('/clients', [ClientController::class, 'store']);
 Route::put('/clients/{client}', [ClientController::class, 'update']);
 Route::delete('/clients/{client}', [ClientController::class, 'destroy']);
 
+Route::get('/awg-protocol-versions', [ConfigController::class, 'protocolVersions']);
 Route::get('/configs', [ConfigController::class, 'index']);
 Route::post('/configs', [ConfigController::class, 'store']);
 Route::get('/configs/{config}', [ConfigController::class, 'show']);

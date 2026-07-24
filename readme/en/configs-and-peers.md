@@ -21,6 +21,20 @@ Config types:
 
 When creating a config the panel automatically allocates a free `iface` and UDP port.
 
+## AmneziaWG protocol versions
+
+Choose the protocol version when **creating** a config. Default is the latest (**2.0**). Versions are **not compatible** with each other: client and server must use the same one. After create the version **cannot be changed** — create a new config for a different version.
+
+| Version | Obfuscation parameters in `.conf` / `vpn://` |
+|---------|-----------------------------------------------|
+| **1.0** | `Jc`, `Jmin`, `Jmax`, `S1`, `S2`, `H1`–`H4` |
+| **1.5** | same as 1.0 + `I1`–`I5` |
+| **2.0** | same as 1.5 + `S3`, `S4` |
+
+The obfuscation form on the config page shows only fields for the selected version. Exports (**`.conf`**, **QR**, **`vpn://`**) follow that profile (outer `vpn://` `protocol_version`: `1` for 1.0/1.5, `2` for 2.0).
+
+On upgrade, existing configs receive **2.0**. If you need 1.x, create a separate config with that version and re-share QR / `.conf` / `vpn://` with clients.
+
 ## Peers (clients)
 
 A **peer** (`vpn_client`) is a separate entity with keys and a name. A peer is **not** permanently tied to one config:
@@ -36,9 +50,10 @@ Unattached peers are shown separately and can be linked to any config later.
 For each attached peer you can:
 
 - download a **`.conf`** file (AmneziaWG / WireGuard);
-- show a **QR code** for mobile import.
+- show a **QR code** for mobile import;
+- copy a **`vpn://`** key to paste into Amnezia / AmneziaWG.
 
-After changing endpoint, UDP port, or resolver settings, re-export or re-import configs on devices.
+After changing endpoint, UDP port, obfuscation, or resolver settings, re-export or re-import configs on devices.
 
 ## Panel settings
 

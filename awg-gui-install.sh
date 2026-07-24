@@ -265,6 +265,13 @@ env_get() {
   local val=""
   if [[ -f "${file}" ]]; then
     val="$(grep -E "^${key}=" "${file}" 2>/dev/null | tail -1 | cut -d= -f2- || true)"
+    if [[ "${val}" =~ ^\"(.*)\"$ ]]; then
+      val="${BASH_REMATCH[1]}"
+      val="${val//\\\"/\"}"
+      val="${val//\\\\/\\}"
+    elif [[ "${val}" =~ ^\'(.*)\'$ ]]; then
+      val="${BASH_REMATCH[1]}"
+    fi
   fi
   if [[ -n "${val}" ]]; then
     echo "${val}"
@@ -356,10 +363,41 @@ EOF
 detect_public_ip() {
   local ip=""
   ip="$(curl -4 -fsS --max-time 5 https://ifconfig.me 2>/dev/null || true)"
-  if [[ -z "${ip}" ]]; then
+  ip="$(printf '%s' "${ip}" | tr -d '[:space:]')"
+  if [[ ! "${ip}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    ip="$(curl -4 -fsS --max-time 5 https://api.ipify.org 2>/dev/null || true)"
+    ip="$(printf '%s' "${ip}" | tr -d '[:space:]')"
+  fi
+  if [[ ! "${ip}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
   fi
   echo "${ip:-127.0.0.1}"
+}
+
+# Resolve "auto"/empty to the public IPv4 of this host (for panel URL / APP_URL).
+resolve_endpoint_host() {
+  local endpoint="${1:-}"
+  if [[ -z "${endpoint}" || "${endpoint}" == "auto" ]]; then
+    detect_public_ip
+  else
+    printf '%s\n' "${endpoint}"
+  fi
+}
+
+sync_panel_access_env() {
+  local endpoint="$1" panel_port="$2" file="$3"
+  local host existing_app_url
+  host="$(resolve_endpoint_host "${endpoint}")"
+  existing_app_url="$(env_get APP_URL "${file}" 2>/dev/null || true)"
+  # Do not clobber an existing HTTPS/domain APP_URL (panel SSL / custom domain).
+  if [[ -z "${existing_app_url}" \
+     || "${existing_app_url}" == "http://localhost:${panel_port}" \
+     || "${existing_app_url}" =~ ^http://[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+:[0-9]+$ ]]; then
+    env_set "APP_URL" "http://${host}:${panel_port}" "${file}"
+  fi
+  env_set "SANCTUM_STATEFUL_DOMAINS" \
+    "${host},${host}:${panel_port},${host}:7443,localhost,localhost:${panel_port},127.0.0.1,127.0.0.1:${panel_port}" \
+    "${file}"
 }
 
 rand_secret() {
@@ -377,15 +415,28 @@ gen_app_key() {
   echo "base64:$(head -c 32 /dev/urandom | base64 -w0 2>/dev/null || head -c 32 /dev/urandom | base64)"
 }
 
+# Quote values that break `source .env` (e.g. ALLOWED_IPS with "0.0.0.0/0, ::/0").
+env_quote_value() {
+  local val="$1"
+  if [[ "${val}" =~ [[:space:]\#\$\`\"\'\\\&\;\|\(\)\<\>] ]]; then
+    val="${val//\\/\\\\}"
+    val="${val//\"/\\\"}"
+    printf '"%s"' "${val}"
+  else
+    printf '%s' "${val}"
+  fi
+}
+
 # Set KEY=VALUE in .env (creates from .env.example first)
 env_set() {
   local key="$1"
   local val="$2"
   local file="$3"
-  local tmp
+  local tmp rendered
+  rendered="$(env_quote_value "${val}")"
   tmp="$(mktemp)"
   if grep -q "^${key}=" "${file}" 2>/dev/null; then
-    awk -v k="${key}" -v v="${val}" '
+    awk -v k="${key}" -v v="${rendered}" '
       BEGIN { found=0 }
       $0 ~ "^" k "=" { print k "=" v; found=1; next }
       { print }
@@ -393,7 +444,7 @@ env_set() {
     ' "${file}" > "${tmp}"
   else
     cp "${file}" "${tmp}"
-    printf '%s=%s\n' "${key}" "${val}" >> "${tmp}"
+    printf '%s=%s\n' "${key}" "${rendered}" >> "${tmp}"
   fi
   mv "${tmp}" "${file}"
 }
@@ -446,7 +497,6 @@ write_env_from_example() {
   env_set "PANEL_PORT" "${panel_port}" "${ENV_FILE}"
   env_set "PANEL_HTTPS_PORT" "7443" "${ENV_FILE}"
   env_set "AWG_PORT" "${awg_port}" "${ENV_FILE}"
-  env_set "APP_URL" "http://${endpoint}:${panel_port}" "${ENV_FILE}"
   env_set "APP_KEY" "${app_key}" "${ENV_FILE}"
   env_set "ADMIN_PASSWORD" "${admin_pass}" "${ENV_FILE}"
   env_set "DB_PASSWORD" "${db_pass}" "${ENV_FILE}"
@@ -455,9 +505,7 @@ write_env_from_example() {
   env_set "PEER_DNS" "${peer_dns}" "${ENV_FILE}"
   env_set "ALLOWED_IPS" "${allowed_ips}" "${ENV_FILE}"
   env_set "PANEL_OPS_TOKEN" "$(openssl rand -hex 32 2>/dev/null || rand_secret 64)" "${ENV_FILE}"
-  env_set "SANCTUM_STATEFUL_DOMAINS" \
-    "${endpoint},${endpoint}:${panel_port},${endpoint}:7443,localhost,localhost:${panel_port},127.0.0.1,127.0.0.1:${panel_port}" \
-    "${ENV_FILE}"
+  sync_panel_access_env "${endpoint}" "${panel_port}" "${ENV_FILE}"
 }
 
 seed_host_ssl_files() {
@@ -602,23 +650,28 @@ main() {
   choose_install_mode
 
   local panel_port awg_port endpoint internal_subnet peer_dns allowed_ips
-  local detected_ip admin_pass db_pass app_key
+  local display_host admin_pass db_pass app_key
 
   if [[ "${UPGRADE_MODE}" -eq 1 ]]; then
     env_merge_missing_keys
     ok "Using existing ${ENV_FILE} (missing keys merged from .env.example)"
     panel_port="$(env_get PANEL_PORT "${ENV_FILE}" "${PANEL_PORT_DEFAULT}")"
     awg_port="$(env_get AWG_PORT "${ENV_FILE}" "${AWG_PORT_DEFAULT}")"
-    endpoint="$(env_get SERVER_ENDPOINT "${ENV_FILE}" "$(detect_public_ip)")"
+    endpoint="$(env_get SERVER_ENDPOINT "${ENV_FILE}" "auto")"
+    [[ -n "${endpoint}" ]] || endpoint="auto"
+    # Incomplete install on this host: prefer auto so the panel URL uses this VDS IP.
+    if [[ "${REPAIR_MODE}" -eq 1 ]]; then
+      endpoint="auto"
+      env_set "SERVER_ENDPOINT" "auto" "${ENV_FILE}"
+    fi
     internal_subnet="$(env_get INTERNAL_SUBNET "${ENV_FILE}" "${INTERNAL_SUBNET_DEFAULT}")"
     peer_dns="$(env_get PEER_DNS "${ENV_FILE}" "${PEER_DNS_DEFAULT}")"
     allowed_ips="$(env_get ALLOWED_IPS "${ENV_FILE}" "${ALLOWED_IPS_DEFAULT}")"
     admin_pass="$(env_get ADMIN_PASSWORD "${ENV_FILE}")"
   else
-    detected_ip="$(detect_public_ip)"
     prompt panel_port "Panel port" "${PANEL_PORT_DEFAULT}"
     prompt awg_port "AmneziaWG UDP port (AWG_PORT)" "${AWG_PORT_DEFAULT}"
-    prompt endpoint "Server endpoint (public IP/DNS)" "${detected_ip}"
+    prompt endpoint "Server endpoint (public IP/DNS, or auto)" "auto"
     prompt internal_subnet "Internal subnet (INTERNAL_SUBNET)" "${INTERNAL_SUBNET_DEFAULT}"
     prompt peer_dns "Peer DNS (PEER_DNS)" "${PEER_DNS_DEFAULT}"
     prompt allowed_ips "AllowedIPs for clients (ALLOWED_IPS)" "${ALLOWED_IPS_DEFAULT}"
@@ -633,6 +686,9 @@ main() {
       "${admin_pass}" "${db_pass}" "${app_key}"
     ok "Created ${ENV_FILE} from .env.example (random DB password generated)"
   fi
+
+  display_host="$(resolve_endpoint_host "${endpoint}")"
+  sync_panel_access_env "${endpoint}" "${panel_port}" "${ENV_FILE}"
 
   mkdir -p /etc/awg-gui
   seed_host_ssl_files
@@ -661,12 +717,14 @@ SERVER_ENDPOINT=${endpoint}
 PANEL_DOMAIN=
 SSL_ENABLED=0
 EOF
+  elif [[ "${REPAIR_MODE}" -eq 1 ]]; then
+    env_set "SERVER_ENDPOINT" "${endpoint}" /etc/awg-gui/webhook.conf
   fi
 
   install_cli_and_systemd
   mark_install_complete
 
-  local url="http://${endpoint}:${panel_port}"
+  local url="http://${display_host}:${panel_port}"
   print_helper
   if [[ "${REPAIR_MODE}" -eq 1 ]]; then
     if [[ -n "${admin_pass}" ]]; then

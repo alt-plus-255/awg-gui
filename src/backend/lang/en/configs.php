@@ -19,4 +19,5 @@ return [
     'no_free_addresses' => 'No free addresses in the subnet',
     'config_limit_reached' => 'Config limit reached (:count)',
     'qr_too_large' => 'Data is too large for a QR code. Copy the config or download the .conf file.',
+    'protocol_version_immutable' => 'Protocol version cannot be changed after the config is created',
 ];

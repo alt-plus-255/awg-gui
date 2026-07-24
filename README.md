@@ -2,7 +2,7 @@
 
 **Языки / Languages:** [Русский](README.md) | [English](README.en.md)
 
-AmneziaWG 2.0 VPN-сервер с Laravel 12 API и админ-панелью на Quasar Vue. Все сервисы работают в Docker-контейнерах с префиксом `awggui`.
+VPN-сервер AmneziaWG (версии протокола **1.0**, **1.5** и **2.0**, по умолчанию **2.0**) с Laravel 12 API и админ-панелью на Quasar Vue. Все сервисы работают в Docker-контейнерах с префиксом `awggui`.
 
 <p align="center">
   <img src="readme/assets/dashboard.png" alt="Дашборд AWG-GUI: ресурсы сервера, пиры и статус подключений" width="720">
@@ -47,9 +47,15 @@ sudo bash /tmp/awg-gui-install.sh --yes
 
 → [Подробнее: конфиги и пиры](readme/ru/configs-and-peers.md)
 
+### Версии протокола AmneziaWG
+
+При создании конфига выбирается версия **1.0**, **1.5** или **2.0** (по умолчанию — последняя). Версии **несовместимы** между собой; после создания версия **не меняется**. Параметры обфускации, экспорт **`.conf`**, **QR** и ключ **`vpn://`** следуют выбранному профилю.
+
+→ [Подробнее: конфиги и пиры](readme/ru/configs-and-peers.md#версии-протокола-amneziawg)
+
 ### Пиры и перепривязка
 
-Пир (`vpn_client`) — отдельная сущность. Можно **привязать** к конфигу, **отвязать** (пир остаётся в панели), **перепривязать** к другому конфигу. Экспорт **`.conf`** и **QR** для клиентов.
+Пир (`vpn_client`) — отдельная сущность. Можно **привязать** к конфигу, **отвязать** (пир остаётся в панели), **перепривязать** к другому конфигу. Экспорт **`.conf`**, **QR** и **`vpn://`** для клиентов.
 
 → [Подробнее: конфиги и пиры](readme/ru/configs-and-peers.md)
 
@@ -61,7 +67,7 @@ sudo bash /tmp/awg-gui-install.sh --yes
 
 ### Резолвер
 
-Для конфигов типа **Сервер** (не для виртуальных сетей): маршрутизация трафика по доменам и подсетям через sing-box — community-списки ([allow-domains](https://github.com/itdoginfo/allow-domains)), свои домены и CIDR. Точка выхода в интернет — **Подключение** (VLESS, подписка и т.п.).
+Для конфигов типа **Сервер** (не для виртуальных сетей): маршрутизация трафика по доменам и подсетям через sing-box — community-списки ([allow-domains](https://github.com/itdoginfo/allow-domains)), свои домены и CIDR. Точка выхода в интернет — **Подключение**: VLESS / подписка, outbound JSON или **WG/AWG** (удалённый `.conf` AmneziaWG / WireGuard с совпадающей версией протокола).
 
 Резолвер на странице **Резолвер**:
 
@@ -89,11 +95,11 @@ sudo bash /tmp/awg-gui-install.sh --yes
 | [Установка](readme/ru/install.md) | Требования, production и dev install, обновление |
 | [Удаление](readme/ru/uninstall.md) | Production и dev uninstall |
 | [Сборка release](readme/ru/build-release.md) | `./build.sh`, `.run`, GitHub Releases |
-| [CLI](readme/ru/cli.md) | `awg-gui`: endpoint, password, 2FA, systemd |
+| [CLI](readme/ru/cli.md) | `awg-gui`: info, endpoint, password, 2FA, systemd |
 | [Webhook](readme/ru/webhook.md) | JSON schema оповещений о сбоях |
-| [Конфиги и пиры](readme/ru/configs-and-peers.md) | Мульти-конфиг, attach/detach, экспорт |
+| [Конфиги и пиры](readme/ru/configs-and-peers.md) | Мульти-конфиг, версии протокола, attach/detach, экспорт |
 | [Виртуальные сети](readme/ru/virtual-networks.md) | VN, зоны, исключения |
-| [Резолвер](readme/ru/resolver.md) | Полный туннель, списки, подключения, диагностика |
+| [Резолвер](readme/ru/resolver.md) | Полный туннель, списки, подключения (в т.ч. WG/AWG), диагностика |
 | [Структура проекта](readme/ru/project-structure.md) | Каталоги, Docker-контейнеры |
 
 English: [readme/en/](readme/en/)

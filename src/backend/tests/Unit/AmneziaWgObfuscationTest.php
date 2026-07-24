@@ -4,14 +4,24 @@ namespace Tests\Unit;
 
 use App\Models\AwgConfig;
 use App\Services\AmneziaWg\AmneziaWgService;
+use App\Services\AmneziaWg\Versions\AwgVersionRegistry;
+use App\Services\Docker\DockerRuntime;
 use PHPUnit\Framework\TestCase;
 
 class AmneziaWgObfuscationTest extends TestCase
 {
+    private function service(): AmneziaWgService
+    {
+        $docker = $this->createMock(DockerRuntime::class);
+
+        return new AmneziaWgService($docker, new AwgVersionRegistry);
+    }
+
     public function test_needs_obfuscation_params_when_fields_are_empty(): void
     {
-        $service = new AmneziaWgService;
+        $service = $this->service();
         $config = new AwgConfig([
+            'protocol_version' => '2.0',
             'jc' => '',
             'jmin' => '',
             'jmax' => '',
@@ -30,8 +40,9 @@ class AmneziaWgObfuscationTest extends TestCase
 
     public function test_needs_obfuscation_params_for_factory_defaults(): void
     {
-        $service = new AmneziaWgService;
+        $service = $this->service();
         $config = new AwgConfig([
+            'protocol_version' => '2.0',
             'jc' => '4',
             'jmin' => '64',
             'jmax' => '80',
@@ -48,12 +59,12 @@ class AmneziaWgObfuscationTest extends TestCase
         $this->assertTrue($service->needsObfuscationParams($config));
     }
 
-    public function test_generate_junk_params_match_documented_ranges(): void
+    public function test_generate_junk_params_match_documented_ranges_for_v2(): void
     {
-        $service = new AmneziaWgService;
+        $service = $this->service();
 
         for ($i = 0; $i < 20; $i++) {
-            $junk = $service->generateJunkParams();
+            $junk = $service->generateJunkParams('2.0');
 
             $this->assertGreaterThanOrEqual(1, (int) $junk['jc']);
             $this->assertLessThanOrEqual(10, (int) $junk['jc']);
@@ -82,5 +93,26 @@ class AmneziaWgObfuscationTest extends TestCase
                 $this->assertLessThanOrEqual(2147483647, $header);
             }
         }
+    }
+
+    public function test_generate_junk_params_for_v10_zeros_s3_s4(): void
+    {
+        $junk = $this->service()->generateJunkParams('1.0');
+
+        $this->assertSame('0', $junk['s3']);
+        $this->assertSame('0', $junk['s4']);
+        $this->assertSame('', $junk['i1']);
+        $this->assertNotSame('', $junk['jc']);
+    }
+
+    public function test_default_generate_junk_uses_latest_version_fields(): void
+    {
+        $junk = $this->service()->generateJunkParams();
+
+        // latest is 2.0 → S3/S4 present and numeric
+        $this->assertArrayHasKey('s3', $junk);
+        $this->assertArrayHasKey('s4', $junk);
+        $this->assertIsNumeric($junk['s3']);
+        $this->assertIsNumeric($junk['s4']);
     }
 }

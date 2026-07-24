@@ -59,6 +59,9 @@ class ResolverConnectionSingBoxFingerprint
         return [
             'enabled' => true,
             'kind' => ResolverConnection::KIND_PROXY,
+            'config_type' => $conn->config_type,
+            'protocol_version' => $conn->isAwg() ? $conn->protocol_version : null,
+            'awg_conf' => $conn->isAwg() ? (string) ($conn->awg_conf ?? '') : null,
             'outbound' => $this->parser->normalize($outbound),
         ];
     }

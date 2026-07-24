@@ -23,7 +23,7 @@ class EnsureApiAuthenticated
             return $next($request);
         }
 
-        return response()->json(['message' => 'Unauthenticated.'], 401);
+        return response()->json(['message' => __('api.unauthenticated')], 401);
     }
 
     private function isPublic(Request $request): bool

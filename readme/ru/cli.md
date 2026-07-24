@@ -8,6 +8,7 @@
 |---------|----------|
 | `awg-gui help` | Справка |
 | `awg-gui status` | Статус сервисов compose |
+| `awg-gui info` | URL панели, хост, порт и логин (без пароля) |
 | `awg-gui ensure-up` | Если контейнеры остановлены — `compose up -d` |
 | `awg-gui restart awg` | Перезапуск контейнера AmneziaWG |
 | `awg-gui restart panel` | Перезапуск Caddy + Laravel app |
@@ -21,6 +22,14 @@
 | `awg-gui endpoint IP [PORT]` | Задать IP/hostname и при необходимости UDP-порт |
 | `awg-gui endpoint --auto` | Сбросить endpoint на автоопределение |
 | `awg-gui endpoint PORT` | Изменить только UDP-порт AWG (51820–51839) |
+
+## Доступ к панели
+
+```bash
+sudo awg-gui info
+```
+
+Выводит URL панели, хост, порт и логин `admin` (пароль не показывается). Удобно после установки или при смене домена / HTTPS.
 
 ## Публичный VPN endpoint
 

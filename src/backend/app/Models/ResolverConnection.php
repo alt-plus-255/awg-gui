@@ -28,6 +28,8 @@ class ResolverConnection extends Model
         'subscription_nodes',
         'subscription_fetched_at',
         'outbound',
+        'awg_conf',
+        'protocol_version',
         'enabled',
         'last_latency_ms',
         'last_tested_at',
@@ -106,6 +108,16 @@ class ResolverConnection extends Model
     public function isSubscription(): bool
     {
         return ($this->kind ?? self::KIND_PROXY) === self::KIND_SUBSCRIPTION;
+    }
+
+    public function isAwg(): bool
+    {
+        return ! $this->isSubscription() && ($this->config_type ?? '') === 'awg';
+    }
+
+    public function awgClientIface(): string
+    {
+        return 'awgc'.$this->id;
     }
 
     public function isUrltestMode(): bool

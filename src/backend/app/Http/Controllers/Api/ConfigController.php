@@ -10,6 +10,7 @@ use App\Services\AmneziaWg\AmneziaWgService;
 use App\Services\AmneziaWg\PeerStatsSyncService;
 use App\Services\AmneziaWg\QrCodeService;
 use App\Services\AmneziaWg\VpnUriService;
+use App\Services\AmneziaWg\Versions\AwgVersionRegistry;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
@@ -22,7 +23,21 @@ class ConfigController extends Controller
         private PeerStatsSyncService $statsSync,
         private QrCodeService $qr,
         private VpnUriService $vpnUri,
+        private AwgVersionRegistry $versions,
     ) {}
+
+    public function protocolVersions()
+    {
+        return response()->json([
+            'versions' => array_map(fn ($profile) => [
+                'id' => $profile->id(),
+                'label' => $profile->label(),
+                'vpn_uri_protocol_version' => $profile->vpnUriProtocolVersion(),
+                'supported_params' => $profile->supportedParams(),
+            ], $this->versions->all()),
+            'default' => $this->versions->latest(),
+        ]);
+    }
 
     public function index()
     {
@@ -40,6 +55,7 @@ class ConfigController extends Controller
         $data = $request->validate([
             'name' => ['required', 'string', 'max:64'],
             'type' => ['required', Rule::in(['server', 'virtual_network'])],
+            'protocol_version' => ['sometimes', 'string', Rule::in($this->versions->ids())],
             'vn_policy' => ['sometimes', Rule::in(['allow_all', 'deny_all'])],
             'internal_subnet' => ['sometimes', 'string', 'max:64'],
             'listen_port' => ['sometimes', 'integer', 'min:51820', 'max:51839'],
@@ -49,8 +65,9 @@ class ConfigController extends Controller
             'enabled' => ['sometimes', 'boolean'],
         ]);
 
+        $protocolVersion = $data['protocol_version'] ?? $this->versions->latest();
         $keys = $this->awg->generateKeyPair();
-        $junk = $this->awg->generateJunkParams();
+        $junk = $this->awg->generateJunkParams($protocolVersion);
         $defaults = $this->awg->defaultConfigAttributes();
 
         $subnet = $data['internal_subnet'] ?? $defaults['internal_subnet'];
@@ -73,6 +90,7 @@ class ConfigController extends Controller
         $config = AwgConfig::query()->create(array_merge($junk, [
             'name' => $data['name'],
             'type' => $data['type'],
+            'protocol_version' => $protocolVersion,
             'vn_policy' => $data['vn_policy'] ?? 'allow_all',
             'iface' => $iface,
             'listen_port' => $port,
@@ -103,6 +121,7 @@ class ConfigController extends Controller
         $data = $request->validate([
             'name' => ['sometimes', 'string', 'max:64'],
             'type' => ['sometimes', Rule::in(['server', 'virtual_network'])],
+            'protocol_version' => ['sometimes', 'string', Rule::in($this->versions->ids())],
             'vn_policy' => ['sometimes', Rule::in(['allow_all', 'deny_all'])],
             'internal_subnet' => ['sometimes', 'string', 'max:64'],
             'server_address' => ['sometimes', 'string', 'max:64'],
@@ -129,7 +148,32 @@ class ConfigController extends Controller
             'i5' => ['nullable', 'string', 'max:2048'],
         ]);
 
+        if (array_key_exists('protocol_version', $data)
+            && (string) $data['protocol_version'] !== (string) $config->protocol_version) {
+            throw ValidationException::withMessages([
+                'protocol_version' => [__('configs.protocol_version_immutable')],
+            ]);
+        }
+        unset($data['protocol_version']);
+
+        if (array_key_exists('type', $data) && (string) $data['type'] !== (string) $config->type) {
+            // type is also immutable after create (UI disables it); ignore attempts
+            unset($data['type']);
+        }
+
         $data = $this->sanitizeSignatureFields($data);
+
+        $junkKeys = ['jc', 'jmin', 'jmax', 's1', 's2', 's3', 's4', 'h1', 'h2', 'h3', 'h4', 'i1', 'i2', 'i3', 'i4', 'i5'];
+        $junkPatch = array_intersect_key($data, array_flip($junkKeys));
+        if ($junkPatch !== []) {
+            $normalized = $this->versions->profileForConfig($config->protocol_version)
+                ->normalizeForPersist($junkPatch);
+            foreach ($junkKeys as $key) {
+                if (array_key_exists($key, $normalized)) {
+                    $data[$key] = $normalized[$key];
+                }
+            }
+        }
 
         if (isset($data['internal_subnet'])) {
             $this->assertSubnetAvailable($data['internal_subnet'], $config->id);
@@ -387,20 +431,20 @@ class ConfigController extends Controller
 
         $conf = $this->awg->buildClientConfig($membership);
         $conf = $this->qr->normalizeConfigText($conf);
-        $format = $request->query('format', 'svg');
+        $format = $request->query('format', 'png');
 
-        if ($format === 'png') {
-            $body = $this->qr->buildPng($conf);
+        if ($format === 'svg') {
+            $body = $this->qr->buildSvg($conf);
 
             return response($body, 200, [
-                'Content-Type' => 'image/png',
+                'Content-Type' => 'image/svg+xml',
             ]);
         }
 
-        $body = $this->qr->buildSvg($conf);
+        $body = $this->qr->buildPng($conf);
 
         return response($body, 200, [
-            'Content-Type' => 'image/svg+xml',
+            'Content-Type' => 'image/png',
         ]);
     }
 
@@ -781,11 +825,16 @@ class ConfigController extends Controller
 
     private function serializeConfig(AwgConfig $config): array
     {
+        $profile = $this->versions->profileForConfig($config->protocol_version);
+
         return [
             'id' => $config->id,
             'name' => $config->name,
             'type' => $config->type,
             'type_label' => $config->type === 'virtual_network' ? __('api.type_virtual_network') : __('api.type_server'),
+            'protocol_version' => $config->protocol_version ?: $this->versions->latest(),
+            'protocol_label' => $profile->label(),
+            'supported_params' => $profile->supportedParams(),
             'vn_policy' => $config->vn_policy ?? 'allow_all',
             'vn_zones' => [
                 'rules' => array_values($config->vn_zones['rules'] ?? []),

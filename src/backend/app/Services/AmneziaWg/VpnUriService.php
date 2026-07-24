@@ -3,13 +3,20 @@
 namespace App\Services\AmneziaWg;
 
 use App\Models\AwgConfigPeer;
+use App\Services\AmneziaWg\Versions\AwgVersionRegistry;
 
 class VpnUriService
 {
     public function __construct(
         private AmneziaWgService $awg,
         private QrCodeService $qr,
+        private ?AwgVersionRegistry $versions = null,
     ) {}
+
+    private function versions(): AwgVersionRegistry
+    {
+        return $this->versions ??= app(AwgVersionRegistry::class);
+    }
 
     public function buildFromMembership(AwgConfigPeer $membership): string
     {
@@ -20,6 +27,8 @@ class VpnUriService
         if (! $config) {
             throw new \RuntimeException('Config not found for membership');
         }
+
+        $profile = $this->versions()->profileForConfig($config->protocol_version);
 
         $conf = $this->qr->normalizeConfigText($this->awg->buildClientConfig($membership));
         $conf = rtrim($conf, "\n");
@@ -39,18 +48,7 @@ class VpnUriService
         $dns1 = $dnsParts[0] ?? '1.1.1.1';
         $dns2 = $dnsParts[1] ?? $dns1;
 
-        $inner = [
-            'H1' => (string) $config->h1,
-            'H2' => (string) $config->h2,
-            'H3' => (string) $config->h3,
-            'H4' => (string) $config->h4,
-            'Jc' => (string) $config->jc,
-            'Jmin' => (string) $config->jmin,
-            'Jmax' => (string) $config->jmax,
-            'S1' => (string) $config->s1,
-            'S2' => (string) $config->s2,
-            'S3' => (string) $config->s3,
-            'S4' => (string) $config->s4,
+        $inner = array_merge($profile->vpnUriInnerParams($config), [
             'allowed_ips' => $allowedIps,
             'client_ip' => $address,
             'client_priv_key' => $privateKey,
@@ -60,16 +58,7 @@ class VpnUriService
             'persistent_keep_alive' => (string) $keepalive,
             'port' => (int) $config->listen_port,
             'server_pub_key' => $config->server_public_key,
-        ];
-
-        $i1 = trim((string) ($config->i1 ?? ''));
-        if ($i1 !== '') {
-            $inner['I1'] = $i1;
-            $inner['I2'] = '';
-            $inner['I3'] = '';
-            $inner['I4'] = '';
-            $inner['I5'] = '';
-        }
+        ]);
 
         if ($psk !== null && $psk !== '') {
             $inner['psk_key'] = $psk;
@@ -85,7 +74,7 @@ class VpnUriService
                     'isThirdPartyConfig' => true,
                     'last_config' => json_encode($inner, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
                     'port' => (string) $config->listen_port,
-                    'protocol_version' => '2',
+                    'protocol_version' => $profile->vpnUriProtocolVersion(),
                     'transport_proto' => 'udp',
                 ],
                 'container' => 'amnezia-awg',

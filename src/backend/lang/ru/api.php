@@ -8,5 +8,6 @@ return [
     'awg_restart_ok' => 'Контейнер AmneziaWG перезапущен, конфиги применены',
     'error' => 'Ошибка',
     'server_error' => 'Произошла ошибка на стороне сервера',
+    'unauthenticated' => 'Требуется авторизация.',
     'custom_list_suffix' => '(свой)',
 ];

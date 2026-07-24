@@ -171,7 +171,10 @@ async function loadShareData (configId, clientId) {
 
   try {
     const [qrRes, uriRes, confRes] = await Promise.all([
-      api.get(`/api/configs/${configId}/peers/${clientId}/qr`, { responseType: 'blob' }),
+      api.get(`/api/configs/${configId}/peers/${clientId}/qr`, {
+        params: { format: 'png' },
+        responseType: 'blob'
+      }),
       api.get(`/api/configs/${configId}/peers/${clientId}/vpn-uri`, { responseType: 'text' }),
       api.get(`/api/configs/${configId}/peers/${clientId}/config`, { responseType: 'text' })
     ])

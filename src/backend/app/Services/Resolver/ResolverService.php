@@ -79,6 +79,8 @@ class ResolverService
         private ClashApiClient $clash,
         private ResolverDiagnostics $diagnostics,
         private ResolverListsService $lists,
+        private AmneziaWgConfParser $awgConfParser,
+        private AmneziaWgClientConfBuilder $awgClientConf,
     ) {}
 
     public static function communitySourceUrl(string $tag): string
@@ -355,6 +357,51 @@ class ResolverService
         return $this->files->writeExecutable($path, $body);
     }
 
+    /**
+     * Sync AmneziaWG client exit tunnels (awgc{id}.conf) for enabled AWG connections.
+     * Entrypoint already watches awg*.conf and brings interfaces up.
+     */
+    public function syncAwgClientConfs(): void
+    {
+        $dir = $this->awg->configDir();
+        if (! is_dir($dir)) {
+            mkdir($dir, 0755, true);
+        }
+
+        $active = ResolverConnection::query()
+            ->where('enabled', true)
+            ->where('config_type', 'awg')
+            ->whereNotNull('awg_conf')
+            ->orderBy('id')
+            ->get();
+
+        $keep = [];
+        foreach ($active as $conn) {
+            $iface = $this->awgClientConf->ifaceName((int) $conn->id);
+            $keep[] = $iface;
+            try {
+                $parsed = $this->awgConfParser->parse((string) $conn->awg_conf);
+                $body = $this->awgClientConf->build($parsed, (string) ($conn->protocol_version ?: '2.0'));
+                $path = $dir.'/'.$iface.'.conf';
+                if ($this->writeFileIfChanged($path, $body)) {
+                    @touch($path);
+                }
+            } catch (\Throwable $e) {
+                Log::warning('awg client conf sync failed for conn_'.$conn->id.': '.$e->getMessage());
+            }
+        }
+
+        foreach (glob($dir.'/awgc*.conf') ?: [] as $path) {
+            $iface = basename($path, '.conf');
+            if (! preg_match('/^awgc\d+$/', $iface)) {
+                continue;
+            }
+            if (! in_array($iface, $keep, true)) {
+                @unlink($path);
+            }
+        }
+    }
+
     public function isSingBoxRunning(): bool
     {
         try {
@@ -617,6 +664,7 @@ class ResolverService
         }
 
         if ($configs === [] && ! $hasConnections) {
+            $this->syncAwgClientConfs();
             @unlink($this->singBoxConfigPath());
             @file_put_contents($this->resolverIfacesPath(), "");
             @file_put_contents($this->proxyCidrsAllPath(), '');
@@ -632,6 +680,8 @@ class ResolverService
         }
 
         try {
+            $this->syncAwgClientConfs();
+
             if ($refreshSubscriptions) {
                 $this->refreshSubscriptionConnections();
             }

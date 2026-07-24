@@ -182,13 +182,14 @@ class DiagnosticsService
             $iface = basename($path, '.conf');
             $cfg = $dbConfigs->get($iface);
             $raw = (string) file_get_contents($path);
+            $isClientExit = (bool) preg_match('/^awgc\d+$/', $iface);
             $items[] = [
                 'iface' => $iface,
-                'name' => $cfg?->name ?? $iface,
-                'type' => $cfg?->type ?? null,
+                'name' => $cfg?->name ?? ($isClientExit ? 'connection exit '.$iface : $iface),
+                'type' => $cfg?->type ?? ($isClientExit ? 'connection_exit' : null),
                 'type_label' => $cfg
                     ? ($cfg->type === 'virtual_network' ? __('api.type_virtual_network') : __('api.type_server'))
-                    : null,
+                    : ($isClientExit ? 'AWG connection exit' : null),
                 'config_id' => $cfg?->id,
                 'content' => $this->maskAwgConfText($raw),
                 'updated_at' => date('c', (int) filemtime($path)),

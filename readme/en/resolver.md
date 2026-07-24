@@ -4,7 +4,7 @@
 
 The **Resolver** page in AWG-GUI configures routing for **Server** configs. [Virtual networks](virtual-networks.md) do **not** use the resolver.
 
-The resolver is a “smart VPN via VDS”: all client traffic goes to the server (`AllowedIPs = 0.0.0.0/0`), while domains from selected lists exit through a separate **Connection** (VLESS, VMess, subscription, etc.) instead of the VDS IP.
+The resolver is a “smart VPN via VDS”: all client traffic goes to the server (`AllowedIPs = 0.0.0.0/0`), while domains from selected lists exit through a separate **Connection** (VLESS, VMess, subscription, outbound JSON, or **WG/AWG**) instead of the VDS IP.
 
 ## Panel pages
 
@@ -58,7 +58,7 @@ Use when you want a classic “full VPN via server”, but blocked resources (Te
 ## Quick setup
 
 1. **List settings** — download the community lists you need (or create custom ones).
-2. **Connections** — add and verify an exit point (VLESS / subscription / …).
+2. **Connections** — add and verify an exit point (VLESS / subscription / JSON / WG·AWG).
 3. **Resolver** — expand a server config:
    - enable the resolver;
    - select a **Connection**;
@@ -79,6 +79,16 @@ Without re-import, the client may keep old `DNS` / `AllowedIPs` — lists will n
 ## Connections
 
 The resolver is **not** applied without a selected, enabled connection. Create a connection on **Connections**, then assign it in the config settings.
+
+Connection types:
+
+| Type | What to provide |
+|------|-----------------|
+| **Proxy / subscription** | URI or subscription URL (VLESS, VMess, etc.) |
+| **JSON** | sing-box outbound object without a `tag` field |
+| **WG/AWG** | Remote AmneziaWG / WireGuard `.conf` text or file, plus a **protocol version** that matches the remote server |
+
+For **WG/AWG**, the panel parses the `.conf` (`[Interface]` / `[Peer]`, including obfuscation params) and brings up an exit tunnel (`awgc…`) for sing-box. AmneziaWG versions are **not compatible** with each other — pick the same one as the remote server (1.0 / 1.5 / 2.0).
 
 ## Phone check
 

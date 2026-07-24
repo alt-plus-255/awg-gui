@@ -11,6 +11,7 @@ class AwgConfig extends Model
     protected $fillable = [
         'name',
         'type',
+        'protocol_version',
         'vn_policy',
         'vn_zones',
         'iface',

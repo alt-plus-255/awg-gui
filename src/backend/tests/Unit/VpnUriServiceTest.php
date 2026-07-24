@@ -23,6 +23,8 @@ class VpnUriServiceTest extends TestCase
         $this->sampleConf = <<<'CONF'
 [Interface]
 PrivateKey = gHwRoR0M6ib7etZW193COEMhQgDoKO6NTniQkJ+UgxX8=
+Address = 10.66.66.2/32
+DNS = 1.1.1.1, 1.0.0.1
 Jc = 4
 Jmin = 64
 Jmax = 80
@@ -34,8 +36,6 @@ H1 = 1
 H2 = 2
 H3 = 3
 H4 = 4
-Address = 10.66.66.2/32
-DNS = 1.1.1.1, 1.0.0.1
 
 [Peer]
 PublicKey = yJ8xK2vN3mP4qR5sT6uV7wX8yZ9aB0cD1eF2gH3iJ4k=
@@ -48,7 +48,7 @@ CONF;
         $awg = $this->createMock(AmneziaWgService::class);
         $awg->method('buildClientConfig')->willReturn($this->sampleConf);
 
-        $this->service = new VpnUriService($awg, new QrCodeService);
+        $this->service = new VpnUriService($awg, new QrCodeService, new \App\Services\AmneziaWg\Versions\AwgVersionRegistry);
     }
 
     public function test_build_from_membership_returns_vpn_uri_prefix(): void
@@ -93,11 +93,32 @@ CONF;
         $awg = $this->createMock(AmneziaWgService::class);
         $awg->method('buildClientConfig')->willReturn($resolverConf);
 
-        $service = new VpnUriService($awg, new QrCodeService);
+        $service = new VpnUriService($awg, new QrCodeService, new \App\Services\AmneziaWg\Versions\AwgVersionRegistry);
         $outer = $service->decode($service->buildFromMembership($this->membership()));
 
         $this->assertSame('10.66.66.1', $outer['dns1']);
         $this->assertSame('10.66.66.1', $outer['dns2']);
+    }
+
+    public function test_protocol_version_follows_config_profile(): void
+    {
+        foreach (['1.0' => '1', '1.5' => '1', '2.0' => '2'] as $version => $uriVersion) {
+            $uri = $this->service->buildFromMembership($this->membership($version));
+            $outer = $this->service->decode($uri);
+            $this->assertSame($uriVersion, $outer['containers'][0]['awg']['protocol_version'], "version {$version}");
+
+            $lastConfig = json_decode($outer['containers'][0]['awg']['last_config'], true);
+            if ($version === '1.0') {
+                $this->assertArrayNotHasKey('S3', $lastConfig);
+            } else {
+                // 1.5 has no S3 in profile; 2.0 has S3
+                if ($version === '2.0') {
+                    $this->assertArrayHasKey('S3', $lastConfig);
+                } else {
+                    $this->assertArrayNotHasKey('S3', $lastConfig);
+                }
+            }
+        }
     }
 
     public function test_qr_png_encodes_conf_text(): void
@@ -136,10 +157,11 @@ CONF;
         $this->assertSame($conf, $decoded);
     }
 
-    private function membership(): AwgConfigPeer
+    private function membership(string $protocolVersion = '2.0'): AwgConfigPeer
     {
         $config = new AwgConfig([
             'name' => 'test',
+            'protocol_version' => $protocolVersion,
             'listen_port' => 51820,
             'server_public_key' => 'yJ8xK2vN3mP4qR5sT6uV7wX8yZ9aB0cD1eF2gH3iJ4k=',
             'jc' => 4,

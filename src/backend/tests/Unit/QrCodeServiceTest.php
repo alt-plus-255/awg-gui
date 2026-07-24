@@ -49,11 +49,11 @@ CONF;
         $conf = $this->service->normalizeConfigText(<<<'CONF'
 [Interface]
 PrivateKey = abc=
+Address = 10.66.66.2/32
 Jc = 4
 Jmin = 64
 Jmax = 80
 H1 = 1
-Address = 10.66.66.2/32
 
 [Peer]
 PublicKey = xyz=

@@ -70,7 +70,12 @@ return [
     'singbox_probe_start_failed' => 'Failed to start sing-box probe for ping',
 
     // SingBoxOutboundParser
-    'config_type_url_or_json' => 'Configuration type: url or json',
+    'config_type_url_or_json' => 'Configuration type: url, json, or awg',
+    'awg_conf_required' => 'Paste an AmneziaWG / WireGuard config',
+    'awg_conf_missing_interface' => 'Config must contain an [Interface] section',
+    'awg_conf_missing_peer' => 'Config must contain a [Peer] section',
+    'awg_conf_missing_field' => 'Missing required field: :field',
+    'awg_protocol_version_invalid' => 'Unknown AmneziaWG protocol version',
     'outbound_json_required' => 'Enter outbound JSON',
     'outbound_json_object_expected' => 'Expected a sing-box outbound JSON object',
     'outbound_type_required' => 'Outbound must include a type field',

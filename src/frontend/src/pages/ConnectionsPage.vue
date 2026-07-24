@@ -125,7 +125,7 @@
             <q-td key="config_type" :props="props">
               <div class="config-type-cell">
                 <q-badge :color="configTypeBadgeColor(props.row)" dense>
-                  {{ props.row.kind === 'subscription' ? t('connections.kindSubscription') : (props.row.config_type === 'url' ? t('connections.kindProxy') : t('connections.kindJson')) }}
+                  {{ connectionTypeLabel(props.row) }}
                 </q-badge>
                 <span v-if="props.row.kind === 'subscription'" class="text-caption text-grey-5">
                   {{ subscriptionModeLabel(props.row) }}
@@ -365,7 +365,8 @@
               class="q-mb-md full-width"
               :options="[
                 { label: t('connections.linkUrl'), value: 'url' },
-                { label: 'Outbound JSON', value: 'json' }
+                { label: 'Outbound JSON', value: 'json' },
+                { label: t('connections.kindAwg'), value: 'awg' }
               ]"
             />
             <q-input
@@ -380,7 +381,7 @@
               class="q-mb-md mono"
             />
             <q-input
-              v-else
+              v-else-if="form.config_type === 'json'"
               v-model="form.outbound_json"
               label="Outbound JSON"
               :hint="t('connections.jsonHint')"
@@ -391,6 +392,40 @@
               class="q-mb-md mono"
               input-style="font-family: var(--theme-mono); min-height: 160px;"
             />
+            <template v-else>
+              <q-select
+                v-model="form.protocol_version"
+                :options="protocolVersionOptions"
+                :label="t('connections.protocolVersion')"
+                emit-value
+                map-options
+                filled
+                class="q-mb-md"
+                :hint="t('connections.protocolVersionHint')"
+              />
+              <q-input
+                v-if="!awgFileSelected"
+                v-model="form.awg_conf"
+                :label="t('connections.awgConf')"
+                :hint="t('connections.awgConfHint')"
+                type="textarea"
+                autogrow
+                filled
+                class="q-mb-md mono"
+                input-style="font-family: var(--theme-mono); min-height: 160px;"
+              />
+              <q-file
+                v-if="!form.awg_conf.trim()"
+                v-model="awgFile"
+                :label="t('connections.awgConfFile')"
+                :hint="t('connections.awgConfFileHint')"
+                accept=".conf,text/plain"
+                filled
+                clearable
+                class="q-mb-md"
+                @update:model-value="onAwgFileSelected"
+              />
+            </template>
           </template>
           <q-toggle v-model="form.enabled" :label="t('connections.enabled')" color="positive" />
         </q-card-section>
@@ -704,6 +739,8 @@ const form = reactive({
   subscription_body: '',
   subscription_mode: 'urltest',
   subscription_selected: null,
+  awg_conf: '',
+  protocol_version: '2.0',
   outbound_json: `{
   "type": "vless",
   "server": "example.com",
@@ -722,6 +759,17 @@ const form = reactive({
 }`,
   enabled: true
 })
+
+const awgFile = ref(null)
+const awgFileSelected = computed(() => !!awgFile.value)
+const protocolVersions = ref([])
+const protocolVersionsDefault = ref('2.0')
+const protocolVersionOptions = computed(() =>
+  protocolVersions.value.map((v) => ({
+    label: v.label || `AmneziaWG ${v.id}`,
+    value: v.id
+  }))
+)
 
 const canSaveSubscription = computed(() => {
   if (form.kind !== 'subscription') return true
@@ -766,10 +814,30 @@ function subscriptionModeLabel (row) {
   return t('connections.singleNodes', { n: row.subscription_nodes_count || 0 })
 }
 
+function connectionTypeLabel (row) {
+  if (row.kind === 'subscription') return t('connections.kindSubscription')
+  if (row.config_type === 'url') return t('connections.kindProxy')
+  if (row.config_type === 'awg') return t('connections.kindAwg')
+  return t('connections.kindJson')
+}
+
 function configTypeBadgeColor (row) {
   if (row.kind === 'subscription') return 'accent'
   if (row.config_type === 'url') return 'primary'
+  if (row.config_type === 'awg') return 'deep-orange'
   return 'info'
+}
+
+async function onAwgFileSelected (file) {
+  if (!file) return
+  try {
+    const text = await file.text()
+    form.awg_conf = text
+    awgFile.value = null
+  } catch {
+    $q.notify({ type: 'negative', message: t('connections.awgConfFileReadError') })
+    awgFile.value = null
+  }
 }
 
 function activeNodeBadge (row) {
@@ -1407,6 +1475,9 @@ function resetForm () {
   form.subscription_body = ''
   form.subscription_mode = 'urltest'
   form.subscription_selected = null
+  form.awg_conf = ''
+  form.protocol_version = protocolVersionsDefault.value
+  awgFile.value = null
   previewNodes.value = []
   previewTruncated.value = false
   previewTested.value = 0
@@ -1448,6 +1519,9 @@ function openEdit (row) {
   editOriginalSubscriptionUrl.value = row.subscription_url || ''
   form.subscription_mode = row.subscription_mode || 'urltest'
   form.subscription_selected = row.subscription_selected || null
+  form.awg_conf = row.awg_conf || ''
+  form.protocol_version = row.protocol_version || protocolVersionsDefault.value
+  awgFile.value = null
   previewNodes.value = (row.subscription_nodes || []).map(n => ({ ...n }))
   previewTruncated.value = false
   previewTested.value = 0
@@ -2016,6 +2090,10 @@ async function save () {
     $q.notify({ type: 'warning', message: t('connections.waitSubscriptionNodes') })
     return
   }
+  if (form.kind === 'proxy' && form.config_type === 'awg' && !form.awg_conf.trim()) {
+    $q.notify({ type: 'warning', message: t('connections.awgConfHint') })
+    return
+  }
 
   saving.value = true
   try {
@@ -2037,7 +2115,9 @@ async function save () {
         config_type: form.config_type,
         enabled: form.enabled,
         share_url: form.config_type === 'url' ? form.share_url : null,
-        outbound_json: form.config_type === 'json' ? form.outbound_json : null
+        outbound_json: form.config_type === 'json' ? form.outbound_json : null,
+        awg_conf: form.config_type === 'awg' ? form.awg_conf : null,
+        protocol_version: form.config_type === 'awg' ? form.protocol_version : null
       }
     }
 
@@ -2083,6 +2163,19 @@ async function remove (row) {
 
 onMounted(async () => {
   await load()
+  try {
+    const { data } = await api.get('/api/awg-protocol-versions')
+    protocolVersions.value = data.versions || []
+    protocolVersionsDefault.value = data.default || protocolVersions.value.at(-1)?.id || '2.0'
+    if (!form.protocol_version) form.protocol_version = protocolVersionsDefault.value
+  } catch {
+    protocolVersions.value = [
+      { id: '1.0', label: 'AmneziaWG 1.0' },
+      { id: '1.5', label: 'AmneziaWG 1.5' },
+      { id: '2.0', label: 'AmneziaWG 2.0' }
+    ]
+    protocolVersionsDefault.value = '2.0'
+  }
   await nextTick()
   const remoteActive = await syncRemotePingSession()
   if (remoteActive) startRemotePingPoll()

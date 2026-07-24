@@ -8,5 +8,6 @@ return [
     'awg_restart_ok' => 'AmneziaWG container restarted, configs applied',
     'error' => 'Error',
     'server_error' => 'A server error occurred',
+    'unauthenticated' => 'Unauthenticated.',
     'custom_list_suffix' => '(custom)',
 ];

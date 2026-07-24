@@ -8,6 +8,8 @@ use App\Models\Setting;
 use App\Models\VpnClient;
 use App\Services\Resolver\ResolverService;
 use App\Services\Docker\DockerRuntime;
+use App\Services\AmneziaWg\Versions\AwgVersionProfile;
+use App\Services\AmneziaWg\Versions\AwgVersionRegistry;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
@@ -20,7 +22,24 @@ class AmneziaWgService
     /** @var array<string, string> */
     private array $clientAllowedIpsStringCache = [];
 
-    public function __construct(private DockerRuntime $docker) {}
+    public function __construct(
+        private DockerRuntime $docker,
+        private ?AwgVersionRegistry $versions = null,
+    ) {}
+
+    public function versions(): AwgVersionRegistry
+    {
+        return $this->versions ??= app(AwgVersionRegistry::class);
+    }
+
+    public function profileFor(AwgConfig|string|null $configOrVersion): AwgVersionProfile
+    {
+        if ($configOrVersion instanceof AwgConfig) {
+            return $this->versions()->profileForConfig($configOrVersion->protocol_version);
+        }
+
+        return $this->versions()->profileForConfig($configOrVersion);
+    }
 
     public function primeConfigPeerCache(AwgConfig $config): void
     {
@@ -601,67 +620,14 @@ class AmneziaWgService
     }
 
     /** @return array<string, string> */
-    public function generateJunkParams(): array
+    public function generateJunkParams(?string $protocolVersion = null): array
     {
-        $jc = (string) random_int(1, 10);
-        $jmin = random_int(64, 1023);
-        $jmax = (string) random_int($jmin + 1, 1024);
-        $jmin = (string) $jmin;
-
-        $s1 = (string) random_int(0, 64);
-        do {
-            $s2 = (string) random_int(0, 64);
-        } while ((int) $s1 + 56 === (int) $s2);
-        $s3 = (string) random_int(0, 64);
-        $s4 = (string) random_int(0, 32);
-
-        $hs = [];
-        while (count($hs) < 4) {
-            $h = (string) random_int(1, 2147483647);
-            if (! in_array($h, $hs, true)) {
-                $hs[] = $h;
-            }
-        }
-
-        return [
-            'jc' => $jc,
-            'jmin' => $jmin,
-            'jmax' => $jmax,
-            's1' => $s1,
-            's2' => $s2,
-            's3' => $s3,
-            's4' => $s4,
-            'h1' => $hs[0],
-            'h2' => $hs[1],
-            'h3' => $hs[2],
-            'h4' => $hs[3],
-            'i1' => '',
-            'i2' => '',
-            'i3' => '',
-            'i4' => '',
-            'i5' => '',
-        ];
+        return $this->profileFor($protocolVersion)->generateJunkParams();
     }
 
     public function needsObfuscationParams(AwgConfig $config): bool
     {
-        foreach (['jc', 'jmin', 'jmax', 's1', 's2', 's3', 's4', 'h1', 'h2', 'h3', 'h4'] as $field) {
-            if (trim((string) $config->{$field}) === '') {
-                return true;
-            }
-        }
-
-        return $config->jc === '4'
-            && $config->jmin === '64'
-            && $config->jmax === '80'
-            && $config->s1 === '0'
-            && $config->s2 === '0'
-            && $config->s3 === '0'
-            && $config->s4 === '0'
-            && $config->h1 === '1'
-            && $config->h2 === '2'
-            && $config->h3 === '3'
-            && $config->h4 === '4';
+        return $this->profileFor($config)->needsObfuscationParams($config);
     }
 
     public function applyObfuscationParams(AwgConfig $config): bool
@@ -670,7 +636,7 @@ class AmneziaWgService
             return false;
         }
 
-        $config->fill($this->generateJunkParams());
+        $config->fill($this->generateJunkParams($config->protocol_version));
         $config->save();
 
         return true;
@@ -737,11 +703,13 @@ class AmneziaWgService
 
         if (! AwgConfig::query()->exists()) {
             $keys = $this->generateKeyPair();
-            $junk = $this->generateJunkParams();
+            $version = $this->versions()->latest();
+            $junk = $this->generateJunkParams($version);
             $attrs = array_merge($this->defaultConfigAttributes(), [
                 'name' => 'Default',
                 'iface' => 'awg0',
                 'listen_port' => (int) env('AWG_PORT', 51820),
+                'protocol_version' => $version,
                 'server_private_key' => $keys['private'],
                 'server_public_key' => $keys['public'],
             ], $junk);
@@ -858,25 +826,8 @@ class AmneziaWgService
             'PrivateKey = '.$config->server_private_key,
             'Address = '.$config->server_address,
             'ListenPort = '.$config->listen_port,
-            'Jc = '.$config->jc,
-            'Jmin = '.$config->jmin,
-            'Jmax = '.$config->jmax,
-            'S1 = '.$config->s1,
-            'S2 = '.$config->s2,
-            'S3 = '.$config->s3,
-            'S4 = '.$config->s4,
-            'H1 = '.$config->h1,
-            'H2 = '.$config->h2,
-            'H3 = '.$config->h3,
-            'H4 = '.$config->h4,
         ];
-
-        foreach (['i1', 'i2', 'i3', 'i4', 'i5'] as $ikey) {
-            $val = trim((string) ($config->{$ikey} ?? ''));
-            if ($val !== '') {
-                $lines[] = strtoupper($ikey).' = '.$val;
-            }
-        }
+        array_push($lines, ...$this->profileFor($config)->confObfuscationLines($config));
 
         $lines[] = 'PostUp = '.$this->buildPostUp($config);
         $lines[] = 'PostDown = '.$this->buildPostDown($config);
@@ -928,31 +879,15 @@ class AmneziaWgService
         $allowed = $this->clientAllowedIpsString($config, $membership);
         $keepalive = $membership->keepalive ?? $config->persistent_keepalive ?? 25;
 
+        // Field order matches awg-web-gui build_client_conf: Address/DNS before AWG params.
         $lines = [
             '[Interface]',
             'PrivateKey = '.$membership->private_key,
-            'Jc = '.$config->jc,
-            'Jmin = '.$config->jmin,
-            'Jmax = '.$config->jmax,
-            'S1 = '.$config->s1,
-            'S2 = '.$config->s2,
-            'S3 = '.$config->s3,
-            'S4 = '.$config->s4,
-            'H1 = '.$config->h1,
-            'H2 = '.$config->h2,
-            'H3 = '.$config->h3,
-            'H4 = '.$config->h4,
+            'Address = '.$membership->address,
+            'DNS = '.$dns,
         ];
+        array_push($lines, ...$this->profileFor($config)->confObfuscationLines($config));
 
-        foreach (['i1', 'i2', 'i3', 'i4', 'i5'] as $ikey) {
-            $val = trim((string) ($config->{$ikey} ?? ''));
-            if ($val !== '') {
-                $lines[] = strtoupper($ikey).' = '.$val;
-            }
-        }
-
-        $lines[] = 'Address = '.$membership->address;
-        $lines[] = 'DNS = '.$dns;
         $lines[] = '';
         $lines[] = '[Peer]';
         $lines[] = 'PublicKey = '.$config->server_public_key;
@@ -990,6 +925,10 @@ class AmneziaWgService
 
             foreach (glob($dir.'/awg*.conf') ?: [] as $path) {
                 $iface = basename($path, '.conf');
+                // Only manage server ifaces (awg0, awg1, …). Client exit tunnels awgc{id} are owned by ResolverService.
+                if (! preg_match('/^awg\d+$/', $iface)) {
+                    continue;
+                }
                 if (! in_array($iface, $activeIfaces, true)) {
                     @unlink($path);
                 }
@@ -1585,7 +1524,7 @@ class AmneziaWgService
     /** @return array<string, string> */
     public function regenerateConfigJunk(AwgConfig $config): array
     {
-        $junk = $this->generateJunkParams();
+        $junk = $this->generateJunkParams($config->protocol_version);
         $config->fill($junk);
         $config->save();
         $this->applyConfig();

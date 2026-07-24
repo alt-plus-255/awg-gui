@@ -57,6 +57,9 @@
               <q-badge :color="props.row.type === 'virtual_network' ? 'info' : 'primary'">
                 {{ props.row.type === 'virtual_network' ? t('configs.typeVirtualNetwork') : t('configs.typeServer') }}
               </q-badge>
+              <q-badge color="grey-7" class="q-ml-xs">
+                {{ props.row.protocol_label || protocolLabel(props.row.protocol_version) }}
+              </q-badge>
               <q-badge
                 v-if="props.row.type === 'virtual_network'"
                 :color="props.row.vn_policy === 'deny_all' ? 'deep-orange' : 'grey-8'"
@@ -346,7 +349,7 @@
       <q-card
         :style="editingId
           ? 'width: min(820px, 95vw); max-width: 960px; max-height: 90vh;'
-          : 'width: min(480px, 95vw); max-width: 95vw; max-height: 90vh;'"
+          : 'width: min(520px, 95vw); max-width: 95vw; max-height: 90vh;'"
         class="surface-panel dialog-card column no-wrap"
       >
         <DialogHeader :title="editingId ? t('configs.editConfig') : t('configs.newConfig')" />
@@ -375,6 +378,21 @@
               </div>
             </div>
           </div>
+
+          <q-select
+            v-model="form.protocol_version"
+            :options="protocolVersionOptions"
+            :label="t('configs.protocolVersion')"
+            emit-value
+            map-options
+            filled
+            class="q-mb-md"
+            :disable="!!editingId"
+            :hint="editingId
+              ? t('configs.protocolVersionImmutableHint')
+              : t('configs.protocolVersionHint')"
+            @update:model-value="onProtocolVersionChange"
+          />
 
           <q-select
             v-if="form.type === 'virtual_network'"
@@ -493,17 +511,17 @@
               />
             </div>
             <div class="row q-col-gutter-sm">
-              <div class="col-12 col-md-3">
-                <q-input v-for="k in ['jc', 'jmin', 'jmax']" :key="k" v-model="form[k]" :label="k.toUpperCase()" filled dense class="q-mb-sm" />
+              <div v-if="visibleJunkGroups.jc.length" class="col-12 col-md-3">
+                <q-input v-for="k in visibleJunkGroups.jc" :key="k" v-model="form[k]" :label="k.toUpperCase()" filled dense class="q-mb-sm" />
               </div>
-              <div class="col-12 col-md-3">
-                <q-input v-for="k in ['s1', 's2', 's3', 's4']" :key="k" v-model="form[k]" :label="k.toUpperCase()" filled dense class="q-mb-sm" />
+              <div v-if="visibleJunkGroups.s.length" class="col-12 col-md-3">
+                <q-input v-for="k in visibleJunkGroups.s" :key="k" v-model="form[k]" :label="k.toUpperCase()" filled dense class="q-mb-sm" />
               </div>
-              <div class="col-12 col-md-3">
-                <q-input v-for="k in ['h1', 'h2', 'h3', 'h4']" :key="k" v-model="form[k]" :label="k.toUpperCase()" filled dense class="q-mb-sm" />
+              <div v-if="visibleJunkGroups.h.length" class="col-12 col-md-3">
+                <q-input v-for="k in visibleJunkGroups.h" :key="k" v-model="form[k]" :label="k.toUpperCase()" filled dense class="q-mb-sm" />
               </div>
-              <div class="col-12 col-md-3">
-                <q-input v-for="k in ['i1', 'i2', 'i3', 'i4', 'i5']" :key="k" v-model="form[k]" :label="k.toUpperCase()" filled dense class="q-mb-sm" />
+              <div v-if="visibleJunkGroups.i.length" class="col-12 col-md-3">
+                <q-input v-for="k in visibleJunkGroups.i" :key="k" v-model="form[k]" :label="k.toUpperCase()" filled dense class="q-mb-sm" />
               </div>
             </div>
           </template>
@@ -689,6 +707,8 @@ const restartingAwg = ref(false)
 const restartBusy = computed(() => restartingAwg.value || system.restartBusy)
 const configs = ref([])
 const allClients = ref([])
+const protocolVersions = ref([])
+const protocolVersionsDefault = ref('2.0')
 
 const formOpen = ref(false)
 const editingId = ref(null)
@@ -702,10 +722,17 @@ const vnPolicyOptions = computed(() => [
   { label: t('configs.policyAllowAll'), value: 'allow_all' },
   { label: t('configs.policyDenyAll'), value: 'deny_all' }
 ])
+const protocolVersionOptions = computed(() =>
+  protocolVersions.value.map((v) => ({
+    label: v.label,
+    value: v.id
+  }))
+)
 
 const form = reactive({
   name: '',
   type: 'server',
+  protocol_version: '2.0',
   vn_policy: 'allow_all',
   internal_subnet: '10.66.66.0/24',
   server_address: '',
@@ -720,6 +747,32 @@ const form = reactive({
   i1: '', i2: '', i3: '', i4: '', i5: ''
 })
 
+function supportedParamsForVersion (versionId) {
+  const found = protocolVersions.value.find((v) => v.id === versionId)
+  if (found?.supported_params?.length) return found.supported_params
+  if (editingRow.value?.supported_params?.length && editingRow.value.protocol_version === versionId) {
+    return editingRow.value.supported_params
+  }
+  // Fallback until API loads: assume latest full set
+  return junkKeys
+}
+
+const formSupportedParams = computed(() => supportedParamsForVersion(form.protocol_version))
+
+const visibleJunkGroups = computed(() => {
+  const supported = new Set(formSupportedParams.value)
+  return {
+    jc: ['jc', 'jmin', 'jmax'].filter((k) => supported.has(k)),
+    s: ['s1', 's2', 's3', 's4'].filter((k) => supported.has(k)),
+    h: ['h1', 'h2', 'h3', 'h4'].filter((k) => supported.has(k)),
+    i: ['i1', 'i2', 'i3', 'i4', 'i5'].filter((k) => supported.has(k))
+  }
+})
+
+function protocolLabel (versionId) {
+  const found = protocolVersions.value.find((v) => v.id === versionId)
+  return found?.label || (versionId ? `AmneziaWG ${versionId}` : 'AmneziaWG')
+}
 const columns = computed(() => [
   { name: 'expand', label: '', field: 'expand', align: 'left' },
   { name: 'name', label: t('configs.colName'), field: 'name', align: 'left', sortable: true },
@@ -886,12 +939,15 @@ function formatHandshake (iso) {
 async function load () {
   loading.value = true
   try {
-    const [cfgRes, clientsRes] = await Promise.all([
+    const [cfgRes, clientsRes, versionsRes] = await Promise.all([
       api.get('/api/configs'),
-      api.get('/api/clients')
+      api.get('/api/clients'),
+      api.get('/api/awg-protocol-versions')
     ])
     configs.value = cfgRes.data.configs || []
     allClients.value = clientsRes.data.clients || []
+    protocolVersions.value = versionsRes.data.versions || []
+    protocolVersionsDefault.value = versionsRes.data.default || protocolVersions.value.at(-1)?.id || '2.0'
     syncZonesStates()
   } finally {
     loading.value = false
@@ -1236,6 +1292,7 @@ const portFieldError = computed(() => {
 function resetForm () {
   form.name = ''
   form.type = 'server'
+  form.protocol_version = protocolVersionsDefault.value
   form.vn_policy = 'allow_all'
   form.internal_subnet = nextFreeSubnet()
   form.server_address = ''
@@ -1254,6 +1311,11 @@ function openCreate () {
   formOpen.value = true
 }
 
+function onProtocolVersionChange () {
+  if (editingId.value) return
+  generateJunk()
+}
+
 function randInt (min, max) {
   const range = max - min + 1
   const buf = new Uint32Array(1)
@@ -1268,6 +1330,8 @@ function randInt (min, max) {
 // Правила: https://docs.amnezia.org/ru/documentation/amnezia-wg/
 // i1-i5 (CPS-сигнатуры протоколов) не генерируем — случайные значения там бессмысленны
 function generateJunk () {
+  const supported = new Set(supportedParamsForVersion(form.protocol_version))
+
   form.jc = String(randInt(1, 10))
   const jmin = randInt(64, 1023)
   form.jmin = String(jmin)
@@ -1280,14 +1344,18 @@ function generateJunk () {
   } while (s1 + 56 === s2) // иначе Init(148+S1) совпадает по размеру с Response(92+S2)
   form.s1 = String(s1)
   form.s2 = String(s2)
-  form.s3 = String(randInt(0, 64))
-  form.s4 = String(randInt(0, 32))
+  form.s3 = supported.has('s3') ? String(randInt(0, 64)) : '0'
+  form.s4 = supported.has('s4') ? String(randInt(0, 32)) : '0'
 
   const hs = new Set()
   while (hs.size < 4) {
     hs.add(randInt(1, 2147483647))
   }
   ;[form.h1, form.h2, form.h3, form.h4] = [...hs].map(String)
+
+  ;['i1', 'i2', 'i3', 'i4', 'i5'].forEach((k) => {
+    form[k] = ''
+  })
 
   $q.notify({
     type: 'info',

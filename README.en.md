@@ -2,7 +2,7 @@
 
 **Languages / Языки:** [Русский](README.md) | [English](README.en.md)
 
-AmneziaWG 2.0 VPN server with a Laravel 12 API and Quasar Vue admin panel, all in Docker containers prefixed with `awggui`.
+AmneziaWG VPN server (protocol versions **1.0**, **1.5**, and **2.0**, default **2.0**) with a Laravel 12 API and Quasar Vue admin panel, all in Docker containers prefixed with `awggui`.
 
 <p align="center">
   <img src="readme/assets/dashboard.png" alt="AWG-GUI dashboard: server resources, peers, and connection status" width="720">
@@ -47,9 +47,15 @@ Up to **20** AmneziaWG configs (UDP **51820–51839**): each with its own interf
 
 → [Details: configs & peers](readme/en/configs-and-peers.md)
 
+### AmneziaWG protocol versions
+
+When creating a config, choose **1.0**, **1.5**, or **2.0** (default: latest). Versions are **not compatible** with each other; the version is **fixed** after create. Obfuscation parameters and exports (**`.conf`**, **QR**, **`vpn://`**) follow the selected profile.
+
+→ [Details: configs & peers](readme/en/configs-and-peers.md#amneziawg-protocol-versions)
+
 ### Peers and rebind
 
-A peer (`vpn_client`) is a separate entity. **Attach** to a config, **detach** (peer stays in the panel), **rebind** to another config. Export **`.conf`** and **QR** for clients.
+A peer (`vpn_client`) is a separate entity. **Attach** to a config, **detach** (peer stays in the panel), **rebind** to another config. Export **`.conf`**, **QR**, and **`vpn://`** for clients.
 
 → [Details: configs & peers](readme/en/configs-and-peers.md)
 
@@ -61,7 +67,7 @@ Virtual network configs: isolated subnet, “allow all” / “isolation” poli
 
 ### Resolver
 
-For **Server** configs (not virtual networks): route traffic by domain and subnet via sing-box — community lists ([allow-domains](https://github.com/itdoginfo/allow-domains)), custom domains and CIDR. Internet exit point is a **Connection** (VLESS, subscription, etc.).
+For **Server** configs (not virtual networks): route traffic by domain and subnet via sing-box — community lists ([allow-domains](https://github.com/itdoginfo/allow-domains)), custom domains and CIDR. Internet exit point is a **Connection**: VLESS / subscription, outbound JSON, or **WG/AWG** (remote AmneziaWG / WireGuard `.conf` with a matching protocol version).
 
 Resolver on the **Resolver** page:
 
@@ -89,11 +95,11 @@ Use when you want a classic “full VPN via server”, with blocked resources ex
 | [Install](readme/en/install.md) | Requirements, production and dev install, upgrade |
 | [Uninstall](readme/en/uninstall.md) | Production and dev uninstall |
 | [Build release](readme/en/build-release.md) | `./build.sh`, `.run`, GitHub Releases |
-| [CLI](readme/en/cli.md) | `awg-gui`: endpoint, password, 2FA, systemd |
+| [CLI](readme/en/cli.md) | `awg-gui`: info, endpoint, password, 2FA, systemd |
 | [Webhook](readme/en/webhook.md) | Failure notification JSON schema |
-| [Configs & peers](readme/en/configs-and-peers.md) | Multi-config, attach/detach, export |
+| [Configs & peers](readme/en/configs-and-peers.md) | Multi-config, protocol versions, attach/detach, export |
 | [Virtual networks](readme/en/virtual-networks.md) | VN, zones, exclusions |
-| [Resolver](readme/en/resolver.md) | Full tunnel, lists, connections, diagnostics |
+| [Resolver](readme/en/resolver.md) | Full tunnel, lists, connections (incl. WG/AWG), diagnostics |
 | [Project structure](readme/en/project-structure.md) | Directories, Docker containers |
 
 Русский: [readme/ru/](readme/ru/)
