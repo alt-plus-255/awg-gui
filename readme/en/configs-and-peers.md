@@ -10,7 +10,8 @@ You can create up to **20** AmneziaWG configs. Each config gets:
 
 - its own interface (`awg0`, `awg1`, …);
 - a dedicated internal subnet;
-- a UDP port from **51820–51839**.
+- a UDP port from **51820–51839**;
+- its own AmneziaWG **protocol version** (**1.0**, **1.5**, or **2.0**) — different configs may use different versions.
 
 Config types:
 
@@ -23,7 +24,7 @@ When creating a config the panel automatically allocates a free `iface` and UDP 
 
 ## AmneziaWG protocol versions
 
-Choose the protocol version when **creating** a config. Default is the latest (**2.0**). Versions are **not compatible** with each other: client and server must use the same one. After create the version **cannot be changed** — create a new config for a different version.
+Choose the protocol version when **creating** a config. Default is the latest (**2.0**). On one panel you can run several configs with **different** versions at once (for example, 1.5 for older clients and 2.0 for new ones). Versions are **not compatible** with each other: the client and that specific config must use the same one. After create the version **cannot be changed** — create a new config for a different version.
 
 | Version | Obfuscation parameters in `.conf` / `vpn://` |
 |---------|-----------------------------------------------|

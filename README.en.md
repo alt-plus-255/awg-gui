@@ -43,7 +43,7 @@ sudo bash /tmp/awg-gui-install.sh --yes
 
 ### Multiple AWG configs
 
-Up to **20** AmneziaWG configs (UDP **51820–51839**): each with its own interface, subnet, and port. Types **Server** (internet VPN) and **Virtual network** (isolated LAN).
+Up to **20** AmneziaWG configs (UDP **51820–51839**): each with its own interface, subnet, port, and **protocol version** (**1.0** / **1.5** / **2.0** — different configs may use different versions). Types **Server** (internet VPN) and **Virtual network** (isolated LAN).
 
 → [Details: configs & peers](readme/en/configs-and-peers.md)
 
