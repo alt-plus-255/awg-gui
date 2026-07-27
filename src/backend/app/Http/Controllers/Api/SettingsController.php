@@ -520,7 +520,7 @@ class SettingsController extends Controller
     }
 
     /**
-     * On false-negative certbot errors, activate existing cert and ask UI to redirect.
+     * On false-negative ACME errors, activate existing cert and ask UI to redirect.
      */
     private function sslErrorWithRecover(string $message, int $status)
     {

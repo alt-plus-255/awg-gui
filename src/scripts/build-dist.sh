@@ -11,11 +11,10 @@ STAGING="${DIST}/.staging.$$"
 SING_BOX_VERSION=1.12.12
 MARIADB_IMAGE=mariadb:11.4
 DOCKER_PROXY_IMAGE=tecnativa/docker-socket-proxy:0.3.0
-CERTBOT_IMAGE=certbot/certbot:v3.0.0
 PROJECT_NAME=awggui
 
-VERSION="${1:-}"
-ARCH="${2:-}"
+VERSION=""
+ARCH=""
 
 usage() {
   cat <<EOF
@@ -98,7 +97,6 @@ tag_images() {
   done
   docker pull "${MARIADB_IMAGE}"
   docker pull "${DOCKER_PROXY_IMAGE}"
-  docker pull "${CERTBOT_IMAGE}"
 }
 
 export_images() {
@@ -115,7 +113,6 @@ export_images() {
     "awggui-panel-ops:${VERSION}" \
     "${MARIADB_IMAGE}" \
     "${DOCKER_PROXY_IMAGE}" \
-    "${CERTBOT_IMAGE}" \
     | gzip -1 > "${tar}"
 }
 
@@ -132,7 +129,9 @@ assemble_runtime() {
   cp -a "${SRC}/systemd" "${runtime}/"
   mkdir -p "${runtime}/caddy"
   cp "${SRC}/caddy/Caddyfile" "${runtime}/caddy/"
-  cp -a "${SRC}/caddy/host-files" "${runtime}/caddy/"
+  if [[ -d "${SRC}/caddy/host-files" ]]; then
+    cp -a "${SRC}/caddy/host-files" "${runtime}/caddy/"
+  fi
 
   cp "${RELEASE}/bundle-install.sh" "${bundle_dir}/bundle-install.sh"
   cp "${RELEASE}/bundle-uninstall.sh" "${bundle_dir}/bundle-uninstall.sh"

@@ -5,20 +5,18 @@ namespace App\Services\AmneziaWg;
 use App\Models\Setting;
 use App\Services\Docker\DockerRuntime;
 use App\Services\Docker\PanelOpsClient;
+use App\Services\Ssl\AcmeDnsIssuer;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
 class SslCertificateService
 {
-    private const CHALLENGE_WAIT_SECONDS = 90;
-
-    private const CERTBOT_FINISH_SECONDS = 180;
+    private ?AcmeDnsIssuer $issuer = null;
 
     public function __construct(
         private AmneziaWgService $awg,
         private DockerRuntime $docker,
         private PanelOpsClient $panelOps,
-        private CertbotProcessTracker $certbot,
     ) {}
 
     public function hostGuiDir(): string
@@ -38,12 +36,7 @@ class SslCertificateService
 
     public function challengeDir(): string
     {
-        return $this->hostGuiDir().'/certbot/challenge';
-    }
-
-    public function hooksDir(): string
-    {
-        return $this->hostGuiDir().'/certbot/hooks';
+        return $this->issuer()->challengeDir();
     }
 
     public function isSslEnabled(): bool
@@ -54,7 +47,7 @@ class SslCertificateService
     /** @return array<string, mixed> */
     public function status(): array
     {
-        // Auto-recover: certbot succeeded but UI/state still shows error.
+        // Auto-recover: issue succeeded but UI/state still shows error.
         if (! $this->isSslEnabled() && $this->hasLiveCertificate()) {
             $status = trim((string) Setting::getValue('ssl_status', 'disabled'));
             $error = trim((string) Setting::getValue('ssl_error', ''));
@@ -104,8 +97,12 @@ class SslCertificateService
     public function hasLiveCertificate(): bool
     {
         $live = $this->hostGuiDir().'/certs/live/panel';
+        if (is_readable($live.'/fullchain.pem') && is_readable($live.'/privkey.pem')) {
+            return true;
+        }
 
-        return is_readable($live.'/fullchain.pem') && is_readable($live.'/privkey.pem');
+        return is_readable($this->certsPanelDir().'/fullchain.pem')
+            && is_readable($this->certsPanelDir().'/privkey.pem');
     }
 
     /**
@@ -127,30 +124,7 @@ class SslCertificateService
      */
     public function readPendingChallenge(): ?array
     {
-        $dir = $this->challengeDir();
-        $ready = $dir.'/ready';
-        $validation = $dir.'/validation';
-        $domainFile = $dir.'/domain';
-
-        if (! is_file($ready) || ! is_readable($validation) || ! is_readable($domainFile)) {
-            return null;
-        }
-
-        if (is_file($dir.'/done')) {
-            return null;
-        }
-
-        $domain = trim((string) file_get_contents($domainFile));
-        $value = trim((string) file_get_contents($validation));
-        if ($domain === '' || $value === '') {
-            return null;
-        }
-
-        return [
-            'domain' => $domain,
-            'txt_name' => '_acme-challenge.'.$domain,
-            'txt_value' => $value,
-        ];
+        return $this->issuer()->readPendingChallenge();
     }
 
     public function ensureHttpCaddyfile(): void
@@ -192,7 +166,7 @@ class SslCertificateService
         $this->awg->assertDomainPointsToPublicIp($domain, $endpoint);
 
         $existing = $this->readPendingChallenge();
-        if ($existing !== null && $this->certbot->isRunning()) {
+        if ($existing !== null && $this->issuer()->hasPendingOrder() && ! $forceRenew) {
             Setting::setValue('ssl_email', $email);
             Setting::setValue('ssl_status', 'pending');
             Setting::setValue('ssl_error', '');
@@ -202,88 +176,21 @@ class SslCertificateService
 
         $this->abortChallenge(quiet: true);
         $this->ensureHostLayout();
-        $this->ensureCertbotHooks();
 
         Setting::setValue('ssl_email', $email);
         Setting::setValue('ssl_status', 'pending');
         Setting::setValue('ssl_error', '');
 
-        $this->removeFile($this->challengeDir().'/ready');
-        $this->removeFile($this->challengeDir().'/validation');
-        $this->removeFile($this->challengeDir().'/domain');
-        $this->removeFile($this->challengeDir().'/done');
-        $this->removeFile($this->challengeDir().'/abort');
-
-        $this->certbot->clearExitCode();
-
-        $certbotArgs = [
-            'certonly',
-            '--manual',
-            '--preferred-challenges', 'dns',
-            '--manual-auth-hook', '/hooks/auth.sh',
-            '--manual-cleanup-hook', '/hooks/cleanup.sh',
-            '--email', $email,
-            '--agree-tos',
-            '--no-eff-email',
-            '--non-interactive',
-            '--cert-name', 'panel',
-            '-d', $domain,
-        ];
-
-        if ($forceRenew || is_readable($this->hostGuiDir().'/certs/live/panel/fullchain.pem')) {
-            $certbotArgs[] = '--force-renewal';
-        }
-
-        if (! $this->docker->containerRunning($this->certbot->containerName())) {
+        try {
+            $challenge = $this->issuer()->start($domain, $email, forceNew: $forceRenew);
+        } catch (\Throwable $e) {
             Setting::setValue('ssl_status', 'error');
-            Setting::setValue('ssl_error', __('settings.certbot_start_failed'));
-            throw new RuntimeException(Setting::getValue('ssl_error'));
-        }
-
-        $start = $this->docker->execDetached(
-            $this->certbot->containerName(),
-            array_merge(['/hooks/run-certbot.sh'], $certbotArgs),
-        );
-        if (! $start->successful()) {
-            Setting::setValue('ssl_status', 'error');
-            $err = trim($start->errorOutput() ?: $start->output()) ?: __('settings.certbot_start_failed');
+            $err = trim($e->getMessage()) !== '' ? $e->getMessage() : __('settings.acme_start_failed');
             Setting::setValue('ssl_error', $err);
-            throw new RuntimeException($err);
+            throw new RuntimeException($err, 0, $e);
         }
 
-        $deadline = time() + self::CHALLENGE_WAIT_SECONDS;
-        while (time() < $deadline) {
-            $challenge = $this->readPendingChallenge();
-            if ($challenge !== null) {
-                return array_merge($challenge, ['email' => $email]);
-            }
-
-            if (! $this->certbot->isRunning()) {
-                $logs = $this->certbot->logs();
-                $this->certbot->clearExitCode();
-                if ($this->hasLiveCertificate() || str_contains($logs, 'Successfully received certificate')) {
-                    $this->activateInstalledCertificate();
-
-                    return [
-                        'activated' => true,
-                        'email' => $email,
-                        'domain' => $domain,
-                        'txt_name' => '',
-                        'txt_value' => '',
-                    ];
-                }
-                Setting::setValue('ssl_status', 'error');
-                Setting::setValue('ssl_error', $logs !== '' ? $logs : __('settings.certbot_finished_before_challenge'));
-                throw new RuntimeException(Setting::getValue('ssl_error'));
-            }
-
-            usleep(500_000);
-        }
-
-        $this->abortChallenge(quiet: true);
-        Setting::setValue('ssl_status', 'error');
-        Setting::setValue('ssl_error', __('settings.certbot_challenge_timeout'));
-        throw new RuntimeException(Setting::getValue('ssl_error'));
+        return array_merge($challenge, ['email' => $email]);
     }
 
     /**
@@ -294,7 +201,7 @@ class SslCertificateService
     public function completeIssue(): array
     {
         $challenge = $this->readPendingChallenge();
-        if ($challenge === null && ! $this->certbot->isRunning()) {
+        if ($challenge === null && ! $this->issuer()->hasPendingOrder()) {
             $recovered = $this->recoverIfCertificateExists();
             if ($recovered !== null) {
                 return $recovered;
@@ -302,50 +209,25 @@ class SslCertificateService
             throw new \InvalidArgumentException(__('settings.no_active_dns_challenge'));
         }
 
-        $done = $this->challengeDir().'/done';
-        if (@file_put_contents($done, '1') === false) {
-            throw new RuntimeException(__('settings.dns_challenge_confirm_failed'));
-        }
-
-        $deadline = time() + self::CERTBOT_FINISH_SECONDS;
-        while (time() < $deadline) {
-            if (! $this->certbot->isRunning()) {
-                break;
+        try {
+            $this->issuer()->complete();
+        } catch (\Throwable $e) {
+            if ($this->hasLiveCertificate()) {
+                return $this->activateInstalledCertificate();
             }
-            usleep(500_000);
-        }
-
-        if ($this->certbot->isRunning()) {
-            throw new RuntimeException(__('settings.certbot_still_running'));
-        }
-
-        $exit = $this->certbot->exitCode();
-        $logs = $this->certbot->logs();
-        $this->certbot->clearExitCode();
-
-        $liveOk = $this->hasLiveCertificate();
-        $logsSayOk = str_contains($logs, 'Successfully received certificate')
-            || str_contains($logs, 'Certificate not yet due for renewal');
-
-        if ($exit !== 0 && ! $liveOk) {
             Setting::setValue('ssl_status', 'error');
-            Setting::setValue('ssl_error', $logs !== '' ? $logs : __('settings.certbot_exit_code', ['exit' => $exit]));
-            throw new RuntimeException(Setting::getValue('ssl_error'));
+            $err = trim($e->getMessage()) !== '' ? $e->getMessage() : __('settings.acme_complete_failed');
+            Setting::setValue('ssl_error', $err);
+            throw new RuntimeException($err, 0, $e);
         }
 
-        if (! $liveOk && ! $logsSayOk) {
-            Setting::setValue('ssl_status', 'error');
-            Setting::setValue('ssl_error', $logs !== '' ? $logs : __('settings.cert_files_not_found_after_certbot'));
-            throw new RuntimeException(Setting::getValue('ssl_error'));
-        }
-
-        if (! $liveOk) {
+        if (! $this->hasLiveCertificate()) {
             $recovered = $this->recoverIfCertificateExists();
             if ($recovered !== null) {
                 return $recovered;
             }
             Setting::setValue('ssl_status', 'error');
-            Setting::setValue('ssl_error', $logs !== '' ? $logs : __('settings.cert_files_not_found_after_certbot'));
+            Setting::setValue('ssl_error', __('settings.cert_files_not_found_after_issue'));
             throw new RuntimeException(Setting::getValue('ssl_error'));
         }
 
@@ -353,7 +235,7 @@ class SslCertificateService
     }
 
     /**
-     * Enable HTTPS using certs already present under /etc/awg-gui/certs/live/panel.
+     * Enable HTTPS using certs already present under certs/live/panel or certs/panel.
      *
      * @return array<string, mixed>
      */
@@ -370,7 +252,6 @@ class SslCertificateService
         $this->writeCaddyfile(true);
         $this->awg->writeWebhookConf();
         $this->awg->syncPanelUrlToHostEnv();
-        // Ports already published — reload config only (no image rebuild).
         $this->reloadOrRecreateCaddy();
 
         return $this->status();
@@ -394,19 +275,7 @@ class SslCertificateService
 
     public function abortChallenge(bool $quiet = false): void
     {
-        $dir = $this->challengeDir();
-        if (is_dir($dir)) {
-            @file_put_contents($dir.'/abort', '1');
-        }
-
-        if ($this->certbot->isRunning()) {
-            $this->certbot->stopProcess();
-        }
-        $this->certbot->clearExitCode();
-
-        foreach (['ready', 'done', 'abort', 'domain', 'validation', 'failed'] as $name) {
-            $this->removeFile($dir.'/'.$name);
-        }
+        $this->issuer()->abort();
 
         if (! $quiet && Setting::getValue('ssl_status') === 'pending' && ! $this->isSslEnabled()) {
             Setting::setValue('ssl_status', 'disabled');
@@ -447,6 +316,16 @@ class SslCertificateService
         }
     }
 
+    private function issuer(): AcmeDnsIssuer
+    {
+        if ($this->issuer === null) {
+            $directory = env('ACME_DIRECTORY_URL') ?: null;
+            $this->issuer = new AcmeDnsIssuer($this->hostGuiDir(), is_string($directory) ? $directory : null);
+        }
+
+        return $this->issuer;
+    }
+
     private function installPanelCertsFromLetsEncrypt(): void
     {
         $live = $this->hostGuiDir().'/certs/live/panel';
@@ -454,7 +333,12 @@ class SslCertificateService
         $privkey = $live.'/privkey.pem';
 
         if (! is_readable($fullchain) || ! is_readable($privkey)) {
-            throw new RuntimeException(__('settings.certbot_ok_but_files_missing'));
+            $fullchain = $this->certsPanelDir().'/fullchain.pem';
+            $privkey = $this->certsPanelDir().'/privkey.pem';
+        }
+
+        if (! is_readable($fullchain) || ! is_readable($privkey)) {
+            throw new RuntimeException(__('settings.acme_ok_but_files_missing'));
         }
 
         $dest = $this->certsPanelDir();
@@ -462,7 +346,6 @@ class SslCertificateService
             mkdir($dest, 0755, true);
         }
 
-        // Follow Let's Encrypt symlinks to real files for the Caddy bind mount.
         $fc = file_get_contents($fullchain);
         $pk = file_get_contents($privkey);
         if ($fc === false || $pk === false || $fc === '' || $pk === '') {
@@ -493,73 +376,16 @@ class SslCertificateService
 
     private function ensureHostLayout(): void
     {
+        $this->issuer()->ensureLayout();
         foreach ([
             $this->hostGuiDir(),
             $this->certsPanelDir(),
-            $this->challengeDir(),
-            $this->hooksDir(),
             $this->hostGuiDir().'/certs',
         ] as $dir) {
             if (! is_dir($dir)) {
                 @mkdir($dir, 0755, true);
             }
         }
-    }
-
-    private function ensureCertbotHooks(): void
-    {
-        $auth = $this->hooksDir().'/auth.sh';
-        $cleanup = $this->hooksDir().'/cleanup.sh';
-
-        if (! is_file($auth)) {
-            file_put_contents($auth, <<<'SH'
-#!/bin/sh
-set -eu
-printf '%s' "${CERTBOT_DOMAIN}" > /challenge/domain
-printf '%s' "${CERTBOT_VALIDATION}" > /challenge/validation
-rm -f /challenge/done /challenge/abort /challenge/failed
-touch /challenge/ready
-i=0
-while [ ! -f /challenge/done ]; do
-	if [ -f /challenge/abort ]; then
-		echo "DNS challenge aborted by user" >&2
-		exit 1
-	fi
-	sleep 2
-	i=$((i + 2))
-	if [ "$i" -ge 1800 ]; then
-		echo "Timeout waiting for DNS TXT confirmation" >&2
-		exit 1
-	fi
-done
-SH);
-        }
-
-        if (! is_file($cleanup)) {
-            file_put_contents($cleanup, <<<'SH'
-#!/bin/sh
-set -eu
-rm -f /challenge/ready /challenge/done /challenge/abort
-rm -f /challenge/failed
-SH);
-        }
-
-        $wrapper = $this->hooksDir().'/run-certbot.sh';
-        if (! is_file($wrapper)) {
-            file_put_contents($wrapper, <<<'SH'
-#!/bin/sh
-set -eu
-rm -f /challenge/exit_code
-exec certbot "$@"
-status=$?
-echo "${status}" > /challenge/exit_code
-exit "${status}"
-SH);
-        }
-
-        @chmod($auth, 0755);
-        @chmod($cleanup, 0755);
-        @chmod($wrapper, 0755);
     }
 
     private function buildHttpCaddyfile(): string
@@ -623,12 +449,5 @@ CADDY;
 }
 
 CADDY;
-    }
-
-    private function removeFile(string $path): void
-    {
-        if (is_file($path)) {
-            @unlink($path);
-        }
     }
 }

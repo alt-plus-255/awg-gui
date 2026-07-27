@@ -40,7 +40,6 @@ services:
       DOCKER_HOST: tcp://docker-proxy:2375
       PANEL_OPS_URL: http://panel-ops:8090
       PANEL_OPS_TOKEN: ${PANEL_OPS_TOKEN}
-      CERTBOT_CONTAINER: awggui-certbot
       AWG_CONTAINER: awggui-awg
       AWG_CONFIG_DIR: /awg
       HOST_AWG_CONFIG_DIR: /var/lib/docker/volumes/awggui_awg_config/_data
@@ -157,19 +156,6 @@ services:
       - /etc/awg-gui:/host-awg-gui
       - /var/run/docker.sock:/var/run/docker.sock
       - .:/compose:ro
-    networks:
-      - awggui
-
-  certbot:
-    image: certbot/certbot:v3.0.0
-    container_name: awggui-certbot
-    restart: unless-stopped
-    entrypoint: ["/bin/sh", "-c"]
-    command: ["sleep infinity"]
-    volumes:
-      - /etc/awg-gui/certs:/etc/letsencrypt
-      - /etc/awg-gui/certbot/hooks:/hooks:ro
-      - /etc/awg-gui/certbot/challenge:/challenge
     networks:
       - awggui
 

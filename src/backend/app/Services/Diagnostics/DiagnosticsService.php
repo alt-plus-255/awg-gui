@@ -21,7 +21,6 @@ class DiagnosticsService
         ['name' => 'awggui-caddy', 'label' => 'Caddy'],
         ['name' => 'awggui-docker-proxy', 'label' => 'docker_proxy'],
         ['name' => 'awggui-panel-ops', 'label' => 'panel_ops'],
-        ['name' => 'awggui-certbot', 'label' => 'certbot'],
     ];
 
     private const MASK_JSON_KEYS = [

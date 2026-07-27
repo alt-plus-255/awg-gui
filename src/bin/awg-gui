@@ -14,7 +14,7 @@ INSTALL_ROOT="${INSTALL_ROOT:-}"
 COMPOSE_FILE="${COMPOSE_FILE:-${INSTALL_ROOT}/src/docker-compose.yml}"
 ENV_FILE="${ENV_FILE:-${INSTALL_ROOT}/src/.env}"
 PROJECT_NAME="${PROJECT_NAME:-awggui}"
-EXPECTED_SERVICES=(caddy app db awg docker-proxy panel-ops certbot)
+EXPECTED_SERVICES=(caddy app db awg docker-proxy panel-ops)
 
 log() { echo "[awg-gui] $*"; }
 err() { echo "[awg-gui] ERROR: $*" >&2; }
@@ -329,7 +329,7 @@ cmd_ensure_up() {
   sleep 3
   if ! services_running; then
     send_failure_webhook "service_unhealthy" "Services still not running after compose up" \
-      '{"services":["caddy","app","db","awg","docker-proxy","panel-ops","certbot"]}'
+      '{"services":["caddy","app","db","awg","docker-proxy","panel-ops"]}'
     return 1
   fi
 

@@ -189,7 +189,7 @@ env_get() {
 
 EXPECTED_CONTAINERS=(
   awggui-caddy awggui-app awggui-db awggui-awg
-  awggui-docker-proxy awggui-panel-ops awggui-certbot
+  awggui-docker-proxy awggui-panel-ops
 )
 
 detect_existing_install() {
@@ -430,13 +430,10 @@ load_images() {
 }
 
 seed_host_ssl_files() {
-  mkdir -p /etc/awg-gui/certs/panel /etc/awg-gui/certbot/hooks /etc/awg-gui/certbot/challenge
+  mkdir -p /etc/awg-gui/certs/panel /etc/awg-gui/certs/live/panel \
+    /etc/awg-gui/acme/account /etc/awg-gui/acme/pending /etc/awg-gui/acme/challenge
   if [[ -f "${RUNTIME_DIR}/caddy/Caddyfile" ]]; then
     cp "${RUNTIME_DIR}/caddy/Caddyfile" /etc/awg-gui/Caddyfile
-  fi
-  if [[ -d "${RUNTIME_DIR}/caddy/host-files/certbot/hooks" ]]; then
-    cp "${RUNTIME_DIR}/caddy/host-files/certbot/hooks/"*.sh /etc/awg-gui/certbot/hooks/ 2>/dev/null || true
-    chmod +x /etc/awg-gui/certbot/hooks/*.sh 2>/dev/null || true
   fi
 }
 
