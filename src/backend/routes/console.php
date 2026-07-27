@@ -12,3 +12,4 @@ Schedule::command('resolver:refresh')->hourly();
 Schedule::command('resolver:sync-lists')->everyMinute();
 Schedule::command('resolver:probe-idle-check')->everyMinute();
 Schedule::command('resolver:auto-ping')->everyMinute();
+Schedule::command('telegram:notify-peers')->everyMinute();

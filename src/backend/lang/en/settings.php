@@ -48,4 +48,17 @@ return [
     'webhook_field_message' => 'Human-readable description',
     'webhook_field_panel_url' => 'Admin panel URL, if known',
     'webhook_field_details' => 'Extensible object with extra context',
+
+    'telegram_token_missing' => 'Bot token is not set. Enter the token and save settings first.',
+    'telegram_token_missing_for_proxy' => 'Enter the bot token first — it is required to verify the proxy.',
+    'telegram_bot_unreachable' => 'Could not reach Telegram Bot API: :detail',
+    'telegram_bot_ok' => 'Bot connection OK',
+    'telegram_proxies_empty' => 'Bot OK, but no proxies are configured in the pool.',
+    'telegram_proxies_probed' => 'Bot OK. Proxies: :ok/:total reachable.',
+    'telegram_proxy_url_empty' => 'Enter a proxy URL.',
+    'telegram_proxy_invalid_url' => 'Invalid proxy URL. Example: socks5://user:pass@host:1080',
+    'telegram_proxy_unsupported_scheme' => 'Unsupported scheme. Use socks5://, socks5h://, http:// or https://',
+    'telegram_proxy_unreachable' => 'Proxy is unreachable or cannot access api.telegram.org.',
+    'telegram_proxy_telegram_rejected' => 'Proxy connected, but Telegram rejected the request: :detail',
+    'telegram_proxy_ok' => 'Proxy OK (:ms ms)',
 ];

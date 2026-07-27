@@ -3,6 +3,7 @@
 use App\Http\Middleware\EnsureApiAuthenticated;
 use App\Http\Middleware\EnsureSpaStateful;
 use App\Http\Middleware\SetLocale;
+use App\Support\ApiHttpErrorMessage;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -19,6 +20,8 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        // Global: locale for unmatched routes (404) and early exception rendering
+        $middleware->prepend(SetLocale::class);
         $middleware->api(prepend: [
             EnsureSpaStateful::class,
             SetLocale::class,
@@ -29,32 +32,49 @@ return Application::configure(basePath: dirname(__DIR__))
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->render(function (Throwable $e, Request $request) {
-            if (config('app.debug')) {
-                return null;
-            }
-
             if (! $request->is('api/*') && ! $request->expectsJson()) {
                 return null;
             }
 
-            if ($e instanceof ValidationException || $e instanceof AuthenticationException) {
+            SetLocale::apply($request);
+
+            if ($e instanceof ValidationException) {
+                // Let Laravel render with the locale applied above.
                 return null;
             }
 
-            $status = $e instanceof HttpExceptionInterface ? $e->getStatusCode() : 500;
+            if ($e instanceof AuthenticationException) {
+                return response()->json([
+                    'message' => __('api.unauthenticated'),
+                    'error' => 'unauthenticated',
+                ], 401);
+            }
 
-            if ($status < 500) {
+            if ($e instanceof HttpExceptionInterface) {
+                $status = $e->getStatusCode();
+
+                return response()->json([
+                    'message' => ApiHttpErrorMessage::for($e),
+                    'error' => match ($status) {
+                        401 => 'unauthenticated',
+                        403 => 'forbidden',
+                        404 => 'not_found',
+                        405 => 'method_not_allowed',
+                        419 => 'page_expired',
+                        429 => 'too_many_requests',
+                        503 => 'service_unavailable',
+                        default => 'http_error',
+                    },
+                ], $status, $e->getHeaders());
+            }
+
+            if (config('app.debug')) {
                 return null;
             }
 
             return response()->json([
                 'message' => __('api.server_error'),
-                'debug' => [
-                    'exception' => get_class($e),
-                    'message' => $e->getMessage(),
-                    'file' => $e->getFile(),
-                    'line' => $e->getLine(),
-                ],
+                'error' => 'server_error',
             ], 500);
         });
     })->create();

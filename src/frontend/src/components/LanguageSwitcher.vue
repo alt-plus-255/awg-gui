@@ -10,6 +10,7 @@
     content-class="theme-switcher-menu surface-panel"
     menu-anchor="bottom right"
     menu-self="top right"
+    max-height="calc(100dvh - 16px)"
     :title="t('theme.language')"
   >
     <q-list dense class="theme-switcher-list">

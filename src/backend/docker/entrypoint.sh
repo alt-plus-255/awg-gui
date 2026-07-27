@@ -44,4 +44,7 @@ run_www_data "php artisan schedule:work --verbose" &
 # AWG live stats WebSocket
 run_www_data "php artisan awg:ws-serve" &
 
+# Telegram bot long-polling worker (idles when webhook mode / not configured)
+run_www_data "php artisan telegram:bot" &
+
 wait "${SERVE_PID}"

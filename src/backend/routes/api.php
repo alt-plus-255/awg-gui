@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\ResolverSettingsController;
 use App\Http\Controllers\Api\StatsController;
 use App\Http\Controllers\Api\SystemController;
 use App\Http\Controllers\Api\SettingsController;
+use App\Http\Controllers\Api\TelegramWebhookController;
 use App\Http\Controllers\Api\TwoFactorController;
 use App\Http\Controllers\Api\WsTokenController;
 use Illuminate\Support\Facades\Route;
@@ -19,6 +20,7 @@ Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:30
 Route::get('/login/status', [AuthController::class, 'loginStatus'])->middleware('throttle:60,1');
 Route::get('/login/info', [AuthController::class, 'loginInfo'])->middleware('throttle:60,1');
 Route::get('/login/captcha', [AuthController::class, 'captcha'])->middleware('throttle:30,1');
+Route::post('/telegram/webhook/{secret}', TelegramWebhookController::class)->middleware('throttle:120,1');
 Route::post('/logout', [AuthController::class, 'logout']);
 Route::get('/me', [AuthController::class, 'me']);
 
@@ -109,6 +111,8 @@ Route::get('/settings', [SettingsController::class, 'show']);
 Route::put('/settings', [SettingsController::class, 'update']);
 Route::post('/settings/restart-awg', [SettingsController::class, 'restartAwg']);
 Route::post('/settings/test-webhook', [SettingsController::class, 'testWebhook']);
+Route::post('/settings/test-telegram', [SettingsController::class, 'testTelegram']);
+Route::post('/settings/test-telegram-proxy', [SettingsController::class, 'testTelegramProxy']);
 Route::post('/settings/ssl/issue/start', [SettingsController::class, 'sslIssueStart']);
 Route::post('/settings/ssl/issue/complete', [SettingsController::class, 'sslIssueComplete']);
 Route::post('/settings/ssl/recover', [SettingsController::class, 'sslRecover']);

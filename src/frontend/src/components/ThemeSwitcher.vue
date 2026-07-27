@@ -10,6 +10,7 @@
     content-class="theme-switcher-menu surface-panel"
     menu-anchor="bottom right"
     menu-self="top right"
+    max-height="calc(100dvh - 16px)"
     :title="currentStyleLabel"
   >
     <q-list dense class="theme-switcher-list">
@@ -115,7 +116,9 @@ function onAutoTo (value) {
   color: var(--surface-text) !important;
   border: 1px solid var(--surface-border);
   border-radius: var(--surface-radius);
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
+  max-height: calc(100dvh - 16px);
   min-width: 220px;
   font-size: 14px;
 }

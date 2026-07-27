@@ -26,13 +26,14 @@
           <q-tab name="general" :label="t('settings.tabGeneral')" />
           <q-tab name="panel" :label="t('settings.tabPanel')" />
           <q-tab v-if="hasDomain" name="https" label="HTTPS" />
+          <q-tab name="telegram" :label="t('settings.tabTelegram')" />
           <q-tab name="twofa" label="2FA" />
         </q-tabs>
 
         <q-separator />
 
         <q-form>
-          <q-tab-panels v-model="activeTab" animated class="settings-panels">
+          <q-tab-panels v-model="activeTab" class="settings-panels">
             <q-tab-panel name="general" class="q-pa-md">
               <div class="text-subtitle2 q-mb-sm">{{ t('settings.appearance') }}</div>
 
@@ -275,6 +276,148 @@
               </div>
             </q-tab-panel>
 
+            <q-tab-panel name="telegram" class="q-pa-md">
+              <div class="text-body2 q-mb-md">{{ t('settings.telegramHint') }}</div>
+
+              <q-input
+                v-model="form.telegram_bot_token"
+                :label="t('settings.telegramToken')"
+                :hint="form.telegram_bot_token_set ? t('settings.telegramTokenHintSet') : t('settings.telegramTokenHint')"
+                filled
+                class="q-mb-md"
+                autocomplete="off"
+              />
+
+              <q-input
+                v-model="form.telegram_admin_id"
+                :label="t('settings.telegramAdminId')"
+                :hint="t('settings.telegramAdminIdHint')"
+                filled
+                class="q-mb-md"
+              />
+
+              <div class="text-caption q-mb-xs">{{ t('settings.telegramLanguage') }}</div>
+              <q-btn-toggle
+                v-model="form.telegram_language"
+                toggle-color="primary"
+                :options="telegramLanguageOptions"
+                class="q-mb-md"
+                unelevated
+                spread
+              />
+
+              <div class="text-caption q-mb-xs">{{ t('settings.telegramMode') }}</div>
+              <q-btn-toggle
+                v-model="form.telegram_mode"
+                toggle-color="primary"
+                :options="telegramModeOptions"
+                class="q-mb-md"
+                unelevated
+                spread
+              />
+
+              <q-toggle
+                v-model="form.telegram_notifications_enabled"
+                :label="t('settings.telegramNotifications')"
+                color="primary"
+                class="q-mb-md"
+              />
+
+              <div v-if="form.telegram_mode === 'polling'">
+                <q-separator class="q-mb-md" />
+                <div class="text-subtitle2 q-mb-sm">{{ t('settings.telegramProxies') }}</div>
+                <div class="text-caption text-grey-5 q-mb-md">{{ t('settings.telegramProxiesHint') }}</div>
+
+                <div class="text-caption q-mb-xs">{{ t('settings.telegramProxyStrategy') }}</div>
+                <q-btn-toggle
+                  v-model="form.telegram_proxy_strategy"
+                  toggle-color="primary"
+                  :options="telegramStrategyOptions"
+                  class="q-mb-md"
+                  unelevated
+                  spread
+                />
+
+                <div
+                  v-for="proxy in telegramUrlProxies"
+                  :key="proxy.id"
+                  class="row q-col-gutter-sm items-center q-mb-sm"
+                >
+                  <div class="col">
+                    <q-input
+                      v-model="proxy.url"
+                      :label="t('settings.telegramProxyUrl')"
+                      filled
+                      dense
+                    />
+                  </div>
+                  <div class="col-auto">
+                    <q-toggle
+                      :model-value="proxy.enabled"
+                      color="primary"
+                      dense
+                      @update:model-value="(v) => onTelegramProxyEnabledChange(proxy, v)"
+                    />
+                  </div>
+                  <div class="col-auto">
+                    <q-btn
+                      flat
+                      dense
+                      color="negative"
+                      icon="delete"
+                      @click="confirmRemoveTelegramProxy(proxy)"
+                    />
+                  </div>
+                </div>
+
+                <div class="row q-gutter-sm q-mb-md">
+                  <q-btn outline color="primary" :label="t('settings.telegramAddProxy')" @click="openTelegramProxyDialog" />
+                </div>
+
+                <q-select
+                  v-model="telegramConnectionIds"
+                  :options="telegramConnectionOptions"
+                  filled
+                  multiple
+                  use-chips
+                  emit-value
+                  map-options
+                  :label="t('settings.telegramResolverConnections')"
+                  class="q-mb-md"
+                />
+              </div>
+
+              <div class="row q-gutter-sm">
+                <q-btn
+                  outline
+                  color="primary"
+                  :label="t('settings.telegramTestBot')"
+                  :loading="telegramTesting"
+                  @click="testTelegram(false)"
+                />
+                <q-btn
+                  v-if="form.telegram_mode === 'polling'"
+                  outline
+                  color="accent"
+                  :label="t('settings.telegramProbeProxies')"
+                  :loading="telegramTesting"
+                  @click="testTelegram(true)"
+                />
+              </div>
+              <div v-if="telegramTestResult" class="text-caption q-mt-sm" :class="telegramTestResult.ok ? 'text-positive' : 'text-negative'">
+                {{ telegramTestResult.text }}
+              </div>
+              <div v-if="telegramProxyProbe.length" class="q-mt-sm">
+                <div
+                  v-for="row in telegramProxyProbe"
+                  :key="row.id"
+                  class="text-caption mono"
+                >
+                  {{ row.source }} · {{ row.url }} · {{ row.ok ? (row.latency_ms + ' ms') : t('settings.telegramProxyProbeFail') }}
+                </div>
+              </div>
+            </q-tab-panel>
+
             <q-tab-panel name="twofa" class="q-pa-md">
               <div class="text-caption text-grey-5 q-mb-md">
                 {{ t('settings.twoFactorHint') }}
@@ -344,6 +487,42 @@
         </q-form>
       </q-card>
     </div>
+
+    <q-dialog v-model="telegramProxyDialogOpen" v-bind="mobileDialog" persistent>
+      <q-card style="width: min(480px, 95vw);" class="surface-panel dialog-card column no-wrap">
+        <DialogHeader :title="t('settings.telegramAddProxyTitle')" />
+        <q-card-section class="col dialog-scroll-body">
+          <div class="text-caption text-grey-5 q-mb-md">
+            {{ t('settings.telegramAddProxyHint') }}
+          </div>
+          <q-input
+            v-model="telegramProxyDraftUrl"
+            :label="t('settings.telegramProxyUrl')"
+            filled
+            class="q-mb-sm"
+            :disable="telegramProxyChecking"
+            :error="!!telegramProxyDialogError"
+            :error-message="telegramProxyDialogError"
+            @update:model-value="telegramProxyDialogError = ''"
+            @keyup.enter="submitTelegramProxyDialog"
+          />
+        </q-card-section>
+        <q-card-actions align="right">
+          <q-btn
+            flat
+            :label="t('common.cancel')"
+            :disable="telegramProxyChecking"
+            v-close-popup
+          />
+          <q-btn
+            color="primary"
+            :label="t('settings.telegramAddProxyConfirm')"
+            :loading="telegramProxyChecking"
+            @click="submitTelegramProxyDialog"
+          />
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
 
     <q-dialog v-model="twoFactorDisableOpen" v-bind="mobileDialog" persistent>
       <q-card style="width: min(420px, 95vw);" class="surface-panel dialog-card column no-wrap">
@@ -427,6 +606,7 @@ import { useSoundStore } from '@/sounds/store'
 import { useMobileDialog } from '@/composables/useMobileDialog'
 import DialogHeader from '@/components/DialogHeader.vue'
 import { COLOR_MODES } from '@/themes/themes'
+import { apiErrorMessage } from '@/utils/apiError'
 
 const $q = useQuasar()
 const { t } = useI18n()
@@ -477,7 +657,80 @@ const form = reactive({
   panel_port: '',
   panel_https_port: '7443',
   failure_webhook_url: '',
-  timezone: 'UTC'
+  timezone: 'UTC',
+  telegram_bot_token: '',
+  telegram_bot_token_set: false,
+  telegram_admin_id: '',
+  telegram_mode: 'polling',
+  telegram_language: 'en',
+  telegram_proxies: [],
+  telegram_proxy_strategy: 'fastest',
+  telegram_notifications_enabled: true
+})
+
+const telegramTesting = ref(false)
+const telegramTestResult = ref(null)
+const telegramProxyProbe = ref([])
+const telegramConnectionOptions = ref([])
+const telegramProxyDialogOpen = ref(false)
+const telegramProxyDraftUrl = ref('')
+const telegramProxyDialogError = ref('')
+const telegramProxyChecking = ref(false)
+
+const telegramModeOptions = computed(() => [
+  { label: t('settings.telegramModePollingShort'), value: 'polling' },
+  { label: t('settings.telegramModeWebhookShort'), value: 'webhook' }
+])
+
+const telegramLanguageOptions = computed(() => [
+  { label: t('settings.telegramLanguageEn'), value: 'en' },
+  { label: t('settings.telegramLanguageRu'), value: 'ru' }
+])
+
+const telegramStrategyOptions = computed(() => [
+  { label: t('settings.telegramStrategyFastestShort'), value: 'fastest' },
+  { label: t('settings.telegramStrategyFirstOkShort'), value: 'first_ok' }
+])
+
+function normalizeTelegramProxies (raw) {
+  if (Array.isArray(raw)) return raw
+  if (typeof raw === 'string' && raw.trim() !== '') {
+    try {
+      const parsed = JSON.parse(raw)
+      return Array.isArray(parsed) ? parsed : []
+    } catch {
+      return []
+    }
+  }
+  return []
+}
+
+const telegramUrlProxies = computed(() =>
+  normalizeTelegramProxies(form.telegram_proxies).filter((p) => p.type === 'url')
+)
+
+const telegramConnectionIds = computed({
+  get () {
+    return normalizeTelegramProxies(form.telegram_proxies)
+      .filter((p) => p.type === 'connection' && p.enabled)
+      .map((p) => p.connection_id)
+  },
+  set (ids) {
+    const selected = new Set((ids || []).map((id) => Number(id)))
+    const keptUrls = normalizeTelegramProxies(form.telegram_proxies).filter((p) => p.type === 'url')
+    const connections = [...selected].map((connectionId) => {
+      const existing = normalizeTelegramProxies(form.telegram_proxies).find(
+        (p) => p.type === 'connection' && Number(p.connection_id) === connectionId
+      )
+      return existing || {
+        id: `c${connectionId}`,
+        type: 'connection',
+        connection_id: connectionId,
+        enabled: true
+      }
+    })
+    form.telegram_proxies = [...keptUrls, ...connections]
+  }
 })
 
 const panelUrl = computed(() => settingsStore.panelUrl)
@@ -533,7 +786,14 @@ function snapshotForm () {
     panel_port: String(form.panel_port || '').trim(),
     panel_https_port: String(form.panel_https_port || '').trim(),
     failure_webhook_url: String(form.failure_webhook_url || '').trim(),
-    timezone: String(form.timezone || 'UTC').trim() || 'UTC'
+    timezone: String(form.timezone || 'UTC').trim() || 'UTC',
+    telegram_bot_token: String(form.telegram_bot_token || '').trim(),
+    telegram_admin_id: String(form.telegram_admin_id || '').trim(),
+    telegram_mode: form.telegram_mode || 'polling',
+    telegram_language: form.telegram_language || 'en',
+    telegram_proxies: form.telegram_proxies,
+    telegram_proxy_strategy: form.telegram_proxy_strategy || 'fastest',
+    telegram_notifications_enabled: !!form.telegram_notifications_enabled
   })
 }
 
@@ -566,6 +826,36 @@ function applySettings (s) {
   if (s.panel_https_port !== undefined) form.panel_https_port = String(s.panel_https_port || '7443')
   if (s.failure_webhook_url !== undefined) form.failure_webhook_url = String(s.failure_webhook_url ?? '')
   if (s.timezone !== undefined) form.timezone = String(s.timezone || 'UTC')
+  if (s.telegram_bot_token !== undefined) form.telegram_bot_token = String(s.telegram_bot_token ?? '')
+  form.telegram_bot_token_set = asBool(s.telegram_bot_token_set) || String(s.telegram_bot_token || '').includes('*')
+  if (s.telegram_admin_id !== undefined) form.telegram_admin_id = String(s.telegram_admin_id ?? '')
+  if (s.telegram_mode !== undefined) form.telegram_mode = String(s.telegram_mode || 'polling')
+  if (s.telegram_language !== undefined) form.telegram_language = String(s.telegram_language || 'en')
+  if (s.telegram_proxy_strategy !== undefined) form.telegram_proxy_strategy = String(s.telegram_proxy_strategy || 'fastest')
+  if (s.telegram_notifications_enabled !== undefined) {
+    form.telegram_notifications_enabled = asBool(s.telegram_notifications_enabled)
+  }
+  if (s.telegram_proxies !== undefined) {
+    const rows = normalizeTelegramProxies(s.telegram_proxies)
+    form.telegram_proxies = rows.map((row) => {
+      if (row.type === 'url') {
+        return {
+          id: row.id || `p${Math.random().toString(36).slice(2, 8)}`,
+          type: 'url',
+          url: row.url_masked || row.url || '',
+          enabled: row.enabled !== false
+        }
+      }
+      return {
+        id: row.id || `c${row.connection_id}`,
+        type: 'connection',
+        connection_id: Number(row.connection_id),
+        enabled: row.enabled !== false
+      }
+    })
+  } else if (!Array.isArray(form.telegram_proxies)) {
+    form.telegram_proxies = []
+  }
   if (!String(form.panel_domain || '').trim()) form.endpoint_use_domain = false
   if (!form.panel_https_port) form.panel_https_port = '7443'
   timezoneOptions.value = buildTimezoneOptions(settingsStore.timezones)
@@ -694,7 +984,162 @@ async function load () {
   await settingsStore.fetch(true)
   applySettings(settingsStore.settings)
   if (settingsStore.ssl?.email) sslEmail.value = settingsStore.ssl.email
-  await loadTwoFactor()
+  await Promise.all([loadTwoFactor(), loadTelegramConnections()])
+}
+
+async function loadTelegramConnections () {
+  try {
+    const { data } = await api.get('/api/resolver/connections')
+    const list = data.connections || data || []
+    telegramConnectionOptions.value = (Array.isArray(list) ? list : []).map((c) => ({
+      label: c.name || `#${c.id}`,
+      value: c.id
+    }))
+  } catch {
+    telegramConnectionOptions.value = []
+  }
+}
+
+function openTelegramProxyDialog () {
+  telegramProxyDraftUrl.value = ''
+  telegramProxyDialogError.value = ''
+  telegramProxyDialogOpen.value = true
+}
+
+function addTelegramProxyUrl (url) {
+  if (!Array.isArray(form.telegram_proxies)) form.telegram_proxies = []
+  form.telegram_proxies.push({
+    id: `p${Date.now().toString(36)}`,
+    type: 'url',
+    url: String(url || '').trim(),
+    enabled: true
+  })
+}
+
+function telegramProxyLabel (proxy) {
+  const url = String(proxy?.url || '').trim()
+  if (!url) return `#${proxy?.id || ''}`
+  try {
+    const parts = new URL(url)
+    const auth = parts.username ? '***@' : ''
+    return `${parts.protocol}//${auth}${parts.host}`
+  } catch {
+    return url.length > 48 ? `${url.slice(0, 45)}…` : url
+  }
+}
+
+function onTelegramProxyEnabledChange (proxy, enabled) {
+  if (enabled) {
+    proxy.enabled = true
+    return
+  }
+  $q.dialog({
+    title: t('settings.telegramDisableProxyTitle'),
+    message: t('settings.telegramDisableProxyConfirm', { url: telegramProxyLabel(proxy) }),
+    cancel: { label: t('common.cancel'), flat: true },
+    ok: { label: t('settings.telegramDisableProxy'), color: 'warning' },
+    persistent: true
+  }).onOk(() => {
+    proxy.enabled = false
+  })
+}
+
+function confirmRemoveTelegramProxy (proxy) {
+  $q.dialog({
+    title: t('settings.telegramRemoveProxyTitle'),
+    message: t('settings.telegramRemoveProxyConfirm', { url: telegramProxyLabel(proxy) }),
+    cancel: { label: t('common.cancel'), flat: true },
+    ok: { label: t('common.delete'), color: 'negative' },
+    persistent: true
+  }).onOk(() => {
+    removeTelegramProxy(proxy.id)
+  })
+}
+
+function removeTelegramProxy (id) {
+  form.telegram_proxies = normalizeTelegramProxies(form.telegram_proxies).filter((p) => p.id !== id)
+}
+
+function telegramErrorText (payload, fallbackKey = 'settings.telegramTestFailed') {
+  if (payload?.response) {
+    return apiErrorMessage(payload, t(fallbackKey))
+  }
+  const message = String(payload?.message || '').trim()
+  if (message) return message
+  const errors = payload?.errors
+  if (errors && typeof errors === 'object') {
+    for (const key of Object.keys(errors)) {
+      const first = Array.isArray(errors[key]) ? errors[key][0] : errors[key]
+      const text = String(first || '').trim()
+      if (text) return text
+    }
+  }
+  return t(fallbackKey)
+}
+
+async function submitTelegramProxyDialog () {
+  telegramProxyDialogError.value = ''
+  const url = String(telegramProxyDraftUrl.value || '').trim()
+  if (!url) {
+    telegramProxyDialogError.value = t('settings.telegramProxyUrlEmpty')
+    return
+  }
+
+  const already = normalizeTelegramProxies(form.telegram_proxies).some(
+    (p) => p.type === 'url' && String(p.url || '').trim() === url
+  )
+  if (already) {
+    telegramProxyDialogError.value = t('settings.telegramProxyAlreadyAdded')
+    return
+  }
+
+  telegramProxyChecking.value = true
+  try {
+    const token = String(form.telegram_bot_token || '').trim()
+    const { data } = await api.post('/api/settings/test-telegram-proxy', {
+      url,
+      token: token && !token.includes('*') ? token : undefined
+    })
+    addTelegramProxyUrl(url)
+    telegramProxyDialogOpen.value = false
+    telegramProxyDraftUrl.value = ''
+    telegramProxyDialogError.value = ''
+    $q.notify({
+      type: 'positive',
+      position: 'top-right',
+      message: data?.message || t('settings.telegramProxyAdded', { ms: data?.latency_ms || 0 })
+    })
+  } catch (e) {
+    telegramProxyDialogError.value = telegramErrorText(
+      e,
+      'settings.telegramProxyCheckFailed'
+    )
+  } finally {
+    telegramProxyChecking.value = false
+  }
+}
+
+async function testTelegram (probeProxies) {
+  telegramTesting.value = true
+  telegramTestResult.value = null
+  telegramProxyProbe.value = []
+  try {
+    const { data } = await api.post('/api/settings/test-telegram', { probe_proxies: !!probeProxies })
+    const username = data?.bot?.username ? `@${data.bot.username}` : ''
+    telegramTestResult.value = {
+      ok: true,
+      text: data?.message
+        || (username ? t('settings.telegramTestOk', { username }) : t('settings.telegramTestOkGeneric'))
+    }
+    if (Array.isArray(data.proxies)) telegramProxyProbe.value = data.proxies
+  } catch (e) {
+    telegramTestResult.value = {
+      ok: false,
+      text: telegramErrorText(e, 'settings.telegramTestFailed')
+    }
+  } finally {
+    telegramTesting.value = false
+  }
 }
 
 async function save () {
@@ -707,12 +1152,34 @@ async function save () {
       panel_domain: String(form.panel_domain || '').trim() || null,
       endpoint_use_domain: hasDomain.value ? !!form.endpoint_use_domain : false,
       panel_https_port: String(form.panel_https_port || '7443').trim() || '7443',
-      timezone: String(form.timezone || 'UTC').trim() || 'UTC'
+      timezone: String(form.timezone || 'UTC').trim() || 'UTC',
+      telegram_bot_token: String(form.telegram_bot_token || '').trim(),
+      telegram_admin_id: String(form.telegram_admin_id || '').trim(),
+      telegram_mode: form.telegram_mode || 'polling',
+      telegram_language: form.telegram_language || 'en',
+      telegram_proxy_strategy: form.telegram_proxy_strategy || 'fastest',
+      telegram_notifications_enabled: !!form.telegram_notifications_enabled,
+      telegram_proxies: form.telegram_proxies
+        .filter((p) => p.type === 'url' ? String(p.url || '').trim() !== '' : !!p.connection_id)
+        .map((p) => ({
+          id: p.id,
+          type: p.type,
+          enabled: p.enabled !== false,
+          ...(p.type === 'url' ? { url: p.url } : { connection_id: Number(p.connection_id) })
+        }))
     }
+    delete payload.telegram_bot_token_set
     const { data } = await api.put('/api/settings', payload)
     settingsStore.applyResponse(data)
     applySettings(data.settings || {})
     $q.notify({ type: 'positive', position: 'top-right', message: t('settings.settingsSaved') })
+    if (data.telegram_sync && data.telegram_sync.ok === false) {
+      $q.notify({
+        type: 'warning',
+        position: 'top-right',
+        message: data.telegram_sync.message || t('settings.telegramSyncWarn')
+      })
+    }
   } catch (e) {
     const errors = e?.response?.data?.errors
     const panelDomainMsg = errors?.panel_domain?.[0]
@@ -902,7 +1369,7 @@ onMounted(load)
 
 <style scoped>
 .settings-card {
-  overflow: hidden;
+  overflow: visible;
 }
 .settings-tabs {
   padding: 0 8px;
@@ -913,9 +1380,11 @@ onMounted(load)
 }
 .settings-panels {
   background: transparent;
+  min-height: 320px;
 }
 .settings-panels :deep(.q-tab-panel) {
   background: transparent;
+  min-height: 280px;
 }
 .mono {
   font-family: var(--theme-mono);

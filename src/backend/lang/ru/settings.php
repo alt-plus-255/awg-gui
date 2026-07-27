@@ -48,4 +48,17 @@ return [
     'webhook_field_message' => 'Человекочитаемое описание',
     'webhook_field_panel_url' => 'URL панели администратора, если известен',
     'webhook_field_details' => 'Расширяемый объект с доп. контекстом',
+
+    'telegram_token_missing' => 'Токен бота не задан. Сначала укажите токен и сохраните настройки.',
+    'telegram_token_missing_for_proxy' => 'Сначала укажите токен бота — он нужен для проверки прокси.',
+    'telegram_bot_unreachable' => 'Не удалось связаться с Telegram Bot API: :detail',
+    'telegram_bot_ok' => 'Подключение к боту успешно',
+    'telegram_proxies_empty' => 'Бот доступен, но в пуле нет настроенных прокси.',
+    'telegram_proxies_probed' => 'Бот OK. Прокси: :ok/:total доступны.',
+    'telegram_proxy_url_empty' => 'Введите URL прокси.',
+    'telegram_proxy_invalid_url' => 'Некорректный URL прокси. Пример: socks5://user:pass@host:1080',
+    'telegram_proxy_unsupported_scheme' => 'Неподдерживаемая схема. Используйте socks5://, socks5h://, http:// или https://',
+    'telegram_proxy_unreachable' => 'Прокси недоступен или не может достучаться до api.telegram.org.',
+    'telegram_proxy_telegram_rejected' => 'Прокси работает, но Telegram отклонил запрос: :detail',
+    'telegram_proxy_ok' => 'Прокси OK (:ms мс)',
 ];

@@ -44,6 +44,10 @@ class EnsureApiAuthenticated
             return true;
         }
 
+        if ($request->isMethod('POST') && $request->is('api/telegram/webhook/*')) {
+            return true;
+        }
+
         return false;
     }
 }

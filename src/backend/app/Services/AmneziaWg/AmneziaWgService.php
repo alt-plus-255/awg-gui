@@ -212,6 +212,15 @@ class AmneziaWgService
             'ssl_expires_at' => '',
             'failure_webhook_url' => '',
             'timezone' => (string) env('TZ', 'UTC'),
+            'telegram_bot_token' => '',
+            'telegram_admin_id' => '',
+            'telegram_mode' => 'polling',
+            'telegram_proxies' => '[]',
+            'telegram_proxy_strategy' => 'fastest',
+            'telegram_notifications_enabled' => '1',
+            'telegram_webhook_secret' => '',
+            'telegram_mixed_auth_user' => '',
+            'telegram_mixed_auth_pass' => '',
         ];
     }
 

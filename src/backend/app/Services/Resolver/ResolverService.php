@@ -6,6 +6,7 @@ use App\Models\AwgConfig;
 use App\Models\ResolverConnection;
 use App\Services\AmneziaWg\AmneziaWgService;
 use App\Services\Docker\DockerRuntime;
+use App\Services\Telegram\TelegramSettings;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 use RuntimeException;
@@ -956,7 +957,7 @@ class ResolverService
                 'independent_cache' => true,
                 'strategy' => 'ipv4_only',
             ],
-            'inbounds' => [
+            'inbounds' => $this->withTelegramMixedInbound([
                 [
                     'type' => 'direct',
                     'tag' => 'dns-in',
@@ -980,7 +981,7 @@ class ResolverService
                     // breaks the FakeIP ip_cidr → proxy route (traffic falls to direct).
                     'sniff_override_destination' => false,
                 ],
-            ],
+            ], $outbounds, $routeRules, $outboundTagsAdded),
             'outbounds' => $outbounds,
             'route' => [
                 'rules' => $routeRules,
@@ -1001,6 +1002,75 @@ class ResolverService
                 ],
             ],
         ];
+    }
+
+    /**
+     * Optional SOCKS/HTTP mixed inbound for Telegram bot traffic via selected resolver connections.
+     *
+     * @param  list<array<string, mixed>>  $inbounds
+     * @param  list<array<string, mixed>>  $outbounds
+     * @param  list<array<string, mixed>>  $routeRules
+     * @param  array<string, true>  $outboundTagsAdded
+     * @return list<array<string, mixed>>
+     */
+    private function withTelegramMixedInbound(
+        array $inbounds,
+        array &$outbounds,
+        array &$routeRules,
+        array $outboundTagsAdded,
+    ): array {
+        $ids = app(TelegramSettings::class)->enabledConnectionIds();
+        if ($ids === []) {
+            return $inbounds;
+        }
+
+        $tags = [];
+        foreach ($ids as $id) {
+            $tag = 'conn_'.$id;
+            if (isset($outboundTagsAdded[$tag])) {
+                $tags[] = $tag;
+            }
+        }
+        if ($tags === []) {
+            return $inbounds;
+        }
+
+        $auth = app(TelegramSettings::class)->mixedAuth();
+
+        $inbounds[] = [
+            'type' => 'mixed',
+            'tag' => TelegramSettings::MIXED_INBOUND_TAG,
+            'listen' => '0.0.0.0',
+            'listen_port' => TelegramSettings::MIXED_INBOUND_PORT,
+            'users' => [
+                [
+                    'username' => $auth['username'],
+                    'password' => $auth['password'],
+                ],
+            ],
+        ];
+
+        if (count($tags) === 1) {
+            $outTag = $tags[0];
+        } else {
+            $outTag = TelegramSettings::TELEGRAM_OUTBOUND_TAG;
+            if (! isset($outboundTagsAdded[$outTag])) {
+                $outbounds[] = [
+                    'type' => 'urltest',
+                    'tag' => $outTag,
+                    'outbounds' => $tags,
+                    'url' => self::DELAY_TEST_URL,
+                    'interval' => '3m',
+                ];
+            }
+        }
+
+        array_splice($routeRules, 1, 0, [[
+            'inbound' => [TelegramSettings::MIXED_INBOUND_TAG],
+            'outbound' => $outTag,
+        ]]);
+
+        return $inbounds;
     }
 
     /**

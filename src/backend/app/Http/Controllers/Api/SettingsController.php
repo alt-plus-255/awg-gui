@@ -6,8 +6,11 @@ use App\Http\Controllers\Controller;
 use App\Models\Setting;
 use App\Services\AmneziaWg\AmneziaWgService;
 use App\Services\AmneziaWg\SslCertificateService;
+use App\Services\Telegram\TelegramSettings;
+use App\Services\Telegram\TelegramWebhookSync;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Process;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 class SettingsController extends Controller
@@ -15,6 +18,8 @@ class SettingsController extends Controller
     public function __construct(
         private AmneziaWgService $awg,
         private SslCertificateService $ssl,
+        private TelegramSettings $telegram,
+        private TelegramWebhookSync $telegramSync,
     ) {}
 
     public function show()
@@ -24,6 +29,10 @@ class SettingsController extends Controller
         }
 
         $all = Setting::allKeyed();
+        $tg = $this->telegram->forApi();
+        foreach ($tg as $key => $value) {
+            $all[$key] = $value;
+        }
 
         return response()->json([
             'settings' => $all,
@@ -45,7 +54,77 @@ class SettingsController extends Controller
             'panel_https_port' => ['sometimes', 'string', 'max:10'],
             'failure_webhook_url' => ['nullable', 'string', 'max:2048'],
             'timezone' => ['sometimes', 'string', 'max:64', Rule::in(timezone_identifiers_list())],
+            'telegram_bot_token' => ['sometimes', 'nullable', 'string', 'max:256'],
+            'telegram_admin_id' => ['sometimes', 'nullable', 'string', 'max:64'],
+            'telegram_mode' => ['sometimes', 'string', Rule::in(['polling', 'webhook'])],
+            'telegram_proxies' => ['sometimes', 'array'],
+            'telegram_proxies.*.id' => ['nullable', 'string', 'max:32'],
+            'telegram_proxies.*.type' => ['required_with:telegram_proxies', 'string', Rule::in(['url', 'connection'])],
+            'telegram_proxies.*.url' => ['nullable', 'string', 'max:2048'],
+            'telegram_proxies.*.connection_id' => ['nullable', 'integer', 'min:1'],
+            'telegram_proxies.*.enabled' => ['sometimes', 'boolean'],
+            'telegram_proxy_strategy' => ['sometimes', 'string', Rule::in(['fastest', 'first_ok'])],
+            'telegram_notifications_enabled' => ['sometimes', 'boolean'],
+            'telegram_language' => ['sometimes', 'string', Rule::in(['en', 'ru'])],
         ]);
+
+        $telegramTouched = array_key_exists('telegram_bot_token', $data)
+            || array_key_exists('telegram_admin_id', $data)
+            || array_key_exists('telegram_mode', $data)
+            || array_key_exists('telegram_proxies', $data)
+            || array_key_exists('telegram_proxy_strategy', $data)
+            || array_key_exists('telegram_notifications_enabled', $data)
+            || array_key_exists('telegram_language', $data);
+
+        $proxiesChanged = false;
+        if (array_key_exists('telegram_proxies', $data)) {
+            $normalized = $this->normalizeTelegramProxies($data['telegram_proxies'] ?? []);
+            $encoded = $this->telegram->encodeProxies($normalized);
+            $proxiesChanged = $encoded !== (string) Setting::getValue('telegram_proxies', '[]');
+            Setting::setValue('telegram_proxies', $encoded);
+            unset($data['telegram_proxies']);
+        }
+
+        if (array_key_exists('telegram_bot_token', $data)) {
+            $token = trim((string) ($data['telegram_bot_token'] ?? ''));
+            // Empty or masked value keeps the existing token.
+            if ($token !== '' && ! str_contains($token, '*')) {
+                Setting::setValue('telegram_bot_token', $token);
+            }
+            unset($data['telegram_bot_token']);
+        }
+
+        if (array_key_exists('telegram_admin_id', $data)) {
+            Setting::setValue('telegram_admin_id', trim((string) ($data['telegram_admin_id'] ?? '')));
+            unset($data['telegram_admin_id']);
+        }
+
+        if (array_key_exists('telegram_mode', $data)) {
+            Setting::setValue('telegram_mode', (string) $data['telegram_mode']);
+            unset($data['telegram_mode']);
+        }
+
+        if (array_key_exists('telegram_proxy_strategy', $data)) {
+            Setting::setValue('telegram_proxy_strategy', (string) $data['telegram_proxy_strategy']);
+            unset($data['telegram_proxy_strategy']);
+        }
+
+        if (array_key_exists('telegram_notifications_enabled', $data)) {
+            Setting::setValue(
+                'telegram_notifications_enabled',
+                filter_var($data['telegram_notifications_enabled'], FILTER_VALIDATE_BOOLEAN) ? '1' : '0'
+            );
+            unset($data['telegram_notifications_enabled']);
+        }
+
+        if (array_key_exists('telegram_language', $data)) {
+            Setting::setValue('telegram_language', (string) $data['telegram_language']);
+            unset($data['telegram_language']);
+        }
+
+        if ($telegramTouched) {
+            $this->telegramSync->ensureWebhookSecret();
+        }
 
         $serverEndpoint = array_key_exists('server_endpoint', $data)
             ? trim((string) $data['server_endpoint'])
@@ -82,26 +161,30 @@ class SettingsController extends Controller
             ], 422);
         }
 
-        $data['panel_port'] = $httpPort;
-        $data['panel_https_port'] = $httpsPort;
-
-        if ($panelDomain === '') {
-            $useDomain = false;
-            $data['endpoint_use_domain'] = false;
-            $data['panel_domain'] = '';
-        } else {
-            try {
-                $this->awg->assertDomainPointsToPublicIp($panelDomain, $serverEndpoint);
-            } catch (\InvalidArgumentException $e) {
-                return response()->json([
-                    'message' => $e->getMessage(),
-                    'errors' => ['panel_domain' => [$e->getMessage()]],
-                ], 422);
-            }
+        if (array_key_exists('panel_port', $data) || array_key_exists('panel_https_port', $data)) {
+            $data['panel_port'] = $httpPort;
+            $data['panel_https_port'] = $httpsPort;
         }
 
-        if (array_key_exists('endpoint_use_domain', $data) || $panelDomain === '') {
-            $data['endpoint_use_domain'] = $useDomain ? '1' : '0';
+        if (array_key_exists('panel_domain', $data) || array_key_exists('endpoint_use_domain', $data) || array_key_exists('server_endpoint', $data)) {
+            if ($panelDomain === '') {
+                $useDomain = false;
+                $data['endpoint_use_domain'] = false;
+                $data['panel_domain'] = '';
+            } else {
+                try {
+                    $this->awg->assertDomainPointsToPublicIp($panelDomain, $serverEndpoint);
+                } catch (\InvalidArgumentException $e) {
+                    return response()->json([
+                        'message' => $e->getMessage(),
+                        'errors' => ['panel_domain' => [$e->getMessage()]],
+                    ], 422);
+                }
+            }
+
+            if (array_key_exists('endpoint_use_domain', $data) || $panelDomain === '') {
+                $data['endpoint_use_domain'] = $useDomain ? '1' : '0';
+            }
         }
 
         foreach ($data as $key => $value) {
@@ -132,7 +215,7 @@ class SettingsController extends Controller
             } catch (\Throwable $e) {
                 return response()->json([
                     'message' => __('settings.caddy_ports_apply_failed', ['error' => $e->getMessage()]),
-                    'settings' => Setting::allKeyed(),
+                    'settings' => $this->settingsPayload(),
                     'display_endpoint' => $this->awg->resolveEndpointHost(),
                     'panel_url' => $this->awg->resolvePanelUrl(),
                     'ssl' => $this->ssl->status(),
@@ -143,15 +226,130 @@ class SettingsController extends Controller
             $this->awg->syncPanelUrlToHostEnv();
         }
 
-        $all = Setting::allKeyed();
+        $telegramSync = null;
+        if ($telegramTouched) {
+            $telegramSync = $this->telegramSync->syncAfterSettingsChange($proxiesChanged);
+        }
 
         return response()->json([
-            'settings' => $all,
+            'settings' => $this->settingsPayload(),
             'display_endpoint' => $this->awg->resolveEndpointHost(),
             'panel_url' => $this->awg->resolvePanelUrl(),
             'ssl' => $this->ssl->status(),
             'timezones' => $this->timezoneOptions(),
+            'telegram_sync' => $telegramSync,
         ]);
+    }
+
+    public function testTelegram(Request $request)
+    {
+        $probe = filter_var($request->input('probe_proxies', false), FILTER_VALIDATE_BOOLEAN);
+        $result = $this->telegramSync->testBot($probe);
+
+        return response()->json($result, ($result['ok'] ?? false) ? 200 : 422);
+    }
+
+    public function testTelegramProxy(Request $request)
+    {
+        $data = $request->validate([
+            'url' => ['required', 'string', 'max:2048'],
+            'token' => ['nullable', 'string', 'max:256'],
+        ]);
+
+        $token = trim((string) ($data['token'] ?? ''));
+        if ($token === '' || str_contains($token, '*')) {
+            $token = null;
+        }
+
+        $result = $this->telegramSync->testProxyUrl(trim((string) $data['url']), $token);
+
+        return response()->json($result, ($result['ok'] ?? false) ? 200 : 422);
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $rows
+     * @return list<array<string, mixed>>
+     */
+    private function normalizeTelegramProxies(array $rows): array
+    {
+        $out = [];
+        foreach ($rows as $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+            $type = (string) ($row['type'] ?? '');
+            $enabled = filter_var($row['enabled'] ?? true, FILTER_VALIDATE_BOOLEAN);
+            $id = trim((string) ($row['id'] ?? ''));
+            if ($id === '') {
+                $id = Str::lower(Str::random(8));
+            }
+
+            if ($type === 'url') {
+                $url = trim((string) ($row['url'] ?? ''));
+                if ($url === '' || str_contains($url, '***')) {
+                    // Keep existing URL for this id if masked/empty on update.
+                    foreach ($this->telegram->proxies() as $existing) {
+                        if (($existing['id'] ?? '') === $id && ($existing['type'] ?? '') === 'url') {
+                            $url = (string) $existing['url'];
+                            break;
+                        }
+                    }
+                }
+                if ($url === '') {
+                    continue;
+                }
+                if (! $this->isAllowedTelegramProxyUrl($url)) {
+                    continue;
+                }
+                $out[] = [
+                    'id' => $id,
+                    'type' => 'url',
+                    'url' => $url,
+                    'enabled' => $enabled,
+                ];
+                continue;
+            }
+
+            if ($type === 'connection') {
+                $connectionId = (int) ($row['connection_id'] ?? 0);
+                if ($connectionId < 1) {
+                    continue;
+                }
+                $out[] = [
+                    'id' => $id,
+                    'type' => 'connection',
+                    'connection_id' => $connectionId,
+                    'enabled' => $enabled,
+                ];
+            }
+        }
+
+        return $out;
+    }
+
+    private function isAllowedTelegramProxyUrl(string $url): bool
+    {
+        $parts = parse_url($url);
+        if ($parts === false || empty($parts['host'])) {
+            return false;
+        }
+
+        $scheme = strtolower((string) ($parts['scheme'] ?? ''));
+
+        return in_array($scheme, ['socks5', 'socks5h', 'http', 'https'], true);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function settingsPayload(): array
+    {
+        $all = Setting::allKeyed();
+        foreach ($this->telegram->forApi() as $key => $value) {
+            $all[$key] = $value;
+        }
+
+        return $all;
     }
 
     public function sslIssueStart(Request $request)
@@ -178,7 +376,7 @@ class SettingsController extends Controller
                 'recovered' => true,
                 'redirect' => true,
                 'ssl' => $this->ssl->status(),
-                'settings' => Setting::allKeyed(),
+                'settings' => $this->settingsPayload(),
                 'panel_url' => $this->awg->resolvePanelUrl(),
                 'message' => __('settings.ssl_already_issued'),
             ]);
@@ -206,7 +404,7 @@ class SettingsController extends Controller
             'ok' => true,
             'redirect' => true,
             'ssl' => $ssl,
-            'settings' => Setting::allKeyed(),
+            'settings' => $this->settingsPayload(),
             'panel_url' => $this->awg->resolvePanelUrl(),
             'message' => __('settings.ssl_issued'),
         ]);
@@ -229,7 +427,7 @@ class SettingsController extends Controller
             'recovered' => true,
             'redirect' => true,
             'ssl' => $ssl,
-            'settings' => Setting::allKeyed(),
+            'settings' => $this->settingsPayload(),
             'panel_url' => $this->awg->resolvePanelUrl(),
             'message' => __('settings.ssl_cert_found_enabled'),
         ]);
@@ -246,7 +444,7 @@ class SettingsController extends Controller
         return response()->json([
             'ok' => true,
             'ssl' => $ssl,
-            'settings' => Setting::allKeyed(),
+            'settings' => $this->settingsPayload(),
             'panel_url' => $this->awg->resolvePanelUrl(),
             'message' => __('settings.https_disabled'),
         ]);
@@ -269,7 +467,7 @@ class SettingsController extends Controller
                 'recovered' => true,
                 'redirect' => true,
                 'ssl' => $recovered,
-                'settings' => Setting::allKeyed(),
+                'settings' => $this->settingsPayload(),
                 'panel_url' => $this->awg->resolvePanelUrl(),
                 'message' => __('settings.ssl_aborted_but_cert_found'),
             ]);
@@ -299,7 +497,7 @@ class SettingsController extends Controller
                         'recovered' => true,
                         'redirect' => true,
                         'ssl' => $ssl,
-                        'settings' => Setting::allKeyed(),
+                        'settings' => $this->settingsPayload(),
                         'panel_url' => $this->awg->resolvePanelUrl(),
                         'message' => __('settings.ssl_was_already_issued'),
                     ]);
