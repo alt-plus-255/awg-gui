@@ -32,6 +32,38 @@ class PanelOpsClient
         }
     }
 
+    /**
+     * @return array<string, mixed>
+     */
+    public function startUpdate(?string $version = null): array
+    {
+        $baseUrl = rtrim((string) ($this->envValue('PANEL_OPS_URL') ?: 'http://panel-ops:8090'), '/');
+        $token = trim((string) ($this->envValue('PANEL_OPS_TOKEN') ?: ''));
+
+        if ($token === '') {
+            throw new RuntimeException('PANEL_OPS_TOKEN is not configured');
+        }
+
+        $payload = [];
+        if ($version !== null && $version !== '') {
+            $payload['version'] = $version;
+        }
+
+        $response = Http::timeout(15)
+            ->withToken($token)
+            ->acceptJson()
+            ->post("{$baseUrl}/ops/update/start", $payload);
+
+        if (! $response->successful()) {
+            $error = trim((string) ($response->json('error') ?? $response->body()));
+            throw new RuntimeException($error !== '' ? $error : 'panel-ops update start failed');
+        }
+
+        $body = $response->json();
+
+        return is_array($body) ? $body : ['ok' => true];
+    }
+
     private function envValue(string $key): ?string
     {
         if (array_key_exists($key, $_ENV) && $_ENV[$key] !== '') {

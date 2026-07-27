@@ -110,6 +110,9 @@ Route::delete('/resolver/connections/{connection}', [ResolverConnectionControlle
 Route::get('/settings', [SettingsController::class, 'show']);
 Route::put('/settings', [SettingsController::class, 'update']);
 Route::post('/settings/restart-awg', [SettingsController::class, 'restartAwg']);
+Route::get('/settings/update-status', [SettingsController::class, 'updateStatus']);
+Route::post('/settings/check-updates', [SettingsController::class, 'checkProjectUpdates']);
+Route::post('/settings/update', [SettingsController::class, 'startProjectUpdate']);
 Route::post('/settings/test-webhook', [SettingsController::class, 'testWebhook']);
 Route::post('/settings/test-telegram', [SettingsController::class, 'testTelegram']);
 Route::post('/settings/test-telegram-proxy', [SettingsController::class, 'testTelegramProxy']);

@@ -54,26 +54,26 @@
             </q-td>
             <q-td key="name" :props="props">{{ props.row.name }}</q-td>
             <q-td key="type" :props="props">
-              <q-badge :color="props.row.type === 'virtual_network' ? 'info' : 'primary'">
-                {{ props.row.type === 'virtual_network' ? t('configs.typeVirtualNetwork') : t('configs.typeServer') }}
-              </q-badge>
-              <q-badge color="grey-7" class="q-ml-xs">
-                {{ props.row.protocol_label || protocolLabel(props.row.protocol_version) }}
-              </q-badge>
-              <q-badge
-                v-if="props.row.type === 'virtual_network'"
-                :color="props.row.vn_policy === 'deny_all' ? 'deep-orange' : 'grey-8'"
-                class="q-ml-xs"
-              >
-                {{ props.row.vn_policy === 'deny_all' ? t('configs.badgeIsolation') : t('configs.badgeAllowAll') }}
-              </q-badge>
-              <q-badge
-                v-if="props.row.resolver_enabled"
-                color="deep-purple"
-                class="q-ml-xs"
-              >
-                {{ t('configs.badgeResolver') }}
-              </q-badge>
+              <div class="config-type-badges column items-start q-gutter-y-xs">
+                <q-badge :color="props.row.type === 'virtual_network' ? 'info' : 'primary'">
+                  {{ props.row.type === 'virtual_network' ? t('configs.typeVirtualNetwork') : t('configs.typeServer') }}
+                </q-badge>
+                <q-badge color="grey-7">
+                  {{ props.row.protocol_label || protocolLabel(props.row.protocol_version) }}
+                </q-badge>
+                <q-badge
+                  v-if="props.row.type === 'virtual_network'"
+                  :color="props.row.vn_policy === 'deny_all' ? 'deep-orange' : 'grey-8'"
+                >
+                  {{ props.row.vn_policy === 'deny_all' ? t('configs.badgeIsolation') : t('configs.badgeAllowAll') }}
+                </q-badge>
+                <q-badge
+                  v-if="props.row.resolver_enabled"
+                  color="deep-purple"
+                >
+                  {{ t('configs.badgeResolver') }}
+                </q-badge>
+              </div>
             </q-td>
             <q-td key="iface" :props="props">{{ props.row.iface }}</q-td>
             <q-td key="listen_port" :props="props">{{ props.row.listen_port }}</q-td>
@@ -1731,6 +1731,14 @@ onUnmounted(() => {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+}
+
+.config-type-badges :deep(.q-badge) {
+  white-space: normal;
+  height: auto;
+  line-height: 1.25;
+  padding-top: 4px;
+  padding-bottom: 4px;
 }
 
 @media (max-width: 1023px) {

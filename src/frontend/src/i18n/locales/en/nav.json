@@ -22,5 +22,7 @@
   "liveFetch": "Live Fetch",
   "liveFetchHint": "WebSocket unavailable, using HTTP polling",
   "liveConnecting": "Live…",
-  "liveConnectingHint": "Connecting to the updates channel"
+  "liveConnectingHint": "Connecting to the updates channel",
+  "updateAvailable": "Update available",
+  "updateAvailableTooltip": "Go to panel update settings"
 }

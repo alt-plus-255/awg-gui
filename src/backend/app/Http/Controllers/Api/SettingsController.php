@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Setting;
 use App\Services\AmneziaWg\AmneziaWgService;
 use App\Services\AmneziaWg\SslCertificateService;
+use App\Services\System\ProjectUpdateService;
 use App\Services\Telegram\TelegramSettings;
 use App\Services\Telegram\TelegramWebhookSync;
 use Illuminate\Http\Request;
@@ -18,6 +19,7 @@ class SettingsController extends Controller
     public function __construct(
         private AmneziaWgService $awg,
         private SslCertificateService $ssl,
+        private ProjectUpdateService $projectUpdate,
         private TelegramSettings $telegram,
         private TelegramWebhookSync $telegramSync,
     ) {}
@@ -264,6 +266,43 @@ class SettingsController extends Controller
         $result = $this->telegramSync->testProxyUrl(trim((string) $data['url']), $token);
 
         return response()->json($result, ($result['ok'] ?? false) ? 200 : 422);
+    }
+
+    public function updateStatus()
+    {
+        return response()->json($this->projectUpdate->status());
+    }
+
+    public function checkProjectUpdates()
+    {
+        return response()->json($this->projectUpdate->checkForUpdates());
+    }
+
+    public function startProjectUpdate(Request $request)
+    {
+        $data = $request->validate([
+            'version' => ['nullable', 'string', 'max:64', 'regex:/^v?[A-Za-z0-9._-]+$/'],
+        ]);
+
+        $status = $this->projectUpdate->status();
+        if ($status['running'] ?? false) {
+            return response()->json($status, 409);
+        }
+
+        try {
+            $state = $this->projectUpdate->start($data['version'] ?? null);
+        } catch (\RuntimeException $e) {
+            $message = match ($e->getMessage()) {
+                'update_not_available' => __('settings.update_not_available'),
+                'update_already_running' => __('settings.update_already_running'),
+                default => $e->getMessage(),
+            };
+            $code = $e->getMessage() === 'update_not_available' ? 422 : 500;
+
+            return response()->json(['message' => $message], $code);
+        }
+
+        return response()->json($state, 202);
     }
 
     /**

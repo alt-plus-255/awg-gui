@@ -61,4 +61,13 @@ return [
     'telegram_proxy_unreachable' => 'Прокси недоступен или не может достучаться до api.telegram.org.',
     'telegram_proxy_telegram_rejected' => 'Прокси работает, но Telegram отклонил запрос: :detail',
     'telegram_proxy_ok' => 'Прокси OK (:ms мс)',
+
+    'update_not_available' => 'Автообновление недоступно в этой установке.',
+    'update_already_running' => 'Обновление уже выполняется.',
+    'update_message_idle' => 'Обновление не запущено.',
+    'update_message_running' => 'Идёт обновление…',
+    'update_message_success' => 'Обновление успешно завершено.',
+    'update_message_failed' => 'Обновление завершилось с ошибкой.',
+    'update_message_started' => 'Обновление запущено.',
+    'update_release_fetch_failed' => 'Не удалось получить информацию о релизах с GitHub.',
 ];

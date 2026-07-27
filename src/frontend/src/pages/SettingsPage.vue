@@ -27,6 +27,7 @@
           <q-tab name="panel" :label="t('settings.tabPanel')" />
           <q-tab v-if="hasDomain" name="https" label="HTTPS" />
           <q-tab name="telegram" :label="t('settings.tabTelegram')" />
+          <q-tab name="update" :label="t('settings.tabUpdate')" />
           <q-tab name="twofa" label="2FA" />
         </q-tabs>
 
@@ -37,14 +38,43 @@
             <q-tab-panel name="general" class="q-pa-md">
               <div class="text-subtitle2 q-mb-sm">{{ t('settings.appearance') }}</div>
 
-              <div class="text-caption text-soft-theme q-mb-xs">{{ t('theme.theme') }}</div>
-              <q-option-group
-                :model-value="theme.colorMode"
-                :options="colorModeOptions"
-                type="radio"
-                color="primary"
-                @update:model-value="theme.setColorMode"
-              />
+              <div class="row q-col-gutter-md general-appearance-row">
+                <div class="col-12 col-md-4">
+                  <q-select
+                    :model-value="theme.colorMode"
+                    :options="colorModeOptions"
+                    :label="t('theme.theme')"
+                    filled
+                    emit-value
+                    map-options
+                    @update:model-value="theme.setColorMode"
+                  />
+                </div>
+
+                <div class="col-12 col-md-4">
+                  <q-select
+                    :model-value="theme.styleId"
+                    :options="theme.styleOptions"
+                    :label="t('theme.style')"
+                    filled
+                    emit-value
+                    map-options
+                    @update:model-value="theme.setStyle"
+                  />
+                </div>
+
+                <div class="col-12 col-md-4">
+                  <q-select
+                    :model-value="localeStore.locale"
+                    :options="localeStore.localeOptions"
+                    :label="t('theme.language')"
+                    filled
+                    emit-value
+                    map-options
+                    @update:model-value="localeStore.setLocale"
+                  />
+                </div>
+              </div>
 
               <div v-if="theme.colorMode === 'auto'" class="row q-col-gutter-sm q-mt-sm q-mb-md">
                 <div class="col-12 col-sm-6">
@@ -66,24 +96,6 @@
                   />
                 </div>
               </div>
-
-              <div class="text-caption text-soft-theme q-mb-xs q-mt-md">{{ t('theme.style') }}</div>
-              <q-option-group
-                :model-value="theme.styleId"
-                :options="theme.styleOptions"
-                type="radio"
-                color="primary"
-                @update:model-value="theme.setStyle"
-              />
-
-              <div class="text-caption text-soft-theme q-mb-xs q-mt-md">{{ t('theme.language') }}</div>
-              <q-option-group
-                :model-value="localeStore.locale"
-                :options="localeStore.localeOptions"
-                type="radio"
-                color="primary"
-                @update:model-value="localeStore.setLocale"
-              />
 
               <q-separator class="q-my-md" />
 
@@ -146,7 +158,7 @@
                     filled
                   />
                 </div>
-                <div class="col-12 col-md-6">
+                <div v-if="showHttpsPort" class="col-12 col-md-6">
                   <q-input
                     v-model="form.panel_https_port"
                     :label="t('settings.httpsPort')"
@@ -418,6 +430,93 @@
               </div>
             </q-tab-panel>
 
+            <q-tab-panel name="update" class="q-pa-md">
+              <div class="text-subtitle2 q-mb-sm">{{ t('settings.updateTitle') }}</div>
+              <div class="text-caption text-grey-5 q-mb-md">
+                {{ t('settings.updateHint') }}
+              </div>
+
+              <div class="row q-col-gutter-md q-mb-md">
+                <div class="col-12 col-md-4">
+                  <div class="text-caption text-grey-5">{{ t('settings.currentVersion') }}</div>
+                  <div class="text-body1 mono">{{ projectUpdate.current_version || '—' }}</div>
+                </div>
+                <div class="col-12 col-md-4">
+                  <div class="text-caption text-grey-5">{{ t('settings.latestVersion') }}</div>
+                  <div class="text-body1 mono">
+                    {{ projectUpdate.latest_version || '—' }}
+                    <q-badge
+                      v-if="projectUpdate.release_checked_at && projectUpdate.update_available"
+                      color="warning"
+                      class="q-ml-sm"
+                    >
+                      {{ t('settings.updateAvailableBadge') }}
+                    </q-badge>
+                  </div>
+                </div>
+                <div class="col-12 col-md-4">
+                  <div class="text-caption text-grey-5">{{ t('settings.updateStatus') }}</div>
+                  <div class="text-body1">
+                    <q-spinner v-if="updateStatusBusy" size="18px" color="primary" class="q-mr-sm" />
+                    <span :class="updateStatusClass">{{ updateStatusLabel }}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div
+                v-if="projectUpdate.release_checked_at && !projectUpdate.release_check_error"
+                class="text-caption q-mb-md"
+                :class="projectUpdate.update_available ? 'text-warning' : 'text-positive'"
+              >
+                {{
+                  projectUpdate.update_available
+                    ? t('settings.updateAvailableHint', { version: projectUpdate.latest_version || '—' })
+                    : t('settings.upToDate')
+                }}
+              </div>
+              <div v-if="projectUpdate.release_check_error" class="text-negative text-caption q-mb-md">
+                {{ projectUpdate.release_check_error }}
+              </div>
+
+              <div v-if="projectUpdate.installed_at" class="text-caption text-grey-5 q-mb-xs">
+                {{ t('settings.installedAt', { ts: formatUpdateTs(projectUpdate.installed_at) }) }}
+              </div>
+              <div v-if="projectUpdate.started_at" class="text-caption text-grey-5 q-mb-xs">
+                {{ t('settings.updateStartedAt', { ts: formatUpdateTs(projectUpdate.started_at) }) }}
+              </div>
+              <div v-if="projectUpdate.finished_at" class="text-caption text-grey-5 q-mb-md">
+                {{ t('settings.updateFinishedAt', { ts: formatUpdateTs(projectUpdate.finished_at) }) }}
+              </div>
+
+              <div class="text-body2 q-mb-md">
+                {{ projectUpdate.message || t('settings.updateIdle') }}
+              </div>
+
+              <div class="row q-gutter-sm q-mb-md">
+                <q-btn
+                  color="primary"
+                  :label="t('settings.updateNow')"
+                  :loading="projectUpdate.starting"
+                  :disable="!projectUpdate.can_update || projectUpdate.running"
+                  @click="confirmProjectUpdate"
+                />
+                <q-btn
+                  outline
+                  color="primary"
+                  :label="t('settings.checkForUpdates')"
+                  :loading="projectUpdate.checking"
+                  @click="checkForUpdatesFromSettings"
+                />
+              </div>
+
+              <div v-if="!projectUpdate.can_update" class="text-warning text-caption q-mb-md">
+                {{ t('settings.updateUnavailable') }}
+              </div>
+
+              <div class="text-subtitle2 q-mb-sm">{{ t('settings.updateLogTitle') }}</div>
+              <pre class="mono update-log-pre">{{ projectUpdate.log_tail || t('settings.updateLogEmpty') }}</pre>
+            </q-tab-panel>
+
             <q-tab-panel name="twofa" class="q-pa-md">
               <div class="text-caption text-grey-5 q-mb-md">
                 {{ t('settings.twoFactorHint') }}
@@ -597,11 +696,13 @@
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRoute } from 'vue-router'
 import { useQuasar } from 'quasar'
 import api from '@/boot/axios'
 import { useThemeStore } from '@/stores/theme'
 import { useLocaleStore } from '@/stores/locale'
 import { useSettingsStore } from '@/stores/settings'
+import { useProjectUpdateStore } from '@/stores/projectUpdate'
 import { useSoundStore } from '@/sounds/store'
 import { useMobileDialog } from '@/composables/useMobileDialog'
 import DialogHeader from '@/components/DialogHeader.vue'
@@ -609,6 +710,7 @@ import { COLOR_MODES } from '@/themes/themes'
 import { apiErrorMessage } from '@/utils/apiError'
 
 const $q = useQuasar()
+const route = useRoute()
 const { t } = useI18n()
 const mobileDialog = useMobileDialog()
 const theme = useThemeStore()
@@ -627,6 +729,7 @@ function onAutoTo (value) {
   theme.setAutoHours({ ...theme.autoHours, to: value })
 }
 const settingsStore = useSettingsStore()
+const projectUpdate = useProjectUpdateStore()
 const activeTab = ref('general')
 const saving = ref(false)
 const testing = ref(false)
@@ -676,6 +779,14 @@ const telegramProxyDialogOpen = ref(false)
 const telegramProxyDraftUrl = ref('')
 const telegramProxyDialogError = ref('')
 const telegramProxyChecking = ref(false)
+
+watch(
+  () => route.query.tab,
+  (tab) => {
+    if (tab === 'update') activeTab.value = 'update'
+  },
+  { immediate: true }
+)
 
 const telegramModeOptions = computed(() => [
   { label: t('settings.telegramModePollingShort'), value: 'polling' },
@@ -737,6 +848,16 @@ const panelUrl = computed(() => settingsStore.panelUrl)
 const schema = computed(() => settingsStore.webhookSchema)
 const ssl = computed(() => settingsStore.ssl)
 const hasDomain = computed(() => String(form.panel_domain || '').trim() !== '')
+const showHttpsPort = computed(() => {
+  const domain = String(form.panel_domain || '').trim().toLowerCase()
+  const sslDomain = String(ssl.value.domain || '').trim().toLowerCase()
+
+  return hasDomain.value
+    && ssl.value.enabled
+    && ssl.value.status === 'active'
+    && sslDomain !== ''
+    && sslDomain === domain
+})
 const activeChallenge = computed(() => ssl.value.challenge || null)
 const sslBusy = computed(() => sslIssuing.value || sslCompleting.value || sslDisabling.value)
 
@@ -767,6 +888,25 @@ const endpointHostPreview = computed(() => {
   const domain = String(form.panel_domain || '').trim()
   if (form.endpoint_use_domain && domain) return domain
   return String(form.server_endpoint || '').trim() || '—'
+})
+
+const updateStatusBusy = computed(() => projectUpdate.busy)
+
+const updateStatusLabel = computed(() => {
+  if (projectUpdate.running) return t('settings.updateRunning')
+  const map = {
+    idle: t('settings.updateIdle'),
+    success: t('settings.updateSuccess'),
+    failed: t('settings.updateFailed')
+  }
+  return map[projectUpdate.status] || t('settings.updateIdle')
+})
+
+const updateStatusClass = computed(() => {
+  if (projectUpdate.running) return 'text-primary'
+  if (projectUpdate.status === 'success') return 'text-positive'
+  if (projectUpdate.status === 'failed') return 'text-negative'
+  return ''
 })
 
 const isDirty = computed(() => {
@@ -985,6 +1125,7 @@ async function load () {
   applySettings(settingsStore.settings)
   if (settingsStore.ssl?.email) sslEmail.value = settingsStore.ssl.email
   await Promise.all([loadTwoFactor(), loadTelegramConnections()])
+  void projectUpdate.fetchStatus({ silent: true })
 }
 
 async function loadTelegramConnections () {
@@ -1364,6 +1505,81 @@ async function testWebhook () {
   }
 }
 
+function formatUpdateTs (value) {
+  if (!value) return '—'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleString()
+}
+
+watch(activeTab, (tab) => {
+  if (tab === 'update') void projectUpdate.fetchStatus({ silent: true })
+})
+
+async function checkForUpdatesFromSettings () {
+  try {
+    const data = await projectUpdate.checkForUpdates()
+    if (data?.release_check_error) {
+      $q.notify({
+        type: 'negative',
+        position: 'top-right',
+        message: data.release_check_error
+      })
+      return
+    }
+    if (data?.update_available) {
+      $q.notify({
+        type: 'warning',
+        position: 'top-right',
+        message: t('settings.updateAvailableHint', { version: data.latest_version || '—' })
+      })
+    } else {
+      $q.notify({
+        type: 'positive',
+        position: 'top-right',
+        message: t('settings.upToDate')
+      })
+    }
+  } catch (e) {
+    $q.notify({
+      type: 'negative',
+      position: 'top-right',
+      message: e?.response?.data?.message || t('settings.updateCheckError')
+    })
+  }
+}
+
+function confirmProjectUpdate () {
+  $q.dialog({
+    title: t('settings.updateConfirmTitle'),
+    message: t('settings.updateConfirmText'),
+    cancel: { label: t('common.cancel'), flat: true },
+    ok: { label: t('settings.updateNow'), color: 'primary' },
+    persistent: true
+  }).onOk(startProjectUpdate)
+}
+
+async function startProjectUpdate () {
+  try {
+    await projectUpdate.startUpdate()
+    $q.notify({
+      type: 'info',
+      position: 'top-right',
+      message: t('settings.updateStarted')
+    })
+    await projectUpdate.fetchStatus({ silent: true })
+  } catch (e) {
+    const status = e?.response?.status
+    const msg = e?.response?.data?.message || t('settings.updateStartError')
+    if (status === 409) {
+      await projectUpdate.fetchStatus({ silent: true })
+      $q.notify({ type: 'warning', position: 'top-right', message: t('settings.updateAlreadyRunning') })
+      return
+    }
+    $q.notify({ type: 'negative', position: 'top-right', message: msg })
+  }
+}
+
 onMounted(load)
 </script>
 
@@ -1385,6 +1601,9 @@ onMounted(load)
 .settings-panels :deep(.q-tab-panel) {
   background: transparent;
   min-height: 280px;
+}
+.general-appearance-row {
+  align-items: flex-start;
 }
 .mono {
   font-family: var(--theme-mono);
@@ -1409,5 +1628,16 @@ onMounted(load)
   border-radius: var(--surface-radius);
   border: 1px solid var(--surface-border);
   background: #fff;
+}
+.update-log-pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 280px;
+  overflow: auto;
+  background: var(--surface-bg);
+  padding: 12px;
+  border-radius: var(--surface-radius);
+  border: 1px solid var(--surface-border);
+  margin: 0;
 }
 </style>

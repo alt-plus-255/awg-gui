@@ -11,6 +11,7 @@ const CLICK_SELECTOR = [
 ].join(',')
 
 const TOGGLE_SELECTOR = '.q-toggle, .q-checkbox, .q-radio'
+const TAB_SELECTOR = '.q-tab, [role="tab"]'
 
 function isDisabled (el) {
   if (!el) return true
@@ -55,6 +56,16 @@ export function installUiSounds ({ router, Notify }) {
   document.addEventListener(
     'click',
     (e) => {
+      if (e.target instanceof Element) {
+        const tab = e.target.closest(TAB_SELECTOR)
+        if (tab && !isDisabled(tab)) {
+          if (!tab.classList.contains('q-tab--active')) {
+            play('navigate')
+          }
+          return
+        }
+      }
+
       const el = findInteractive(e.target)
       if (!el || isDisabled(el)) return
 

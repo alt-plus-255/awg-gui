@@ -22,5 +22,7 @@
   "liveFetch": "Live Fetch",
   "liveFetchHint": "WebSocket недоступен, используется HTTP polling",
   "liveConnecting": "Live…",
-  "liveConnectingHint": "Подключение к каналу обновлений"
+  "liveConnectingHint": "Подключение к каналу обновлений",
+  "updateAvailable": "Доступно обновление",
+  "updateAvailableTooltip": "Перейти к обновлению панели"
 }

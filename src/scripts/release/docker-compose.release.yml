@@ -146,6 +146,7 @@ services:
       COMPOSE_FILE: /compose/docker-compose.yml
       COMPOSE_ENV_FILE: /compose/.env
     volumes:
+      - /etc/awg-gui:/host-awg-gui
       - /var/run/docker.sock:/var/run/docker.sock
       - .:/compose:ro
     networks:

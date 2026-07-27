@@ -32,6 +32,40 @@ function expectedToken(): string
     return trim((string) getenv('PANEL_OPS_TOKEN'));
 }
 
+function updateStatePath(): string
+{
+    return getenv('AWG_GUI_UPDATE_STATE_PATH') ?: '/host-awg-gui/update.state';
+}
+
+/**
+ * @return array<string, mixed>
+ */
+function readUpdateState(): array
+{
+    $path = updateStatePath();
+    if (! is_file($path)) {
+        return [];
+    }
+
+    $decoded = json_decode((string) file_get_contents($path), true);
+
+    return is_array($decoded) ? $decoded : [];
+}
+
+function isUpdateRunning(array $state): bool
+{
+    if (($state['status'] ?? null) !== 'running') {
+        return false;
+    }
+
+    $pid = (int) ($state['pid'] ?? 0);
+    if ($pid < 1) {
+        return false;
+    }
+
+    return is_dir("/proc/{$pid}");
+}
+
 function recreateCaddy(): array
 {
     $project = getenv('COMPOSE_PROJECT') ?: 'awggui';
@@ -108,6 +142,46 @@ function recreateCaddy(): array
     return ['ok' => true];
 }
 
+function startUpdate(?string $version): array
+{
+    $current = readUpdateState();
+    if (isUpdateRunning($current)) {
+        return ['ok' => false, 'error' => 'Update is already running.', 'status' => 409];
+    }
+
+    $env = $_ENV;
+    $env['AWG_GUI_UPDATE_STATE_PATH'] = updateStatePath();
+    $env['AWG_GUI_UPDATE_LOG_PATH'] = getenv('AWG_GUI_UPDATE_LOG_PATH') ?: '/host-awg-gui/update.log';
+    $env['AWG_GUI_GITHUB_REPO'] = getenv('AWG_GUI_GITHUB_REPO') ?: 'alt-plus-255/awg-gui';
+    $env['AWG_GUI_UPDATE_VERSION'] = $version !== null ? ltrim($version, 'v') : '';
+
+    $descriptors = [
+        0 => ['file', '/dev/null', 'r'],
+        1 => ['pipe', 'w'],
+        2 => ['pipe', 'w'],
+    ];
+
+    $command = sprintf('%s /app/update-runner.php >/dev/null 2>&1 & echo $!', escapeshellarg(PHP_BINARY));
+    $process = proc_open(['/bin/sh', '-lc', $command], $descriptors, $pipes, '/app', $env);
+    if (! is_resource($process)) {
+        return ['ok' => false, 'error' => 'Failed to start update runner.', 'status' => 500];
+    }
+
+    $pid = trim((string) stream_get_contents($pipes[1]));
+    fclose($pipes[1]);
+    fclose($pipes[2]);
+    proc_close($process);
+
+    return [
+        'ok' => true,
+        'status' => 202,
+        'pid' => ctype_digit($pid) ? (int) $pid : null,
+        'message' => $version
+            ? 'Update has started for the requested version.'
+            : 'Update has started.',
+    ];
+}
+
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'GET' && ($_SERVER['REQUEST_URI'] ?? '/') === '/health') {
     respond(200, ['ok' => true]);
 }
@@ -117,7 +191,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
 }
 
 $path = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
-if ($path !== '/ops/caddy/recreate') {
+if (! in_array($path, ['/ops/caddy/recreate', '/ops/update/start'], true)) {
     respond(404, ['ok' => false, 'error' => 'Not found']);
 }
 
@@ -129,6 +203,13 @@ if ($expected === '') {
 $provided = bearerToken();
 if ($provided === null || ! hash_equals($expected, $provided)) {
     respond(401, ['ok' => false, 'error' => 'Unauthorized']);
+}
+
+if ($path === '/ops/update/start') {
+    $payload = json_decode((string) file_get_contents('php://input'), true);
+    $version = is_array($payload) ? trim((string) ($payload['version'] ?? '')) : '';
+    $result = startUpdate($version !== '' ? $version : null);
+    respond((int) ($result['status'] ?? 202), $result);
 }
 
 $result = recreateCaddy();

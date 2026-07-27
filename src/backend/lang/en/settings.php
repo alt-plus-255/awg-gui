@@ -61,4 +61,13 @@ return [
     'telegram_proxy_unreachable' => 'Proxy is unreachable or cannot access api.telegram.org.',
     'telegram_proxy_telegram_rejected' => 'Proxy connected, but Telegram rejected the request: :detail',
     'telegram_proxy_ok' => 'Proxy OK (:ms ms)',
+
+    'update_not_available' => 'Automatic update is not available for this installation.',
+    'update_already_running' => 'An update is already running.',
+    'update_message_idle' => 'No update running.',
+    'update_message_running' => 'Update in progress…',
+    'update_message_success' => 'Update completed successfully.',
+    'update_message_failed' => 'Update failed.',
+    'update_message_started' => 'Update started.',
+    'update_release_fetch_failed' => 'Could not fetch release information from GitHub.',
 ];

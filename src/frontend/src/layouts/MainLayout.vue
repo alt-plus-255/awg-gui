@@ -123,6 +123,22 @@
 
         <q-space />
 
+        <q-btn
+          v-if="showHeaderUpdate"
+          flat
+          dense
+          no-caps
+          color="warning"
+          class="update-available-btn q-mr-sm"
+          :to="{ name: 'settings', query: { tab: 'update' } }"
+        >
+          <span class="update-available-btn__label gt-xs">{{ t('nav.updateAvailable') }}</span>
+          <span class="mono update-available-btn__ver">{{ projectUpdate.current_version || '—' }}</span>
+          <q-icon name="arrow_forward" size="18px" class="q-mx-xs" />
+          <span class="mono text-weight-bold update-available-btn__ver">{{ projectUpdate.latest_version }}</span>
+          <q-tooltip>{{ t('nav.updateAvailableTooltip') }}</q-tooltip>
+        </q-btn>
+
         <q-select
           v-if="showLiveInterval"
           v-model="liveInterval"
@@ -235,6 +251,7 @@ import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useSettingsStore } from '@/stores/settings'
+import { useProjectUpdateStore } from '@/stores/projectUpdate'
 import { useSystemStore } from '@/stores/system'
 import { useAppBootstrap } from '@/composables/useAppBootstrap'
 import {
@@ -249,6 +266,7 @@ import SystemBootOverlay from '@/components/SystemBootOverlay.vue'
 const { t } = useI18n()
 const auth = useAuthStore()
 const settingsStore = useSettingsStore()
+const projectUpdate = useProjectUpdateStore()
 const systemStore = useSystemStore()
 const liveState = useLiveStatsState()
 const router = useRouter()
@@ -262,6 +280,12 @@ const liveInterval = ref(liveState.intervalMs)
 
 const showLiveInterval = computed(() =>
   liveState.active && liveState.transport === 'http' && !liveState.failed
+)
+
+const showHeaderUpdate = computed(() =>
+  projectUpdate.update_available
+  && !projectUpdate.running
+  && !!projectUpdate.latest_version
 )
 
 watch(() => liveState.intervalMs, (ms) => {
@@ -379,6 +403,22 @@ async function onLogout () {
   flex-shrink: 0;
   min-width: 96px;
   max-width: 120px;
+}
+.update-available-btn {
+  flex-shrink: 0;
+  border: 1px solid rgba(var(--q-warning-rgb), 0.45);
+  border-radius: var(--surface-radius);
+  padding: 4px 10px;
+  max-width: min(100%, 320px);
+}
+.update-available-btn__label {
+  margin-right: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.update-available-btn__ver {
+  font-size: 12px;
 }
 .resolver-menu-btn {
   margin: 0 2px;
