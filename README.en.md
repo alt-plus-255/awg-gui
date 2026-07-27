@@ -88,6 +88,12 @@ Use when you want a classic “full VPN via server”, with blocked resources ex
 
 → [Details: resolver, diagnostics, re-import](readme/en/resolver.md)
 
+### Telegram bot
+
+Remote panel control from Telegram: configs, peers, connections and resolver, peer online/offline alerts. Only the configured Admin ID can operate the bot. Modes: **long polling** (with SOCKS/HTTP or resolver-connection proxy pool) and **webhook**.
+
+→ [Details: Telegram bot](readme/en/telegram.md)
+
 ## Documentation
 
 | Topic | Description |
@@ -97,6 +103,7 @@ Use when you want a classic “full VPN via server”, with blocked resources ex
 | [Build release](readme/en/build-release.md) | `./build.sh`, `.run`, GitHub Releases |
 | [CLI](readme/en/cli.md) | `awg-gui`: info, endpoint, password, 2FA, systemd |
 | [Webhook](readme/en/webhook.md) | Failure notification JSON schema |
+| [Telegram bot](readme/en/telegram.md) | Setup, polling/webhook, menus, notifications, proxies |
 | [Configs & peers](readme/en/configs-and-peers.md) | Multi-config, protocol versions, attach/detach, export |
 | [Virtual networks](readme/en/virtual-networks.md) | VN, zones, exclusions |
 | [Resolver](readme/en/resolver.md) | Full tunnel, lists, connections (incl. WG/AWG), diagnostics |

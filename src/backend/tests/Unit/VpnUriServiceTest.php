@@ -47,6 +47,7 @@ CONF;
 
         $awg = $this->createMock(AmneziaWgService::class);
         $awg->method('buildClientConfig')->willReturn($this->sampleConf);
+        $awg->method('clientImportLabel')->willReturn('AWG-v2.0-vpn.example.com');
 
         $this->service = new VpnUriService($awg, new QrCodeService, new \App\Services\AmneziaWg\Versions\AwgVersionRegistry);
     }
@@ -66,6 +67,7 @@ CONF;
 
         $this->assertSame('amnezia-awg', $outer['defaultContainer']);
         $this->assertSame('vpn.example.com', $outer['hostName']);
+        $this->assertSame('AWG-v2.0-vpn.example.com', $outer['description']);
         $this->assertSame('1.1.1.1', $outer['dns1']);
         $this->assertSame('1.0.0.1', $outer['dns2']);
 
@@ -92,6 +94,7 @@ CONF;
 
         $awg = $this->createMock(AmneziaWgService::class);
         $awg->method('buildClientConfig')->willReturn($resolverConf);
+        $awg->method('clientImportLabel')->willReturn('AWG-v2.0-vpn.example.com');
 
         $service = new VpnUriService($awg, new QrCodeService, new \App\Services\AmneziaWg\Versions\AwgVersionRegistry);
         $outer = $service->decode($service->buildFromMembership($this->membership()));
@@ -119,6 +122,54 @@ CONF;
                 }
             }
         }
+    }
+
+    public function test_amnezia_qr_pack_round_trip(): void
+    {
+        $pack = $this->service->buildAmneziaQrPackFromMembership($this->membership());
+        $outer = $this->service->decodeAmneziaQrPack($pack);
+
+        $this->assertSame('amnezia-awg', $outer['defaultContainer']);
+        $this->assertSame('vpn.example.com', $outer['hostName']);
+
+        $lastConfig = json_decode($outer['containers'][0]['awg']['last_config'], true);
+        $this->assertIsArray($lastConfig);
+        $this->assertStringContainsString('[Interface]', $lastConfig['config']);
+    }
+
+    public function test_amnezia_qr_png_encodes_packed_payload(): void
+    {
+        if (! extension_loaded('gd')) {
+            $this->markTestSkipped('GD extension is required for QR PNG generation');
+        }
+
+        $pack = $this->service->buildAmneziaQrPackFromMembership($this->membership());
+        $png = (new QrCodeService)->buildPng($pack);
+
+        $this->assertStringStartsWith("\x89PNG\r\n\x1a\n", $png);
+
+        if (! $this->zbarAvailable()) {
+            $this->markTestSkipped('zbarimg is required to decode QR payload');
+        }
+
+        $tmpPng = tempnam(sys_get_temp_dir(), 'awg-qr-pack-');
+        $tmpTxt = tempnam(sys_get_temp_dir(), 'awg-qr-pack-out-');
+        file_put_contents($tmpPng, $png);
+
+        $process = proc_open(
+            ['zbarimg', '--raw', '-q', $tmpPng],
+            [1 => ['file', $tmpTxt, 'w']],
+            $pipes
+        );
+        proc_close($process);
+
+        $decoded = trim((string) file_get_contents($tmpTxt));
+        @unlink($tmpPng);
+        @unlink($tmpTxt);
+
+        $this->assertSame($pack, $decoded);
+        $outer = $this->service->decodeAmneziaQrPack($decoded);
+        $this->assertSame('amnezia-awg', $outer['defaultContainer']);
     }
 
     public function test_qr_png_encodes_conf_text(): void

@@ -135,10 +135,6 @@ abstract class AbstractAwgVersionProfile implements AwgVersionProfile
             $i1 = trim((string) ($config->i1 ?? ''));
             if ($i1 !== '') {
                 $inner['I1'] = $i1;
-                $inner['I2'] = '';
-                $inner['I3'] = '';
-                $inner['I4'] = '';
-                $inner['I5'] = '';
             }
         }
 

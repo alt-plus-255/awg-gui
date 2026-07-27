@@ -3,6 +3,8 @@
 namespace Tests\Unit;
 
 use App\Models\AwgConfig;
+use App\Models\AwgConfigPeer;
+use App\Models\VpnClient;
 use App\Services\AmneziaWg\AmneziaWgService;
 use App\Services\AmneziaWg\Versions\AwgVersionRegistry;
 use App\Services\Docker\DockerRuntime;
@@ -114,5 +116,49 @@ class AmneziaWgObfuscationTest extends TestCase
         $this->assertArrayHasKey('s4', $junk);
         $this->assertIsNumeric($junk['s3']);
         $this->assertIsNumeric($junk['s4']);
+    }
+
+    public function test_client_import_label_peer_name_style(): void
+    {
+        $config = new AwgConfig([
+            'protocol_version' => '1.5',
+        ]);
+        $membership = new AwgConfigPeer;
+        $membership->setRelation('config', $config);
+        $membership->setRelation('client', new VpnClient(['name' => 'alice']));
+
+        $label = $this->service()->clientImportLabel(
+            $membership,
+            'vpn.example.com',
+            AmneziaWgService::CLIENT_IMPORT_NAME_PEER
+        );
+
+        $this->assertSame('awg-alice', $label);
+        $this->assertSame(
+            'awg-alice.conf',
+            $this->service()->clientImportFilename($membership, 'vpn.example.com', AmneziaWgService::CLIENT_IMPORT_NAME_PEER)
+        );
+    }
+
+    public function test_client_import_label_version_host_style(): void
+    {
+        $config = new AwgConfig([
+            'protocol_version' => '1.5',
+        ]);
+        $membership = new AwgConfigPeer;
+        $membership->setRelation('config', $config);
+        $membership->setRelation('client', new VpnClient(['name' => 'alice']));
+
+        $label = $this->service()->clientImportLabel(
+            $membership,
+            'vpn.example.com',
+            AmneziaWgService::CLIENT_IMPORT_NAME_VERSION_HOST
+        );
+
+        $this->assertSame('AWG-v1.5-vpn.example.com', $label);
+        $this->assertSame(
+            'AWG-v1.5-vpn.example.com.conf',
+            $this->service()->clientImportFilename($membership, 'vpn.example.com', AmneziaWgService::CLIENT_IMPORT_NAME_VERSION_HOST)
+        );
     }
 }

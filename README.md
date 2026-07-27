@@ -88,6 +88,12 @@ sudo bash /tmp/awg-gui-install.sh --yes
 
 → [Подробнее: резолвер, диагностика, переимпорт](readme/ru/resolver.md)
 
+### Telegram-бот
+
+Удалённое управление панелью из Telegram: конфиги, пиры, подключения и резолвер, уведомления online/offline. Доступ только у указанного Admin ID. Режимы **long polling** (с пулом SOCKS/HTTP или подключений резолвера) и **webhook**.
+
+→ [Подробнее: Telegram-бот](readme/ru/telegram.md)
+
 ## Документация
 
 | Раздел | Описание |
@@ -97,6 +103,7 @@ sudo bash /tmp/awg-gui-install.sh --yes
 | [Сборка release](readme/ru/build-release.md) | `./build.sh`, `.run`, GitHub Releases |
 | [CLI](readme/ru/cli.md) | `awg-gui`: info, endpoint, password, 2FA, systemd |
 | [Webhook](readme/ru/webhook.md) | JSON schema оповещений о сбоях |
+| [Telegram-бот](readme/ru/telegram.md) | Настройка, polling/webhook, меню, уведомления, прокси |
 | [Конфиги и пиры](readme/ru/configs-and-peers.md) | Мульти-конфиг, версии протокола, attach/detach, экспорт |
 | [Виртуальные сети](readme/ru/virtual-networks.md) | VN, зоны, исключения |
 | [Резолвер](readme/ru/resolver.md) | Полный туннель, списки, подключения (в т.ч. WG/AWG), диагностика |

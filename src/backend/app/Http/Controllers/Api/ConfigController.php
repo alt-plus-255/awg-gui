@@ -56,6 +56,7 @@ class ConfigController extends Controller
             'name' => ['required', 'string', 'max:64'],
             'type' => ['required', Rule::in(['server', 'virtual_network'])],
             'protocol_version' => ['sometimes', 'string', Rule::in($this->versions->ids())],
+            'client_import_name_style' => ['sometimes', 'string', Rule::in($this->awg->clientImportNameStyles())],
             'vn_policy' => ['sometimes', Rule::in(['allow_all', 'deny_all'])],
             'internal_subnet' => ['sometimes', 'string', 'max:64'],
             'listen_port' => ['sometimes', 'integer', 'min:51820', 'max:51839'],
@@ -91,6 +92,10 @@ class ConfigController extends Controller
             'name' => $data['name'],
             'type' => $data['type'],
             'protocol_version' => $protocolVersion,
+            'client_import_name_style' => $this->awg->resolveClientImportNameStyle(
+                null,
+                $data['client_import_name_style'] ?? null
+            ),
             'vn_policy' => $data['vn_policy'] ?? 'allow_all',
             'iface' => $iface,
             'listen_port' => $port,
@@ -122,6 +127,7 @@ class ConfigController extends Controller
             'name' => ['sometimes', 'string', 'max:64'],
             'type' => ['sometimes', Rule::in(['server', 'virtual_network'])],
             'protocol_version' => ['sometimes', 'string', Rule::in($this->versions->ids())],
+            'client_import_name_style' => ['sometimes', 'string', Rule::in($this->awg->clientImportNameStyles())],
             'vn_policy' => ['sometimes', Rule::in(['allow_all', 'deny_all'])],
             'internal_subnet' => ['sometimes', 'string', 'max:64'],
             'server_address' => ['sometimes', 'string', 'max:64'],
@@ -177,6 +183,13 @@ class ConfigController extends Controller
 
         if (isset($data['internal_subnet'])) {
             $this->assertSubnetAvailable($data['internal_subnet'], $config->id);
+        }
+
+        if (array_key_exists('client_import_name_style', $data)) {
+            $data['client_import_name_style'] = $this->awg->resolveClientImportNameStyle(
+                $config,
+                $data['client_import_name_style'] ?? null
+            );
         }
 
         $config->fill($data);
@@ -399,7 +412,7 @@ class ConfigController extends Controller
 
         $conf = $this->awg->buildClientConfig($membership);
         $conf = $this->qr->normalizeConfigText($conf);
-        $filename = ($membership->client?->name ?? 'peer').'-'.$config->name.'.conf';
+        $filename = $this->awg->clientImportFilename($membership);
 
         return response($conf, 200, [
             'Content-Type' => 'text/plain; charset=UTF-8',
@@ -429,19 +442,27 @@ class ConfigController extends Controller
             ->where('vpn_client_id', $client->id)
             ->firstOrFail();
 
-        $conf = $this->awg->buildClientConfig($membership);
-        $conf = $this->qr->normalizeConfigText($conf);
+        $encoding = $request->query('encoding', 'amnezia');
         $format = $request->query('format', 'png');
 
+        if ($encoding === 'conf') {
+            $payload = $this->qr->normalizeConfigText($this->awg->buildClientConfig($membership));
+        } elseif ($encoding === 'vpn-uri') {
+            $payload = $this->vpnUri->buildFromMembership($membership);
+        } else {
+            $membership->loadMissing(['config', 'client']);
+            $payload = $this->vpnUri->buildAmneziaQrPackFromMembership($membership);
+        }
+
         if ($format === 'svg') {
-            $body = $this->qr->buildSvg($conf);
+            $body = $this->qr->buildSvg($payload);
 
             return response($body, 200, [
                 'Content-Type' => 'image/svg+xml',
             ]);
         }
 
-        $body = $this->qr->buildPng($conf);
+        $body = $this->qr->buildPng($payload);
 
         return response($body, 200, [
             'Content-Type' => 'image/png',
@@ -834,6 +855,7 @@ class ConfigController extends Controller
             'type_label' => $config->type === 'virtual_network' ? __('api.type_virtual_network') : __('api.type_server'),
             'protocol_version' => $config->protocol_version ?: $this->versions->latest(),
             'protocol_label' => $profile->label(),
+            'client_import_name_style' => $this->awg->resolveClientImportNameStyle($config),
             'supported_params' => $profile->supportedParams(),
             'vn_policy' => $config->vn_policy ?? 'allow_all',
             'vn_zones' => [

@@ -12,6 +12,7 @@ class AwgConfig extends Model
         'name',
         'type',
         'protocol_version',
+        'client_import_name_style',
         'vn_policy',
         'vn_zones',
         'iface',

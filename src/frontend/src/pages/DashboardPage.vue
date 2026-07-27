@@ -262,6 +262,7 @@ import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from
 import { useI18n } from 'vue-i18n'
 import { useQuasar } from 'quasar'
 import api from '@/boot/axios'
+import { peerConfFilename } from '@/utils/peerConfFilename'
 import PeerConnectionsGraph from '@/components/PeerConnectionsGraph.vue'
 import PeerShareDialog from '@/components/PeerShareDialog.vue'
 import { useDashboardData } from '@/composables/useDashboardData'
@@ -595,7 +596,7 @@ async function downloadConf (row) {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = `${row.name}.conf`
+  a.download = peerConfFilename(text, `${row.name}.conf`)
   a.click()
   URL.revokeObjectURL(url)
 }

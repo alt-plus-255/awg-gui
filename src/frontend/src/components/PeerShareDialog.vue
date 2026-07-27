@@ -32,6 +32,7 @@
                 />
               </div>
               <div class="row justify-center q-gutter-sm q-mt-sm">
+                <q-btn flat dense color="primary" icon="refresh" :label="t('configs.refreshQr')" :loading="loading" @click="refreshShareData" />
                 <q-btn flat dense color="primary" icon="fullscreen" :label="t('configs.fullscreen')" @click="fullscreenOpen = true" />
                 <q-btn flat dense color="primary" icon="download" :label="t('configs.downloadPng')" :loading="pngDownloading" @click="downloadPng" />
               </div>
@@ -128,6 +129,7 @@ import { useI18n } from 'vue-i18n'
 import { useQuasar } from 'quasar'
 import api from '@/boot/axios'
 import { copyText } from '@/utils/clipboard'
+import { peerConfFilename } from '@/utils/peerConfFilename'
 import { useMobileDialog } from '@/composables/useMobileDialog'
 import DialogHeader from '@/components/DialogHeader.vue'
 
@@ -157,14 +159,24 @@ watch(
   () => [props.modelValue, props.configId, props.clientId],
   async ([open, configId, clientId]) => {
     if (open && configId && clientId) {
-      await loadShareData(configId, clientId)
+      await loadShareData(configId, clientId, true)
     }
   }
 )
 
-async function loadShareData (configId, clientId) {
+async function refreshShareData () {
+  if (!props.configId || !props.clientId) return
+  await loadShareData(props.configId, props.clientId, false)
+  if (qrUrl.value) {
+    $q.notify({ type: 'positive', message: t('configs.qrRefreshed') })
+  }
+}
+
+async function loadShareData (configId, clientId, resetTab = true) {
   loading.value = true
-  tab.value = 'qr'
+  if (resetTab) {
+    tab.value = 'qr'
+  }
   vpnUri.value = ''
   confText.value = ''
   revokeQrUrl()
@@ -224,11 +236,7 @@ async function copyConf () {
 }
 
 function downloadFilename () {
-  const peer = props.peerName || 'peer'
-  if (props.configName) {
-    return `${peer}-${props.configName}.conf`
-  }
-  return `${peer}.conf`
+  return peerConfFilename(confText.value, `${props.peerName || 'peer'}.conf`)
 }
 
 function downloadConf () {

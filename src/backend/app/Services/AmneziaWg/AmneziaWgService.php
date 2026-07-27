@@ -224,6 +224,37 @@ class AmneziaWgService
         ];
     }
 
+    public const CLIENT_IMPORT_NAME_PEER = 'peer_name';
+
+    public const CLIENT_IMPORT_NAME_VERSION_HOST = 'version_host';
+
+    /** @return list<string> */
+    public function clientImportNameStyles(): array
+    {
+        return [self::CLIENT_IMPORT_NAME_PEER, self::CLIENT_IMPORT_NAME_VERSION_HOST];
+    }
+
+    public function resolveClientImportNameStyle(?AwgConfig $config = null, ?string $style = null): string
+    {
+        if ($style !== null) {
+            $style = trim($style);
+
+            return in_array($style, $this->clientImportNameStyles(), true)
+                ? $style
+                : self::CLIENT_IMPORT_NAME_PEER;
+        }
+
+        if ($config !== null) {
+            $style = trim((string) ($config->client_import_name_style ?? ''));
+
+            return in_array($style, $this->clientImportNameStyles(), true)
+                ? $style
+                : self::CLIENT_IMPORT_NAME_PEER;
+        }
+
+        return self::CLIENT_IMPORT_NAME_PEER;
+    }
+
     public function resolveTimezone(): string
     {
         $tz = trim((string) Setting::getValue('timezone', env('TZ', 'UTC')));
@@ -301,6 +332,7 @@ class AmneziaWgService
             'client_allowed_ips' => env('ALLOWED_IPS', '0.0.0.0/0, ::/0'),
             'persistent_keepalive' => (int) env('PERSISTENT_KEEPALIVE', 25),
             'enabled' => true,
+            'client_import_name_style' => self::CLIENT_IMPORT_NAME_PEER,
         ];
     }
 
@@ -866,6 +898,45 @@ class AmneziaWgService
         return implode("\n", $lines)."\n";
     }
 
+    /**
+     * Display name for Amnezia / AmneziaWG when importing QR, vpn:// or .conf (# Name =).
+     */
+    public function clientImportLabel(AwgConfigPeer $membership, ?string $endpointHost = null, ?string $style = null): string
+    {
+        $membership->loadMissing(['config', 'client']);
+        $config = $membership->config;
+        if (! $config) {
+            throw new RuntimeException('Config not found for membership');
+        }
+
+        $style = $this->resolveClientImportNameStyle($config, $style);
+
+        if ($style === self::CLIENT_IMPORT_NAME_VERSION_HOST) {
+            $version = trim((string) ($config->protocol_version ?: '2.0'));
+            $host = trim($endpointHost ?? $this->resolveEndpointHost());
+            if ($host === '') {
+                $host = '127.0.0.1';
+            }
+
+            return 'AWG-v'.$version.'-'.$host;
+        }
+
+        $peerName = trim((string) ($membership->client?->name ?? ''));
+        if ($peerName === '') {
+            $peerName = 'peer';
+        }
+
+        return 'awg-'.$peerName;
+    }
+
+    public function clientImportFilename(AwgConfigPeer $membership, ?string $endpointHost = null, ?string $style = null): string
+    {
+        $base = $this->clientImportLabel($membership, $endpointHost, $style);
+        $safe = preg_replace('/[^a-zA-Z0-9._-]+/', '-', $base) ?: 'awg-client';
+
+        return $safe.'.conf';
+    }
+
     public function buildClientConfig(AwgConfigPeer $membership): string
     {
         $membership->loadMissing(['config', 'client']);
@@ -887,9 +958,11 @@ class AmneziaWgService
             : ($config->peer_dns ?: '1.1.1.1');
         $allowed = $this->clientAllowedIpsString($config, $membership);
         $keepalive = $membership->keepalive ?? $config->persistent_keepalive ?? 25;
+        $importLabel = $this->clientImportLabel($membership, $endpointHost);
 
         // Field order matches awg-web-gui build_client_conf: Address/DNS before AWG params.
         $lines = [
+            '# Name = '.$importLabel,
             '[Interface]',
             'PrivateKey = '.$membership->private_key,
             'Address = '.$membership->address,

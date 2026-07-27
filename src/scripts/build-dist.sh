@@ -6,7 +6,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SRC="${ROOT}/src"
 DIST="${ROOT}/dist"
 RELEASE="${SRC}/scripts/release"
-STAGING="${DIST}/.staging"
+BUILD_LOCK="${DIST}/.build.lock"
+STAGING="${DIST}/.staging.$$"
 SING_BOX_VERSION=1.12.12
 MARIADB_IMAGE=mariadb:11.4
 DOCKER_PROXY_IMAGE=tecnativa/docker-socket-proxy:0.3.0
@@ -92,6 +93,7 @@ compose_build() {
 tag_images() {
   local svc
   for svc in caddy app awg panel-ops; do
+    docker rmi "awggui-${svc}:${VERSION}" 2>/dev/null || true
     docker tag "${PROJECT_NAME}-${svc}" "awggui-${svc}:${VERSION}"
   done
   docker pull "${MARIADB_IMAGE}"
@@ -165,6 +167,7 @@ make_run_bundle() {
 
 cleanup() {
   rm -rf "${STAGING}"
+  rm -rf "${BUILD_LOCK}" 2>/dev/null || true
 }
 
 main() {
@@ -187,7 +190,9 @@ main() {
   detect_arch
 
   mkdir -p "${DIST}"
-  rm -rf "${STAGING}"
+  if ! mkdir "${BUILD_LOCK}" 2>/dev/null; then
+    die "Another build is running (lock ${BUILD_LOCK}). Wait for it to finish or remove the lock if it is stale."
+  fi
   mkdir -p "${STAGING}"
 
   trap cleanup EXIT

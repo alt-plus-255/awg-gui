@@ -395,6 +395,17 @@
           />
 
           <q-select
+            v-model="form.client_import_name_style"
+            :options="clientImportNameOptions"
+            :label="t('configs.clientImportName')"
+            :hint="t('configs.clientImportNameHint')"
+            emit-value
+            map-options
+            filled
+            class="q-mb-md"
+          />
+
+          <q-select
             v-if="form.type === 'virtual_network'"
             v-model="form.vn_policy"
             :options="vnPolicyOptions"
@@ -692,6 +703,7 @@ import { useQuasar } from 'quasar'
 import api from '@/boot/axios'
 import { apiErrorMessage } from '@/utils/apiError'
 import { copyText } from '@/utils/clipboard'
+import { peerConfFilename } from '@/utils/peerConfFilename'
 import PeerShareDialog from '@/components/PeerShareDialog.vue'
 import DialogHeader from '@/components/DialogHeader.vue'
 import { useMobileDialog } from '@/composables/useMobileDialog'
@@ -729,10 +741,16 @@ const protocolVersionOptions = computed(() =>
   }))
 )
 
+const clientImportNameOptions = computed(() => [
+  { label: t('configs.clientImportNamePeer'), value: 'peer_name' },
+  { label: t('configs.clientImportNameVersionHost'), value: 'version_host' }
+])
+
 const form = reactive({
   name: '',
   type: 'server',
   protocol_version: '2.0',
+  client_import_name_style: 'peer_name',
   vn_policy: 'allow_all',
   internal_subnet: '10.66.66.0/24',
   server_address: '',
@@ -1293,6 +1311,7 @@ function resetForm () {
   form.name = ''
   form.type = 'server'
   form.protocol_version = protocolVersionsDefault.value
+  form.client_import_name_style = 'peer_name'
   form.vn_policy = 'allow_all'
   form.internal_subnet = nextFreeSubnet()
   form.server_address = ''
@@ -1620,7 +1639,7 @@ async function downloadConf (config, row) {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = `${row.name}-${config.name}.conf`
+  a.download = peerConfFilename(text, `${row.name}-${config.name}.conf`)
   a.click()
   URL.revokeObjectURL(url)
 }

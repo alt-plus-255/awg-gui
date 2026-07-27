@@ -29,3 +29,5 @@
 Стабильные значения `code`: `docker_unavailable`, `compose_up_failed`, `service_unhealthy`, `awg_gui.test`.
 
 Контракт: `POST`, `Content-Type: application/json`.
+
+Это **не** webhook Telegram-бота — см. [Telegram-бот](telegram.md).
