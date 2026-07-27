@@ -135,6 +135,10 @@ assemble_runtime() {
 
   cp "${RELEASE}/bundle-install.sh" "${bundle_dir}/bundle-install.sh"
   cp "${RELEASE}/bundle-uninstall.sh" "${bundle_dir}/bundle-uninstall.sh"
+  mkdir -p "${bundle_dir}/lib"
+  cp "${ROOT}/src/scripts/lib/ensure-docker.sh" "${bundle_dir}/lib/ensure-docker.sh"
+  # Keep online installer helper in sync for curl|bash entrypoint
+  cp "${ROOT}/src/scripts/lib/ensure-docker.sh" "${DIST}/ensure-docker.sh"
   cp "${ROOT}/LICENSE" "${bundle_dir}/LICENSE"
   cp "${ROOT}/NOTICE.md" "${bundle_dir}/NOTICE.md"
   echo "${VERSION}" > "${bundle_dir}/VERSION"

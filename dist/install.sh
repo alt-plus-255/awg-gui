@@ -11,10 +11,12 @@ BUNDLE_LOCAL=""
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 CYAN='\033[0;36m'
+YELLOW='\033[1;33m'
 NC='\033[0m'
 
 log() { echo -e "${CYAN}[install]${NC} $*" >&2; }
 ok() { echo -e "${GREEN}[ok]${NC} $*" >&2; }
+warn() { echo -e "${YELLOW}[warn]${NC} $*" >&2; }
 die() { echo -e "${RED}[error]${NC} $*" >&2; exit 1; }
 
 usage() {
@@ -26,7 +28,7 @@ Usage:
   wget --no-config -O /tmp/awg-gui-install.sh .../dist/install.sh && sudo bash /tmp/awg-gui-install.sh --yes
 
 Options:
-  --yes              Non-interactive install
+  --yes              Non-interactive install (auto-install Docker if missing)
   --bundle=PATH      Use local .run bundle (skip download)
   --dir=/opt/awg-gui Install directory
 
@@ -62,6 +64,43 @@ need_downloader() {
   command -v curl >/dev/null 2>&1 && return 0
   command -v wget >/dev/null 2>&1 && return 0
   die "curl or wget required"
+}
+
+# Load Docker installer helper. Prefer local checkout, else fetch from GitHub
+# (needed when this script is piped via curl|bash).
+load_ensure_docker() {
+  local base c
+  base="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)" || true
+  for c in \
+    ${base:+"${base}/ensure-docker.sh"} \
+    ${base:+"${base}/../src/scripts/lib/ensure-docker.sh"}
+  do
+    if [[ -f "${c}" ]]; then
+      # shellcheck disable=SC1090
+      source "${c}"
+      return 0
+    fi
+  done
+
+  local ref="refs/heads/main" url tmp
+  if [[ -n "${VERSION}" ]]; then
+    ref="refs/tags/v${VERSION#v}"
+  fi
+  tmp="$(mktemp /tmp/awg-gui-ensure-docker.XXXXXX)"
+  for url in \
+    "https://raw.githubusercontent.com/${GITHUB_REPO}/${ref}/dist/ensure-docker.sh" \
+    "https://raw.githubusercontent.com/${GITHUB_REPO}/refs/heads/main/dist/ensure-docker.sh" \
+    "https://raw.githubusercontent.com/${GITHUB_REPO}/refs/heads/main/src/scripts/lib/ensure-docker.sh"
+  do
+    if curl -fsSL "${url}" -o "${tmp}" 2>/dev/null; then
+      # shellcheck disable=SC1090
+      source "${tmp}"
+      rm -f "${tmp}"
+      return 0
+    fi
+  done
+  rm -f "${tmp}"
+  die "Failed to load Docker install helper. Install Docker manually: https://docs.docker.com/engine/install/"
 }
 
 human_size() {
@@ -200,6 +239,10 @@ download_bundle() {
 
 main() {
   need_downloader
+  # Ask / install Docker before downloading ~500 MiB release bundle
+  load_ensure_docker
+  ensure_docker_engine
+
   local bundle args=()
   bundle="$(download_bundle)"
   args=(--dir="${INSTALL_DIR}")

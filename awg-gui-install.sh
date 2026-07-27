@@ -155,90 +155,38 @@ ensure_sing_box_vendor() {
   ok "Downloaded ${dest}"
 }
 
-install_docker() {
-  if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
-    ok "Docker and Compose already installed"
-    systemctl enable --now docker 2>/dev/null || true
-    return
-  fi
+# shellcheck source=src/scripts/lib/ensure-docker.sh
+source "${SCRIPT_DIR}/src/scripts/lib/ensure-docker.sh"
 
-  local missing=()
-  command -v docker >/dev/null 2>&1 || missing+=("Docker Engine")
-  if command -v docker >/dev/null 2>&1; then
-    docker compose version >/dev/null 2>&1 || missing+=("Docker Compose plugin")
+read_tty() {
+  local prompt="$1"
+  local ans=""
+  if [[ -r /dev/tty ]]; then
+    printf '%s' "${prompt}" > /dev/tty
+    read -r ans < /dev/tty || true
+  elif [[ -t 0 ]]; then
+    read -r -p "${prompt}" ans || true
   else
-    missing+=("Docker Compose plugin")
+    die "Non-interactive shell (no TTY). Re-run with --yes"
   fi
-  local list
-  list="$(printf '%s, ' "${missing[@]}")"
-  list="${list%, }"
-
-  if ! confirm "Не установлен: ${list}. Установить Docker из официальных репозиториев?"; then
-    die "Docker is required. Install manually: https://docs.docker.com/engine/install/ then re-run."
-  fi
-
-  log "Installing Docker Engine from official repositories..."
-  log "Docs: https://docs.docker.com/engine/install/"
-  detect_os
-  detect_arch
-
-  case "${OS_ID}" in
-    ubuntu)
-      apt-get update -y
-      apt-get install -y ca-certificates curl
-      install -m 0755 -d /etc/apt/keyrings
-      curl -fsSL "https://download.docker.com/linux/ubuntu/gpg" -o /etc/apt/keyrings/docker.asc
-      chmod a+r /etc/apt/keyrings/docker.asc
-      echo "deb [arch=${ARCH} signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu ${OS_VERSION_CODENAME} stable" \
-        > /etc/apt/sources.list.d/docker.list
-      apt-get update -y
-      apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-      ;;
-    debian|raspbian)
-      apt-get update -y
-      apt-get install -y ca-certificates curl
-      install -m 0755 -d /etc/apt/keyrings
-      curl -fsSL "https://download.docker.com/linux/debian/gpg" -o /etc/apt/keyrings/docker.asc
-      chmod a+r /etc/apt/keyrings/docker.asc
-      echo "deb [arch=${ARCH} signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian ${OS_VERSION_CODENAME} stable" \
-        > /etc/apt/sources.list.d/docker.list
-      apt-get update -y
-      apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-      ;;
-    fedora)
-      dnf -y install dnf-plugins-core
-      dnf config-manager --add-repo https://download.docker.com/linux/fedora/docker-ce.repo
-      dnf install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-      ;;
-    centos|rhel|rocky|almalinux)
-      if command -v dnf >/dev/null 2>&1; then
-        dnf -y install dnf-plugins-core
-        dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
-        dnf install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-      else
-        yum install -y yum-utils
-        yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
-        yum install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-      fi
-      ;;
-    *)
-      die "Unsupported OS '${OS_ID}'. Install Docker manually: https://docs.docker.com/engine/install/"
-      ;;
-  esac
-
-  systemctl enable --now docker
-  docker compose version >/dev/null 2>&1 || die "docker compose plugin missing after install"
-  ok "Docker installed"
+  printf '%s' "${ans}"
 }
 
 confirm() {
   local msg="$1"
-  local ans
+  local default="${2:-n}"
+  local ans hint
   if [[ "${YES}" -eq 1 ]]; then
     log "${msg} → yes (--yes)"
     return 0
   fi
-  read -r -p "${msg} [y/N]: " ans || true
+  if [[ "${default}" == "y" ]]; then
+    hint="[Y/n]"
+  else
+    hint="[y/N]"
+  fi
+  ans="$(read_tty "${msg} ${hint}: ")"
+  ans="${ans:-${default}}"
   case "${ans}" in
     y|Y|yes|YES) return 0 ;;
     *) return 1 ;;
@@ -252,7 +200,7 @@ prompt() {
     printf -v "${var}" '%s' "${def}"
     return
   fi
-  read -r -p "${msg} [${def}]: " val || true
+  val="$(read_tty "${msg} [${def}]: ")"
   if [[ -z "${val}" ]]; then
     printf -v "${var}" '%s' "${def}"
   else
@@ -344,7 +292,7 @@ choose_install_mode() {
   echo "  [1] Прервать (рекомендуется uninstall перед чистой установкой)"
   echo "  [2] Обновить (сохранить .env, volumes, данные БД/AWG)"
   local choice=""
-  read -r -p "Выбор [1/2]: " choice || true
+  choice="$(read_tty "Выбор [1/2]: ")"
   case "${choice}" in
     2) UPGRADE_MODE=1 ;;
     *) log "Установка прервана."; exit 0 ;;
@@ -642,7 +590,7 @@ main() {
   [[ -d /dev/net/tun ]] || warn "/dev/net/tun not found — AWG userspace may still work"
 
   ensure_curl
-  install_docker
+  ensure_docker_engine
   ensure_sing_box_vendor
   choose_install_mode
 
