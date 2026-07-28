@@ -134,6 +134,29 @@
                 <li v-for="(h, i) in store.hints" :key="i">{{ h }}</li>
               </ul>
             </q-card>
+
+            <q-card
+              v-if="store.failedChecks.length"
+              class="q-pa-md q-mb-md status-card error-report-card"
+              flat
+              bordered
+            >
+              <div class="row items-center q-mb-sm">
+                <div class="text-subtitle2 col">{{ t('diagnostics.errorReportTitle') }}</div>
+                <q-btn
+                  flat
+                  dense
+                  color="primary"
+                  icon="content_copy"
+                  :label="t('diagnostics.copyErrorJson')"
+                  @click="copyErrorJson"
+                />
+              </div>
+              <div class="text-caption text-muted-theme q-mb-sm">
+                {{ t('diagnostics.errorReportHint') }}
+              </div>
+              <pre class="config-pre mono error-report-pre">{{ store.errorReportJson() }}</pre>
+            </q-card>
           </template>
 
           <q-card
@@ -256,6 +279,14 @@
               />
               <q-btn
                 outline
+                color="negative"
+                icon="data_object"
+                :label="t('diagnostics.copyErrorJson')"
+                :disable="!store.result || !store.failedChecks.length"
+                @click="copyErrorJson"
+              />
+              <q-btn
+                outline
                 color="primary"
                 icon="content_copy"
                 :label="t('diagnostics.copyDump')"
@@ -359,6 +390,7 @@ import { useSystemStore } from '@/stores/system'
 import { useSettingsStore } from '@/stores/settings'
 import { useMobileDialog } from '@/composables/useMobileDialog'
 import DialogHeader from '@/components/DialogHeader.vue'
+import { copyText as clipboardCopy } from '@/utils/clipboard'
 
 const { t } = useI18n()
 const $q = useQuasar()
@@ -440,7 +472,7 @@ async function restartAll () {
 
 async function copyText (text) {
   try {
-    await navigator.clipboard.writeText(text || '')
+    await clipboardCopy(text || '')
     $q.notify({ type: 'positive', message: t('diagnostics.copied') })
   } catch {
     $q.notify({ type: 'negative', message: t('diagnostics.copyFailed') })
@@ -449,6 +481,14 @@ async function copyText (text) {
 
 async function copyDump () {
   await copyText(store.dumpText())
+}
+
+async function copyErrorJson () {
+  if (!store.failedChecks.length) {
+    $q.notify({ type: 'warning', message: t('diagnostics.noFailedChecks') })
+    return
+  }
+  await copyText(store.errorReportJson())
 }
 
 function onSingBoxOpen (v) {
@@ -544,6 +584,16 @@ onMounted(async () => {
   background:
     linear-gradient(90deg, color-mix(in srgb, var(--q-warning) 10%, transparent), transparent 40%),
     var(--surface-panel) !important;
+}
+
+.error-report-card {
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--q-negative) 10%, transparent), transparent 40%),
+    var(--surface-panel) !important;
+}
+
+.error-report-pre {
+  max-height: 280px;
 }
 
 .hints-list {

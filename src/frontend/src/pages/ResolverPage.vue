@@ -28,8 +28,30 @@
       <q-card class="q-pa-md q-mb-md status-card" flat bordered>
         <div class="row items-center q-col-gutter-md">
           <div class="col-auto">
-            <q-badge :color="status.healthy ? 'positive' : 'negative'" class="q-pa-sm">
+            <q-badge
+              :color="status.healthy ? 'positive' : 'negative'"
+              class="q-pa-sm status-health-badge"
+              :class="{ 'status-health-badge--error': !status.healthy }"
+            >
               {{ status.healthy ? t('diagnostics.ok') : t('common.error') }}
+              <q-tooltip
+                v-if="!status.healthy"
+                anchor="bottom middle"
+                self="top middle"
+                :offset="[0, 8]"
+                class="resolver-error-tooltip"
+                max-width="360px"
+              >
+                <div class="text-weight-medium q-mb-xs">{{ t('resolver.errorTooltipTitle') }}</div>
+                <div class="q-mb-xs">{{ t('resolver.errorTooltipBody') }}</div>
+                <div v-if="status.message" class="mono q-mb-xs">{{ status.message }}</div>
+                <ul v-if="configErrors.length" class="q-my-none q-pl-md">
+                  <li v-for="err in configErrors" :key="err.id">
+                    <span class="text-weight-medium">{{ err.name }}:</span>
+                    {{ err.error }}
+                  </li>
+                </ul>
+              </q-tooltip>
             </q-badge>
           </div>
           <div class="col">
@@ -37,7 +59,30 @@
               {{ status.enabled ? t('resolver.statusActive') : t('resolver.statusDisabled') }}
               <span class="text-grey-5"> · sing-box: {{ status.singbox_running ? t('resolver.singboxRunning') : t('resolver.singboxStopped') }}</span>
             </div>
-            <div class="text-caption text-grey-5">{{ status.message }}</div>
+            <div
+              class="text-caption"
+              :class="status.healthy ? 'text-grey-5' : 'text-negative cursor-pointer'"
+            >
+              {{ status.message }}
+              <q-tooltip
+                v-if="!status.healthy"
+                anchor="bottom start"
+                self="top start"
+                :offset="[0, 6]"
+                class="resolver-error-tooltip"
+                max-width="360px"
+              >
+                <div class="text-weight-medium q-mb-xs">{{ t('resolver.errorTooltipTitle') }}</div>
+                <div class="q-mb-xs">{{ t('resolver.errorTooltipBody') }}</div>
+                <div v-if="status.message" class="mono q-mb-xs">{{ status.message }}</div>
+                <ul v-if="configErrors.length" class="q-my-none q-pl-md">
+                  <li v-for="err in configErrors" :key="err.id">
+                    <span class="text-weight-medium">{{ err.name }}:</span>
+                    {{ err.error }}
+                  </li>
+                </ul>
+              </q-tooltip>
+            </div>
           </div>
           <div class="col-auto text-caption text-grey-5 mono">
             FakeIP {{ status.fakeip_cidr || '198.18.0.0/15' }}
@@ -441,6 +486,16 @@ const firstEnabledGateway = computed(() => {
   return cfg?.gateway_ip || null
 })
 
+const configErrors = computed(() =>
+  (status.configs || [])
+    .filter(c => c.resolver_enabled && c.resolver_last_error)
+    .map(c => ({
+      id: c.id,
+      name: c.name,
+      error: c.resolver_last_error
+    }))
+)
+
 function formatTs (iso) {
   if (!iso) return '—'
   try {
@@ -607,7 +662,9 @@ async function save (id) {
     for (const cfg of data.status?.configs || []) {
       syncForm(cfg)
     }
-    if (data.warning) {
+    if (data.apply_error) {
+      $q.notify({ type: 'negative', message: data.apply_error, timeout: 12000 })
+    } else if (data.warning) {
       $q.notify({ type: 'warning', message: data.warning, timeout: 8000 })
     } else {
       $q.notify({ type: 'positive', message: t('common.saved') })
@@ -650,6 +707,14 @@ onMounted(load)
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.status-health-badge--error {
+  cursor: help;
+}
+
+.text-negative.cursor-pointer {
+  cursor: help;
 }
 
 @media (max-width: 1023px) {

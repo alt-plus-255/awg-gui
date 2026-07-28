@@ -111,11 +111,22 @@ class ResolverController extends Controller
         $config->save();
         $this->awg->applyConfig($config, refreshSubscriptions: false);
 
+        $status = $this->resolver->status();
+        $applyError = null;
+        if ($data['resolver_enabled']) {
+            $cfgStatus = collect($status['configs'] ?? [])
+                ->first(fn ($c) => (int) ($c['id'] ?? 0) === (int) $config->id);
+            if (is_array($cfgStatus) && filled($cfgStatus['resolver_last_error'] ?? null)) {
+                $applyError = (string) $cfgStatus['resolver_last_error'];
+            }
+        }
+
         $needsClientReimport = $config->wasChanged('resolver_enabled');
 
         return response()->json([
-            'ok' => true,
-            'status' => $this->resolver->status(),
+            'ok' => $applyError === null,
+            'status' => $status,
+            'apply_error' => $applyError,
             'warning' => $needsClientReimport
                 ? __('resolver.clients_need_reimport')
                 : null,

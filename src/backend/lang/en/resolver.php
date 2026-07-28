@@ -5,6 +5,7 @@ return [
     'dns_required' => 'Enter a DNS server IP or hostname',
     'select_at_least_one_list' => 'Select at least one domain list, custom domains, or subnets',
     'clients_need_reimport' => 'Clients need to re-download and import .conf / QR — DNS and AllowedIPs changed.',
+    'apply_failed_after_save' => 'Settings were saved, but applying the resolver failed — open the error status and save again.',
 
     // ResolverSettingsController
     'empty_tag' => 'Empty tag',
@@ -149,6 +150,8 @@ return [
     'diag_singbox_running' => 'sing-box running',
     'diag_process_not_found' => 'Process not found',
     'diag_apply_resolver_hint' => 'Apply the resolver (Refresh lists) or check the awg container.',
+    'diag_apply_status' => 'Resolver apply',
+    'diag_apply_failed_hint' => 'Last resolver apply failed — open Resolver, hover the Error badge for details, fix the cause and Save again.',
     'diag_dns_listening' => 'sing-box listening on UDP ::port',
     'diag_dns_not_listening' => 'Port :port is not listening',
     'diag_tun_up_marks' => 'TUN up, mark packets≈:hits',
@@ -162,6 +165,8 @@ return [
     'diag_ruleset_missing' => ':tag.srs not found — click «Refresh lists»',
     'diag_list_file_missing' => 'List «:label»: file :tag.srs missing or empty — refresh lists.',
     'diag_merged_missing' => 'merged_cfg_:id.json missing — save the resolver',
+    'diag_merged_missing_hint' => '«:name» has no merged domains file — save the resolver again. If it persists, copy the diagnostics error JSON.',
+    'diag_merged_missing_with_error' => '«:name» has no merged domains file. Last apply error: :error',
     'diag_ip_merge_missing' => 'user_subnets set, but IP-merge file is missing — save the resolver',
     'diag_ip_merge_hint' => '«:name» has no IP-merge for the given subnets — save the resolver.',
     'diag_proxy_cidrs_prefixes' => 'proxy_cidrs_all.lst · :count prefixes',

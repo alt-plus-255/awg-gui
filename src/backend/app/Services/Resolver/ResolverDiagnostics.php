@@ -150,6 +150,37 @@ class ResolverDiagnostics
         $enabledTags = $resolver->collectCommunityTagsFromConfigs($enabled);
         $dnsSamples = [];
 
+        $statusFile = [];
+        $statusRaw = @file_get_contents($this->paths->resolverStatusPath());
+        if (is_string($statusRaw) && $statusRaw !== '') {
+            $decoded = json_decode($statusRaw, true);
+            if (is_array($decoded)) {
+                $statusFile = $decoded;
+            }
+        }
+        $fileHealthy = (bool) ($statusFile['healthy'] ?? true);
+        $fileMessage = trim((string) ($statusFile['message'] ?? ''));
+        $configApplyErrors = [];
+        foreach ($enabled as $cfg) {
+            if (filled($cfg->resolver_last_error)) {
+                $configApplyErrors[] = $cfg->name.': '.$cfg->resolver_last_error;
+            }
+        }
+        $applyOk = $fileHealthy && $configApplyErrors === [];
+        $checks[] = [
+            'id' => 'resolver_apply',
+            'ok' => $applyOk,
+            'label' => __('resolver.diag_apply_status'),
+            'detail' => $applyOk
+                ? ($fileMessage !== '' ? $fileMessage : 'OK')
+                : ($fileMessage !== ''
+                    ? $fileMessage.($configApplyErrors !== [] ? ' · '.implode('; ', $configApplyErrors) : '')
+                    : ($configApplyErrors !== [] ? implode('; ', $configApplyErrors) : __('resolver.apply_failed_after_save'))),
+        ];
+        if (! $applyOk) {
+            $hints[] = __('resolver.diag_apply_failed_hint');
+        }
+
         foreach ($enabledTags as $tag) {
             $info = $resolver->rulesetFileInfo($tag);
             $label = $resolver->communityLabel($tag);
@@ -169,14 +200,27 @@ class ResolverDiagnostics
         foreach ($enabled as $cfg) {
             $mergedPath = $this->paths->mergedRulesetPath($cfg);
             $ok = is_file($mergedPath) && filesize($mergedPath) > 0;
+            $detail = $ok
+                ? ('merged_cfg_'.$cfg->id.'.json · '.number_format((int) filesize($mergedPath)).' B')
+                : __('resolver.diag_merged_missing', ['id' => $cfg->id]);
+            if (! $ok && filled($cfg->resolver_last_error)) {
+                $detail .= ' · '.$cfg->resolver_last_error;
+            }
             $checks[] = [
                 'id' => 'merged_cfg_'.$cfg->id,
                 'ok' => $ok,
                 'label' => 'Merged domains «'.$cfg->name.'»',
-                'detail' => $ok
-                    ? ('merged_cfg_'.$cfg->id.'.json · '.number_format((int) filesize($mergedPath)).' B')
-                    : __('resolver.diag_merged_missing', ['id' => $cfg->id]),
+                'detail' => $detail,
             ];
+
+            if (! $ok) {
+                $hints[] = filled($cfg->resolver_last_error)
+                    ? __('resolver.diag_merged_missing_with_error', [
+                        'name' => $cfg->name,
+                        'error' => $cfg->resolver_last_error,
+                    ])
+                    : __('resolver.diag_merged_missing_hint', ['name' => $cfg->name]);
+            }
 
             $ipPath = $this->paths->mergedIpRulesetPath($cfg);
             if (is_file($ipPath) && filesize($ipPath) > 0) {

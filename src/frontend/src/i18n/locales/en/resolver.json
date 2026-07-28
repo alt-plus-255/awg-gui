@@ -30,6 +30,8 @@
   "statusDisabled": "Resolver disabled",
   "singboxRunning": "running",
   "singboxStopped": "stopped",
+  "errorTooltipTitle": "What went wrong",
+  "errorTooltipBody": "sing-box could not apply the resolver config (lists merge, connection, or reload). The message below is the last apply error — fix it and press Save again.",
   "noServerConfigs": "No server configs",
   "colConfig": "Config",
   "colInterface": "Interface",

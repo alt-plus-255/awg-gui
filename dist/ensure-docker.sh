@@ -3,7 +3,6 @@
 # Uses optional YES=0|1 (default 0).
 # Provides: ensure_docker_engine
 #
-# Keep in sync with: src/scripts/lib/ensure-docker.sh
 # Official docs: https://docs.docker.com/engine/install/
 
 _docker_read_tty() {

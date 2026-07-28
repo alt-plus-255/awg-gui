@@ -5,6 +5,7 @@ return [
     'dns_required' => 'Укажите IP или hostname DNS-сервера',
     'select_at_least_one_list' => 'Выберите хотя бы один список доменов, свои домены или подсети',
     'clients_need_reimport' => 'Клиентам нужно заново скачать и импортировать .conf / QR — изменились DNS и AllowedIPs.',
+    'apply_failed_after_save' => 'Настройки сохранены, но применить резолвер не удалось — откройте статус ошибки и повторите сохранение.',
 
     // ResolverSettingsController
     'empty_tag' => 'Пустой tag',
@@ -149,6 +150,8 @@ return [
     'diag_singbox_running' => 'sing-box запущен',
     'diag_process_not_found' => 'Процесс не найден',
     'diag_apply_resolver_hint' => 'Примените резолвер (Обновить lists) или проверьте контейнер awg.',
+    'diag_apply_status' => 'Применение резолвера',
+    'diag_apply_failed_hint' => 'Последний apply резолвера не удался — откройте Резолвер, наведите на «Ошибка» для деталей, исправьте причину и снова Сохраните.',
     'diag_dns_listening' => 'sing-box слушает UDP ::port',
     'diag_dns_not_listening' => 'Порт :port не слушается',
     'diag_tun_up_marks' => 'TUN up, mark-пакетов≈:hits',
@@ -162,6 +165,8 @@ return [
     'diag_ruleset_missing' => ':tag.srs не найден — нажмите «Обновить lists»',
     'diag_list_file_missing' => 'Список «:label»: файл :tag.srs отсутствует или пуст — обновите lists.',
     'diag_merged_missing' => 'merged_cfg_:id.json отсутствует — сохраните резолвер',
+    'diag_merged_missing_hint' => 'Для «:name» нет merged domains — сохраните резолвер ещё раз. Если ошибка повторяется, скопируйте JSON отчёта из диагностики.',
+    'diag_merged_missing_with_error' => 'Для «:name» нет merged domains. Последняя ошибка apply: :error',
     'diag_ip_merge_missing' => 'есть user_subnets, но IP-merge файл отсутствует — сохраните резолвер',
     'diag_ip_merge_hint' => 'Для «:name» нет IP-merge при заданных подсетях — сохраните резолвер.',
     'diag_proxy_cidrs_prefixes' => 'proxy_cidrs_all.lst · :count префиксов',
