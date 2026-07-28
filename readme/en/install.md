@@ -68,7 +68,9 @@ The dev installer:
 
 ### Re-install / upgrade
 
-If `awggui-*` containers or `src/.env` with `DB_PASSWORD` already exist, the script asks:
+If only `src/.env` remains without containers (e.g. after uninstall), a **fresh install** runs with new random passwords.
+
+If `awggui-*` containers are found, the script asks:
 
 1. **Abort** — recommended before a clean install; run [uninstall](uninstall.md) first;
 2. **Upgrade** — keep `.env`, volumes, DB and AWG data; rebuild images and run migrations.

@@ -17,14 +17,23 @@ class ResolverService
 
     public const TPROXY_PORT = 1602;
 
+    public const TPROXY_INBOUND_TAG = 'tproxy-in';
+
+    /** fwmark for iptables TPROXY → local table (see resolver-mark.sh). */
+    public const TPROXY_MARK = '0x1';
+
+    public const TPROXY_TABLE = 100;
+
     /** Plain DNS listen for WireGuard clients (gateway:53 → local delivery). */
     public const DNS_LISTEN_PORT = 53;
 
     /** @deprecated use DNS_LISTEN_PORT; kept for older PostUp cleanup */
     public const DNS_REDIRECT_PORT = 5353;
 
+    /** @deprecated TUN path removed; kept for legacy iptables/route cleanup */
     public const TUN_IFACE = 'sbox0';
 
+    /** @deprecated TUN path removed; kept for legacy ip rule cleanup */
     public const TUN_TABLE = 101;
 
     public const CLASH_API_ADDR = '127.0.0.1:9090';
@@ -474,7 +483,7 @@ class ResolverService
     }
 
     /**
-     * FakeIP + list CIDR MARK helpers and TUN routes on the AWG config volume (no image rebuild).
+     * FakeIP + list CIDR TPROXY helpers on the AWG config volume (no image rebuild).
      */
     public function ensureResolverMarkScripts(): void
     {
@@ -779,8 +788,21 @@ class ResolverService
         }
 
         $ruleSets = [];
-        $dnsRules = [];
+        $dnsRules = [
+            [
+                'query_type' => ['HTTPS'],
+                'action' => 'reject',
+            ],
+            [
+                'domain_suffix' => ['use-application-dns.net'],
+                'action' => 'reject',
+            ],
+        ];
         $routeRules = [
+            [
+                'action' => 'sniff',
+                'inbound' => [self::TPROXY_INBOUND_TAG, 'dns-in'],
+            ],
             [
                 'protocol' => 'dns',
                 'action' => 'hijack-dns',
@@ -815,11 +837,11 @@ class ResolverService
             $subnets = $this->mergedRulesets->asList($config->user_subnets);
 
             if ($config->resolver_reject_quic) {
+                // Per-config only: never global quic reject (multi AWG isolation).
                 $quicRejectRules[] = [
+                    'inbound' => [self::TPROXY_INBOUND_TAG],
                     'source_ip_cidr' => $source,
-                    'ip_cidr' => [self::FAKEIP_CIDR],
-                    'network' => 'udp',
-                    'port' => 443,
+                    'protocol' => 'quic',
                     'action' => 'reject',
                 ];
             }
@@ -856,11 +878,12 @@ class ResolverService
                     'source_ip_cidr' => $source,
                     'rule_set' => [$mergedTag],
                     'server' => 'fakeip',
+                    'rewrite_ttl' => 60,
                 ];
-                // Domain rules without source_ip: FakeIP/sniff rewrite can break
-                // source+dest AND matching on TUN; inbound+rule_set is reliable.
+                // source_ip required: overlapping lists (e.g. youtube) must not steal another AWG subnet.
                 $routeRules[] = [
-                    'inbound' => ['tun-in'],
+                    'inbound' => [self::TPROXY_INBOUND_TAG],
+                    'source_ip_cidr' => $source,
                     'rule_set' => [$mergedTag],
                     'outbound' => $routingTag,
                 ];
@@ -874,7 +897,7 @@ class ResolverService
                     'path' => '/config/rulesets/merged_cfg_'.$config->id.'_ip.json',
                 ];
                 $routeRules[] = [
-                    'inbound' => ['tun-in'],
+                    'inbound' => [self::TPROXY_INBOUND_TAG],
                     'source_ip_cidr' => $source,
                     'rule_set' => [$merged['ip_tag']],
                     'outbound' => $routingTag,
@@ -894,8 +917,8 @@ class ResolverService
 
         $this->writeProxyCidrsAll($allProxyCidrs);
 
-        if ($quicRejectRules !== []) {
-            array_splice($routeRules, 1, 0, $quicRejectRules);
+        foreach ($quicRejectRules as $quicRule) {
+            $this->insertRouteRuleAfterDnsHijack($routeRules, $quicRule);
         }
 
         $dnsRules[] = [
@@ -950,7 +973,8 @@ class ResolverService
 
         return [
             'log' => [
-                'level' => 'info',
+                // warn: info floods Docker json logs under client DNS/FakeIP load
+                'level' => 'warn',
                 'timestamp' => true,
             ],
             'dns' => [
@@ -958,6 +982,7 @@ class ResolverService
                 'rules' => $dnsRules,
                 'final' => 'remote',
                 'independent_cache' => true,
+                'cache_capacity' => 4096,
                 'strategy' => 'ipv4_only',
             ],
             'inbounds' => $this->withTelegramMixedInbound([
@@ -969,20 +994,12 @@ class ResolverService
                     'sniff' => true,
                 ],
                 [
-                    'type' => 'tun',
-                    'tag' => 'tun-in',
-                    'interface_name' => self::TUN_IFACE,
-                    // Keep off Docker bridge ranges (often 172.16–172.19) to avoid route clashes.
-                    'address' => ['10.255.255.1/30'],
-                    // Stay under AmneziaWG MTU (1420) to avoid blackhole fragments.
-                    'mtu' => 1280,
-                    'auto_route' => false,
-                    'strict_route' => false,
-                    'stack' => 'system',
-                    'sniff' => true,
-                    // Must stay false: override replaces 198.18.x with the domain and
-                    // breaks the FakeIP ip_cidr → proxy route (traffic falls to direct).
-                    'sniff_override_destination' => false,
+                    'type' => 'tproxy',
+                    'tag' => self::TPROXY_INBOUND_TAG,
+                    'listen' => '127.0.0.1',
+                    'listen_port' => self::TPROXY_PORT,
+                    'tcp_fast_open' => true,
+                    'udp_fragment' => true,
                 ],
             ], $outbounds, $routeRules, $outboundTagsAdded),
             'outbounds' => $outbounds,
@@ -997,7 +1014,9 @@ class ResolverService
                 'cache_file' => [
                     'enabled' => true,
                     'path' => '/config/sing-box-cache.db',
-                    'store_rdrc' => true,
+                    // Keep only selector/clash state; persist FakeIP/RDRC grows without bound.
+                    'store_fakeip' => false,
+                    'store_rdrc' => false,
                 ],
                 'clash_api' => [
                     'external_controller' => self::CLASH_API_ADDR,
@@ -1005,6 +1024,24 @@ class ResolverService
                 ],
             ],
         ];
+    }
+
+    /**
+     * Insert a route rule immediately after hijack-dns (after sniff if present).
+     *
+     * @param  list<array<string, mixed>>  $routeRules
+     * @param  array<string, mixed>  $rule
+     */
+    private function insertRouteRuleAfterDnsHijack(array &$routeRules, array $rule): void
+    {
+        $idx = 0;
+        foreach ($routeRules as $i => $existing) {
+            if (($existing['action'] ?? null) === 'hijack-dns') {
+                $idx = $i + 1;
+                break;
+            }
+        }
+        array_splice($routeRules, $idx, 0, [$rule]);
     }
 
     /**
@@ -1068,10 +1105,10 @@ class ResolverService
             }
         }
 
-        array_splice($routeRules, 1, 0, [[
+        $this->insertRouteRuleAfterDnsHijack($routeRules, [
             'inbound' => [TelegramSettings::MIXED_INBOUND_TAG],
             'outbound' => $outTag,
-        ]]);
+        ]);
 
         return $inbounds;
     }

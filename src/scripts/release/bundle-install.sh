@@ -143,7 +143,7 @@ EXPECTED_CONTAINERS=(
   awggui-docker-proxy awggui-panel-ops
 )
 
-detect_existing_install() {
+has_awggui_containers() {
   local c names
   names="$(docker ps -a --format '{{.Names}}' 2>/dev/null || true)"
   for c in "${EXPECTED_CONTAINERS[@]}"; do
@@ -151,6 +151,11 @@ detect_existing_install() {
       return 0
     fi
   done
+  return 1
+}
+
+detect_existing_install() {
+  has_awggui_containers && return 0
   if [[ -f "${ENV_FILE}" ]]; then
     [[ -n "$(env_get DB_PASSWORD "${ENV_FILE}")" ]] && return 0
   fi
@@ -177,6 +182,14 @@ detect_incomplete_install() {
 
 choose_install_mode() {
   if ! detect_existing_install; then
+    UPGRADE_MODE=0
+    REPAIR_MODE=0
+    return
+  fi
+
+  # Leftover .env after uninstall (no containers): do not reuse old ADMIN_PASSWORD.
+  if ! has_awggui_containers; then
+    warn "Найден оставшийся ${ENV_FILE} без контейнеров — чистая установка с новыми паролями"
     UPGRADE_MODE=0
     REPAIR_MODE=0
     return

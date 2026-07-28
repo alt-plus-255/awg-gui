@@ -5,37 +5,32 @@ set -euo pipefail
 CONFIG=/config/sing-box.json
 PIDFILE=/run/sing-box.pid
 BIN=/usr/local/bin/sing-box
+CACHE_FILE=/config/sing-box-cache.db
+# Soft cap: bbolt does not shrink; drop oversized cache so disk cannot fill unbounded.
+CACHE_MAX_BYTES=$((32 * 1024 * 1024))
 
-ensure_tun_routing() {
-  if [[ -x /config/resolver-tun-routes.sh ]]; then
-    /config/resolver-tun-routes.sh || true
+prune_cache_if_huge() {
+  if [[ ! -f "${CACHE_FILE}" ]]; then
     return 0
   fi
-  # Fallback when volume helper is missing (older installs).
-  TUN_IFACE=sbox0
-  TUN_MARK=0x2
-  TUN_TABLE=101
-  FAKEIP=198.18.0.0/15
-  while ip rule show | grep -q "fwmark ${TUN_MARK} lookup ${TUN_TABLE}"; do
+  local size
+  size="$(wc -c < "${CACHE_FILE}" | tr -d '[:space:]')"
+  if [[ "${size}" =~ ^[0-9]+$ ]] && (( size > CACHE_MAX_BYTES )); then
+    echo "[sing-box] pruning oversized cache ${CACHE_FILE} (${size} bytes > ${CACHE_MAX_BYTES})"
+    rm -f "${CACHE_FILE}"
+  fi
+}
+
+# Remove leftover TUN iface/routes from older resolver builds.
+cleanup_legacy_tun() {
+  local TUN_IFACE=sbox0
+  local TUN_MARK=0x2
+  local TUN_TABLE=101
+  while ip rule show 2>/dev/null | grep -q "fwmark ${TUN_MARK} lookup ${TUN_TABLE}"; do
     ip rule del fwmark "${TUN_MARK}" table "${TUN_TABLE}" 2>/dev/null || break
   done
-  ip rule add fwmark "${TUN_MARK}" table "${TUN_TABLE}" 2>/dev/null || true
-  for _ in 1 2 3 4 5 6 7 8 9 10; do
-    if ip link show "${TUN_IFACE}" >/dev/null 2>&1; then
-      break
-    fi
-    sleep 0.2
-  done
-  if ip link show "${TUN_IFACE}" >/dev/null 2>&1; then
-    ip link set "${TUN_IFACE}" up 2>/dev/null || true
-    ip route replace "${FAKEIP}" dev "${TUN_IFACE}" table "${TUN_TABLE}" 2>/dev/null \
-      || ip route add "${FAKEIP}" dev "${TUN_IFACE}" table "${TUN_TABLE}" 2>/dev/null || true
-    ip route replace "${FAKEIP}" dev "${TUN_IFACE}" 2>/dev/null \
-      || ip route add "${FAKEIP}" dev "${TUN_IFACE}" 2>/dev/null || true
-    echo "[sing-box] tun routing: mark ${TUN_MARK} → ${TUN_IFACE} (${FAKEIP})"
-  else
-    echo "[sing-box] warn: ${TUN_IFACE} not present yet" >&2
-  fi
+  ip route flush table "${TUN_TABLE}" 2>/dev/null || true
+  ip link delete "${TUN_IFACE}" 2>/dev/null || true
 }
 
 stop_singbox() {
@@ -55,6 +50,7 @@ stop_singbox() {
 start_singbox() {
   if [[ ! -f "${CONFIG}" ]]; then
     stop_singbox
+    cleanup_legacy_tun
     return 0
   fi
 
@@ -63,17 +59,12 @@ start_singbox() {
     return 1
   fi
 
+  prune_cache_if_huge
   stop_singbox
+  cleanup_legacy_tun
   "${BIN}" run -c "${CONFIG}" &
   echo $! > "${PIDFILE}"
   echo "[sing-box] started pid=$(cat "${PIDFILE}")"
-  for _ in 1 2 3 4 5 6 7 8 9 10; do
-    if ip link show sbox0 >/dev/null 2>&1; then
-      break
-    fi
-    sleep 0.2
-  done
-  ensure_tun_routing
 }
 
 start_singbox
