@@ -20,6 +20,39 @@ class ResolverDiagnosticsTest extends TestCase
 
     private string $awgDir;
 
+    public function test_has_tproxy_route_accepts_local_default_dev_lo_format(): void
+    {
+        $svc = app(ResolverDiagnostics::class);
+        $ref = new \ReflectionMethod($svc, 'hasTproxyRoute');
+        $ref->setAccessible(true);
+
+        $this->assertTrue($ref->invoke($svc, [
+            'local default dev lo scope host',
+        ]));
+    }
+
+    public function test_has_tproxy_route_accepts_local_zero_route_format(): void
+    {
+        $svc = app(ResolverDiagnostics::class);
+        $ref = new \ReflectionMethod($svc, 'hasTproxyRoute');
+        $ref->setAccessible(true);
+
+        $this->assertTrue($ref->invoke($svc, [
+            'local 0.0.0.0/0 dev lo table 100',
+        ]));
+    }
+
+    public function test_has_tproxy_route_rejects_unrelated_lo_routes(): void
+    {
+        $svc = app(ResolverDiagnostics::class);
+        $ref = new \ReflectionMethod($svc, 'hasTproxyRoute');
+        $ref->setAccessible(true);
+
+        $this->assertFalse($ref->invoke($svc, [
+            'broadcast 10.66.66.255 dev lo proto kernel scope link src 10.66.66.1',
+        ]));
+    }
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -75,6 +108,7 @@ class ResolverDiagnosticsTest extends TestCase
 
         $awg = Mockery::mock(AmneziaWgService::class);
         $awg->shouldReceive('containerName')->andReturn('awggui-awg');
+        $awg->shouldReceive('configDir')->andReturn($this->awgDir);
 
         $docker = Mockery::mock(DockerRuntime::class);
         $docker->shouldReceive('exec')
@@ -125,6 +159,7 @@ OUT
         $resolver->shouldReceive('isSingBoxRunning')->once()->andReturn(true);
         $resolver->shouldReceive('enabledServerConfigs')->once()->andReturn([$config]);
         $resolver->shouldReceive('collectCommunityTagsFromConfigs')->once()->with([$config])->andReturn([]);
+        $resolver->shouldReceive('gatewayIp')->zeroOrMoreTimes()->andReturn('10.66.66.1');
 
         $diag = new ResolverDiagnostics($awg, $docker, new ResolverPaths($awg), $clash);
         $result = $diag->diagnose($resolver);

@@ -19,7 +19,7 @@ class ResolverService
 
     public const TPROXY_INBOUND_TAG = 'tproxy-in';
 
-    public const TPROXY_LISTEN = '0.0.0.0';
+    public const TPROXY_LISTEN = '127.0.0.1';
 
     public const TPROXY_ON_IP = '127.0.0.1';
 

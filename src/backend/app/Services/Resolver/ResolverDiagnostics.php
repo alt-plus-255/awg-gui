@@ -526,7 +526,14 @@ SH;
     private function hasTproxyRoute(array $lines): bool
     {
         foreach ($lines as $line) {
-            if (str_contains($line, 'local 0.0.0.0/0') && str_contains($line, 'dev lo')) {
+            $line = trim($line);
+            if ($line === '' || ! str_contains($line, 'dev lo')) {
+                continue;
+            }
+            if (str_contains($line, 'local 0.0.0.0/0')) {
+                return true;
+            }
+            if (str_contains($line, 'local default')) {
                 return true;
             }
         }
