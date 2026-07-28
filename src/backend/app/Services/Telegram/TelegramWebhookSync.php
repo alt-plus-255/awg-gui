@@ -25,10 +25,10 @@ class TelegramWebhookSync
     {
         $this->proxyPool->clearCache();
 
+        // Rebuild sing-box only when connection proxies changed or mixed auth was
+        // created for the first time — not on every settings save.
         $needsResolverApply = $proxiesChanged;
-        if ($this->settings->hasEnabledConnectionProxies()) {
-            // Keep sing-box mixed inbound users aligned with mixedProxyUrl() credentials.
-            $this->settings->mixedAuth();
+        if ($this->settings->hasEnabledConnectionProxies() && $this->settings->ensureMixedAuth()) {
             $needsResolverApply = true;
         }
 

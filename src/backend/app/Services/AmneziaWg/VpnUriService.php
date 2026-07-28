@@ -143,7 +143,7 @@ class VpnUriService
             'client_priv_key' => $privateKey,
             'config' => $conf,
             'hostName' => $hostName,
-            'mtu' => '1280',
+            'mtu' => '1420',
             'persistent_keep_alive' => (string) $keepalive,
             'port' => (int) $config->listen_port,
             'server_pub_key' => $config->server_public_key,

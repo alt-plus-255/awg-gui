@@ -967,6 +967,7 @@ class AmneziaWgService
             'PrivateKey = '.$membership->private_key,
             'Address = '.$membership->address,
             'DNS = '.$dns,
+            'MTU = 1420',
         ];
         array_push($lines, ...$this->profileFor($config)->confObfuscationLines($config));
 
@@ -1064,11 +1065,9 @@ class AmneziaWgService
             $parts[] = 'iptables -t nat -A PREROUTING -i %i -p udp --dport 53 -j REDIRECT --to-ports '.ResolverService::DNS_LISTEN_PORT;
             $parts[] = 'iptables -t nat -A PREROUTING -i %i -p tcp --dport 53 -j REDIRECT --to-ports '.ResolverService::DNS_LISTEN_PORT;
 
-            // FakeIP → MARK → sing-box TUN; rest of full-tunnel traffic MASQUERADE on eth0
+            // FakeIP + list CIDRs → TPROXY into sing-box; rest of full-tunnel traffic MASQUERADE on eth0
             app(ResolverService::class)->ensureResolverMarkScripts();
             $parts[] = 'sh /config/resolver-mark.sh %i';
-            $parts[] = 'iptables -A FORWARD -i %i -o '.ResolverService::TUN_IFACE.' -j ACCEPT 2>/dev/null || true';
-            $parts[] = 'iptables -A FORWARD -i '.ResolverService::TUN_IFACE.' -o %i -j ACCEPT 2>/dev/null || true';
             $parts = array_merge($parts, $this->legacyResolverIptablesCleanup());
         }
 
@@ -1087,6 +1086,7 @@ class AmneziaWgService
             $parts[] = 'iptables -t nat -D PREROUTING -i %i -p udp --dport 53 -j REDIRECT --to-ports '.ResolverService::DNS_LISTEN_PORT.' 2>/dev/null || true';
             $parts[] = 'iptables -t nat -D PREROUTING -i %i -p tcp --dport 53 -j REDIRECT --to-ports '.ResolverService::DNS_LISTEN_PORT.' 2>/dev/null || true';
             $parts[] = 'sh /config/resolver-unmark.sh %i 2>/dev/null || true';
+            // Legacy TUN forward rules from pre-TPROXY builds
             $parts[] = 'iptables -D FORWARD -i %i -o '.ResolverService::TUN_IFACE.' -j ACCEPT 2>/dev/null || true';
             $parts[] = 'iptables -D FORWARD -i '.ResolverService::TUN_IFACE.' -o %i -j ACCEPT 2>/dev/null || true';
             $parts = array_merge($parts, $this->legacyResolverIptablesCleanup());

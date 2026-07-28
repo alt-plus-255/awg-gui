@@ -52,6 +52,7 @@ class TelegramBotCommand extends Command
                 }
 
                 $offset = (int) Cache::get('telegram.updates.offset', 0);
+                $pollStarted = microtime(true);
                 $response = $bot->getUpdates($offset, 25);
 
                 if (! ($response['ok'] ?? false)) {
@@ -65,6 +66,8 @@ class TelegramBotCommand extends Command
 
                 $updates = $response['result'] ?? [];
                 if (! is_array($updates)) {
+                    sleep(2);
+
                     continue;
                 }
 
@@ -86,6 +89,11 @@ class TelegramBotCommand extends Command
                             'error' => $e->getMessage(),
                         ]);
                     }
+                }
+
+                // Long-poll should block ~25s; if it returns instantly, avoid a tight CPU loop.
+                if ($updates === [] && (microtime(true) - $pollStarted) < 3) {
+                    sleep(2);
                 }
             } catch (\Throwable $e) {
                 Log::error('telegram.bot_loop_error', ['error' => $e->getMessage()]);

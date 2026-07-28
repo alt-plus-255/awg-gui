@@ -70,20 +70,18 @@ class SettingsController extends Controller
             'telegram_language' => ['sometimes', 'string', Rule::in(['en', 'ru'])],
         ]);
 
-        $telegramTouched = array_key_exists('telegram_bot_token', $data)
-            || array_key_exists('telegram_admin_id', $data)
-            || array_key_exists('telegram_mode', $data)
-            || array_key_exists('telegram_proxies', $data)
-            || array_key_exists('telegram_proxy_strategy', $data)
-            || array_key_exists('telegram_notifications_enabled', $data)
-            || array_key_exists('telegram_language', $data);
-
+        // Frontend always sends Telegram fields; only sync/rebuild when values actually change.
+        $telegramChanged = false;
         $proxiesChanged = false;
+
         if (array_key_exists('telegram_proxies', $data)) {
             $normalized = $this->normalizeTelegramProxies($data['telegram_proxies'] ?? []);
             $encoded = $this->telegram->encodeProxies($normalized);
             $proxiesChanged = $encoded !== (string) Setting::getValue('telegram_proxies', '[]');
-            Setting::setValue('telegram_proxies', $encoded);
+            if ($proxiesChanged) {
+                Setting::setValue('telegram_proxies', $encoded);
+                $telegramChanged = true;
+            }
             unset($data['telegram_proxies']);
         }
 
@@ -91,40 +89,60 @@ class SettingsController extends Controller
             $token = trim((string) ($data['telegram_bot_token'] ?? ''));
             // Empty or masked value keeps the existing token.
             if ($token !== '' && ! str_contains($token, '*')) {
-                Setting::setValue('telegram_bot_token', $token);
+                if ($token !== (string) Setting::getValue('telegram_bot_token', '')) {
+                    Setting::setValue('telegram_bot_token', $token);
+                    $telegramChanged = true;
+                }
             }
             unset($data['telegram_bot_token']);
         }
 
         if (array_key_exists('telegram_admin_id', $data)) {
-            Setting::setValue('telegram_admin_id', trim((string) ($data['telegram_admin_id'] ?? '')));
+            $adminId = trim((string) ($data['telegram_admin_id'] ?? ''));
+            if ($adminId !== (string) Setting::getValue('telegram_admin_id', '')) {
+                Setting::setValue('telegram_admin_id', $adminId);
+                $telegramChanged = true;
+            }
             unset($data['telegram_admin_id']);
         }
 
         if (array_key_exists('telegram_mode', $data)) {
-            Setting::setValue('telegram_mode', (string) $data['telegram_mode']);
+            $mode = (string) $data['telegram_mode'];
+            if ($mode !== (string) Setting::getValue('telegram_mode', TelegramSettings::MODE_POLLING)) {
+                Setting::setValue('telegram_mode', $mode);
+                $telegramChanged = true;
+            }
             unset($data['telegram_mode']);
         }
 
         if (array_key_exists('telegram_proxy_strategy', $data)) {
-            Setting::setValue('telegram_proxy_strategy', (string) $data['telegram_proxy_strategy']);
+            $strategy = (string) $data['telegram_proxy_strategy'];
+            if ($strategy !== (string) Setting::getValue('telegram_proxy_strategy', TelegramSettings::STRATEGY_FASTEST)) {
+                Setting::setValue('telegram_proxy_strategy', $strategy);
+                $telegramChanged = true;
+            }
             unset($data['telegram_proxy_strategy']);
         }
 
         if (array_key_exists('telegram_notifications_enabled', $data)) {
-            Setting::setValue(
-                'telegram_notifications_enabled',
-                filter_var($data['telegram_notifications_enabled'], FILTER_VALIDATE_BOOLEAN) ? '1' : '0'
-            );
+            $enabled = filter_var($data['telegram_notifications_enabled'], FILTER_VALIDATE_BOOLEAN) ? '1' : '0';
+            if ($enabled !== (string) Setting::getValue('telegram_notifications_enabled', '1')) {
+                Setting::setValue('telegram_notifications_enabled', $enabled);
+                $telegramChanged = true;
+            }
             unset($data['telegram_notifications_enabled']);
         }
 
         if (array_key_exists('telegram_language', $data)) {
-            Setting::setValue('telegram_language', (string) $data['telegram_language']);
+            $language = (string) $data['telegram_language'];
+            if ($language !== (string) Setting::getValue('telegram_language', TelegramSettings::LANG_EN)) {
+                Setting::setValue('telegram_language', $language);
+                $telegramChanged = true;
+            }
             unset($data['telegram_language']);
         }
 
-        if ($telegramTouched) {
+        if ($telegramChanged) {
             $this->telegramSync->ensureWebhookSecret();
         }
 
@@ -229,7 +247,7 @@ class SettingsController extends Controller
         }
 
         $telegramSync = null;
-        if ($telegramTouched) {
+        if ($telegramChanged) {
             $telegramSync = $this->telegramSync->syncAfterSettingsChange($proxiesChanged);
         }
 

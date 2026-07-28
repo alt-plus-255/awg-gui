@@ -19,92 +19,106 @@ class ResolverMarkScripts
         $dir = $this->awg->configDir();
         $mark = $dir.'/resolver-mark.sh';
         $unmark = $dir.'/resolver-unmark.sh';
-        $routes = $dir.'/resolver-tun-routes.sh';
         $reload = $dir.'/reload-singbox.sh';
 
-        $routesBody = <<<'SH'
-#!/bin/sh
-# Install policy routes for FakeIP + proxy_cidrs_all.lst → sing-box TUN.
-TUN_IFACE=sbox0
-TUN_MARK=0x2
-TUN_TABLE=101
-FAKEIP=198.18.0.0/15
-CIDR_FILE=/config/rulesets/proxy_cidrs_all.lst
+        // Remove obsolete TUN helper if present from older installs.
+        $legacyTunRoutes = $dir.'/resolver-tun-routes.sh';
+        if (is_file($legacyTunRoutes)) {
+            @unlink($legacyTunRoutes);
+        }
 
-while ip rule show 2>/dev/null | grep -q "fwmark ${TUN_MARK} lookup ${TUN_TABLE}"; do
-  ip rule del fwmark "${TUN_MARK}" table "${TUN_TABLE}" 2>/dev/null || break
+        $tproxyPort = ResolverService::TPROXY_PORT;
+        $fakeip = ResolverService::FAKEIP_CIDR;
+        $tproxyMark = ResolverService::TPROXY_MARK;
+        $tproxyTable = ResolverService::TPROXY_TABLE;
+        $tunMark = '0x2';
+        $tunTable = ResolverService::TUN_TABLE;
+        $tunIface = ResolverService::TUN_IFACE;
+
+        $markBody = <<<SH
+#!/bin/sh
+# TPROXY FakeIP + list CIDRs into sing-box :{$tproxyPort}. Full-tunnel non-list traffic uses MASQUERADE.
+IFACE="\${1:?iface}"
+TPROXY_PORT={$tproxyPort}
+TPROXY_MARK={$tproxyMark}
+TPROXY_TABLE={$tproxyTable}
+FAKEIP={$fakeip}
+CIDR_FILE=/config/rulesets/proxy_cidrs_all.lst
+CHAIN="RS_\${IFACE}"
+DIVERT=DIVERT
+
+# Policy routing for TPROXY (idempotent).
+while ip rule show 2>/dev/null | grep -q "fwmark \${TPROXY_MARK} lookup \${TPROXY_TABLE}"; do
+  ip rule del fwmark "\${TPROXY_MARK}" table "\${TPROXY_TABLE}" 2>/dev/null || break
 done
-ip rule add fwmark "${TUN_MARK}" table "${TUN_TABLE}" 2>/dev/null || true
+ip rule add fwmark "\${TPROXY_MARK}" table "\${TPROXY_TABLE}" 2>/dev/null || true
+ip route replace local 0.0.0.0/0 dev lo table "\${TPROXY_TABLE}" 2>/dev/null \\
+  || ip route add local 0.0.0.0/0 dev lo table "\${TPROXY_TABLE}" 2>/dev/null || true
 
-if ! ip link show "${TUN_IFACE}" >/dev/null 2>&1; then
-  echo "[sing-box] warn: ${TUN_IFACE} not present yet" >&2
-  exit 0
+# Drop legacy TUN mark/table if still present.
+while ip rule show 2>/dev/null | grep -q "fwmark {$tunMark} lookup {$tunTable}"; do
+  ip rule del fwmark {$tunMark} table {$tunTable} 2>/dev/null || break
+done
+ip route flush table {$tunTable} 2>/dev/null || true
+ip link delete {$tunIface} 2>/dev/null || true
+
+# DIVERT for locally destined sockets (shared, once).
+iptables -t mangle -N "\$DIVERT" 2>/dev/null || true
+iptables -t mangle -F "\$DIVERT" 2>/dev/null || true
+iptables -t mangle -A "\$DIVERT" -j MARK --set-mark "\$TPROXY_MARK"
+iptables -t mangle -A "\$DIVERT" -j ACCEPT
+iptables -t mangle -C PREROUTING -p tcp -m socket -j "\$DIVERT" 2>/dev/null \\
+  || iptables -t mangle -A PREROUTING -p tcp -m socket -j "\$DIVERT"
+iptables -t mangle -C PREROUTING -p udp -m socket -j "\$DIVERT" 2>/dev/null \\
+  || iptables -t mangle -A PREROUTING -p udp -m socket -j "\$DIVERT"
+
+iptables -t mangle -N "\$CHAIN" 2>/dev/null || iptables -t mangle -F "\$CHAIN"
+
+tproxy_add() {
+  _cidr="\$1"
+  iptables -t mangle -A "\$CHAIN" -d "\$_cidr" -p tcp -j TPROXY \\
+    --on-port "\$TPROXY_PORT" --on-ip 127.0.0.1 --tproxy-mark "\${TPROXY_MARK}/\${TPROXY_MARK}"
+  iptables -t mangle -A "\$CHAIN" -d "\$_cidr" -p udp -j TPROXY \\
+    --on-port "\$TPROXY_PORT" --on-ip 127.0.0.1 --tproxy-mark "\${TPROXY_MARK}/\${TPROXY_MARK}"
+}
+
+tproxy_add "\$FAKEIP"
+
+if [ -f "\$CIDR_FILE" ]; then
+  while IFS= read -r cidr || [ -n "\$cidr" ]; do
+    cidr=\$(echo "\$cidr" | tr -d '\\r' | sed 's/#.*//;s/^[[:space:]]*//;s/[[:space:]]*\$//')
+    [ -z "\$cidr" ] && continue
+    tproxy_add "\$cidr"
+  done < "\$CIDR_FILE"
 fi
 
-ip link set "${TUN_IFACE}" up 2>/dev/null || true
-ip route replace "${FAKEIP}" dev "${TUN_IFACE}" table "${TUN_TABLE}" 2>/dev/null \
-  || ip route add "${FAKEIP}" dev "${TUN_IFACE}" table "${TUN_TABLE}" 2>/dev/null || true
-ip route replace "${FAKEIP}" dev "${TUN_IFACE}" 2>/dev/null \
-  || ip route add "${FAKEIP}" dev "${TUN_IFACE}" 2>/dev/null || true
+iptables -t mangle -C PREROUTING -i "\$IFACE" -j "\$CHAIN" 2>/dev/null \\
+  || iptables -t mangle -A PREROUTING -i "\$IFACE" -j "\$CHAIN"
 
-if [ -f "${CIDR_FILE}" ]; then
-  while IFS= read -r cidr || [ -n "$cidr" ]; do
-    cidr=$(echo "$cidr" | tr -d '\r' | sed 's/#.*//;s/^[[:space:]]*//;s/[[:space:]]*$//')
-    [ -z "$cidr" ] && continue
-    ip route replace "${cidr}" dev "${TUN_IFACE}" table "${TUN_TABLE}" 2>/dev/null \
-      || ip route add "${cidr}" dev "${TUN_IFACE}" table "${TUN_TABLE}" 2>/dev/null || true
-  done < "${CIDR_FILE}"
-fi
-
-echo "[sing-box] tun routing: mark ${TUN_MARK} → ${TUN_IFACE} (${FAKEIP} + list CIDRs)"
-SH;
-        $this->files->writeExecutable($routes, $routesBody);
-
-        $markBody = <<<'SH'
-#!/bin/sh
-# Mark FakeIP + list CIDRs toward sing-box TUN. Full-tunnel non-list traffic uses MASQUERADE.
-IFACE="${1:?iface}"
-MARK=0x2
-FAKEIP=198.18.0.0/15
-CIDR_FILE=/config/rulesets/proxy_cidrs_all.lst
-CHAIN="RS_${IFACE}"
-
-iptables -t mangle -N "$CHAIN" 2>/dev/null || iptables -t mangle -F "$CHAIN"
-iptables -t mangle -A "$CHAIN" -d "$FAKEIP" -j MARK --set-mark "$MARK"
-
-if [ -f "$CIDR_FILE" ]; then
-  while IFS= read -r cidr || [ -n "$cidr" ]; do
-    cidr=$(echo "$cidr" | tr -d '\r' | sed 's/#.*//;s/^[[:space:]]*//;s/[[:space:]]*$//')
-    [ -z "$cidr" ] && continue
-    iptables -t mangle -A "$CHAIN" -d "$cidr" -j MARK --set-mark "$MARK"
-  done < "$CIDR_FILE"
-fi
-
-iptables -t mangle -C PREROUTING -i "$IFACE" -j "$CHAIN" 2>/dev/null \
-  || iptables -t mangle -A PREROUTING -i "$IFACE" -j "$CHAIN"
-
-# Ensure TUN routes exist even if reload-singbox from the image is outdated.
-[ -x /config/resolver-tun-routes.sh ] && /config/resolver-tun-routes.sh >/dev/null 2>&1 || true
+echo "[sing-box] tproxy: \${IFACE} → 127.0.0.1:\${TPROXY_PORT} (\${FAKEIP} + list CIDRs)"
 SH;
         $this->files->writeExecutable($mark, $markBody);
 
-        $unmarkBody = <<<'SH'
+        $unmarkBody = <<<SH
 #!/bin/sh
-IFACE="${1:?iface}"
-CHAIN="RS_${IFACE}"
+IFACE="\${1:?iface}"
+CHAIN="RS_\${IFACE}"
+TPROXY_MARK={$tproxyMark}
+FAKEIP={$fakeip}
+TPROXY_PORT={$tproxyPort}
 
-iptables -t mangle -D PREROUTING -i "$IFACE" -j "$CHAIN" 2>/dev/null || true
-iptables -t mangle -F "$CHAIN" 2>/dev/null || true
-iptables -t mangle -X "$CHAIN" 2>/dev/null || true
+iptables -t mangle -D PREROUTING -i "\$IFACE" -j "\$CHAIN" 2>/dev/null || true
+iptables -t mangle -F "\$CHAIN" 2>/dev/null || true
+iptables -t mangle -X "\$CHAIN" 2>/dev/null || true
 
-# Legacy FakeIP-only rules (pre-chain)
-MARK=0x2
-FAKEIP=198.18.0.0/15
-iptables -t mangle -D PREROUTING -i "$IFACE" -d "$FAKEIP" -j MARK --set-mark "$MARK" 2>/dev/null || true
+# Legacy FakeIP MARK→TUN rules (pre-TPROXY restore)
+iptables -t mangle -D PREROUTING -i "\$IFACE" -d "\$FAKEIP" -j MARK --set-mark 0x2 2>/dev/null || true
+iptables -t mangle -D PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p tcp -j TPROXY --on-port "\$TPROXY_PORT" --on-ip 127.0.0.1 --tproxy-mark 0x1/0x1 2>/dev/null || true
+iptables -t mangle -D PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p udp -j TPROXY --on-port "\$TPROXY_PORT" --on-ip 127.0.0.1 --tproxy-mark 0x1/0x1 2>/dev/null || true
 SH;
         $this->files->writeExecutable($unmark, $unmarkBody);
 
-        // Prefer volume copy so list-CIDR routes work without rebuilding the AWG image.
+        // Prefer volume copy so list-CIDR TPROXY works without rebuilding the AWG image.
         $reloadBody = <<<'SH'
 #!/usr/bin/env bash
 # Reload or start/stop sing-box based on /config/sing-box.json
@@ -113,36 +127,32 @@ set -euo pipefail
 CONFIG=/config/sing-box.json
 PIDFILE=/run/sing-box.pid
 BIN=/usr/local/bin/sing-box
+CACHE_FILE=/config/sing-box-cache.db
+# Soft cap: bbolt does not shrink; drop oversized cache so disk cannot fill unbounded.
+CACHE_MAX_BYTES=$((32 * 1024 * 1024))
 
-ensure_tun_routing() {
-  if [[ -x /config/resolver-tun-routes.sh ]]; then
-    /config/resolver-tun-routes.sh || true
+prune_cache_if_huge() {
+  if [[ ! -f "${CACHE_FILE}" ]]; then
     return 0
   fi
-  TUN_IFACE=sbox0
-  TUN_MARK=0x2
-  TUN_TABLE=101
-  FAKEIP=198.18.0.0/15
-  while ip rule show | grep -q "fwmark ${TUN_MARK} lookup ${TUN_TABLE}"; do
+  local size
+  size="$(wc -c < "${CACHE_FILE}" | tr -d '[:space:]')"
+  if [[ "${size}" =~ ^[0-9]+$ ]] && (( size > CACHE_MAX_BYTES )); then
+    echo "[sing-box] pruning oversized cache ${CACHE_FILE} (${size} bytes > ${CACHE_MAX_BYTES})"
+    rm -f "${CACHE_FILE}"
+  fi
+}
+
+# Remove leftover TUN iface/routes from older resolver builds.
+cleanup_legacy_tun() {
+  local TUN_IFACE=sbox0
+  local TUN_MARK=0x2
+  local TUN_TABLE=101
+  while ip rule show 2>/dev/null | grep -q "fwmark ${TUN_MARK} lookup ${TUN_TABLE}"; do
     ip rule del fwmark "${TUN_MARK}" table "${TUN_TABLE}" 2>/dev/null || break
   done
-  ip rule add fwmark "${TUN_MARK}" table "${TUN_TABLE}" 2>/dev/null || true
-  for _ in 1 2 3 4 5 6 7 8 9 10; do
-    if ip link show "${TUN_IFACE}" >/dev/null 2>&1; then
-      break
-    fi
-    sleep 0.2
-  done
-  if ip link show "${TUN_IFACE}" >/dev/null 2>&1; then
-    ip link set "${TUN_IFACE}" up 2>/dev/null || true
-    ip route replace "${FAKEIP}" dev "${TUN_IFACE}" table "${TUN_TABLE}" 2>/dev/null \
-      || ip route add "${FAKEIP}" dev "${TUN_IFACE}" table "${TUN_TABLE}" 2>/dev/null || true
-    ip route replace "${FAKEIP}" dev "${TUN_IFACE}" 2>/dev/null \
-      || ip route add "${FAKEIP}" dev "${TUN_IFACE}" 2>/dev/null || true
-    echo "[sing-box] tun routing: mark ${TUN_MARK} → ${TUN_IFACE} (${FAKEIP})"
-  else
-    echo "[sing-box] warn: ${TUN_IFACE} not present yet" >&2
-  fi
+  ip route flush table "${TUN_TABLE}" 2>/dev/null || true
+  ip link delete "${TUN_IFACE}" 2>/dev/null || true
 }
 
 stop_singbox() {
@@ -162,6 +172,7 @@ stop_singbox() {
 start_singbox() {
   if [[ ! -f "${CONFIG}" ]]; then
     stop_singbox
+    cleanup_legacy_tun
     return 0
   fi
 
@@ -170,18 +181,12 @@ start_singbox() {
     return 1
   fi
 
+  prune_cache_if_huge
   stop_singbox
+  cleanup_legacy_tun
   "${BIN}" run -c "${CONFIG}" &
   echo $! > "${PIDFILE}"
   echo "[sing-box] started pid=$(cat "${PIDFILE}")"
-  # Wait briefly for TUN before installing routes (incl. list CIDRs).
-  for _ in 1 2 3 4 5 6 7 8 9 10; do
-    if ip link show sbox0 >/dev/null 2>&1; then
-      break
-    fi
-    sleep 0.2
-  done
-  ensure_tun_routing
 }
 
 start_singbox
@@ -326,7 +331,7 @@ SH;
     }
 
     /**
-     * Re-apply MARK chains on live AWG ifaces after proxy_cidrs_all.lst changes.
+     * Re-apply TPROXY chains on live AWG ifaces after proxy_cidrs_all.lst changes.
      * Single docker exec for all ifaces (avoids O(N) round-trips).
      *
      * @param  list<string>  $ifaces

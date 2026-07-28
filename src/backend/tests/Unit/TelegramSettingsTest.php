@@ -67,4 +67,19 @@ class TelegramSettingsTest extends TestCase
         $this->assertSame($auth['username'], Setting::getValue('telegram_mixed_auth_user'));
         $this->assertSame($auth['password'], Setting::getValue('telegram_mixed_auth_pass'));
     }
+
+    public function test_ensure_mixed_auth_creates_once(): void
+    {
+        $settings = app(TelegramSettings::class);
+
+        $this->assertTrue($settings->ensureMixedAuth());
+        $user = Setting::getValue('telegram_mixed_auth_user');
+        $pass = Setting::getValue('telegram_mixed_auth_pass');
+        $this->assertNotSame('', $user);
+        $this->assertNotSame('', $pass);
+
+        $this->assertFalse($settings->ensureMixedAuth());
+        $this->assertSame($user, Setting::getValue('telegram_mixed_auth_user'));
+        $this->assertSame($pass, Setting::getValue('telegram_mixed_auth_pass'));
+    }
 }

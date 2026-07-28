@@ -207,18 +207,30 @@ class TelegramSettings
      */
     public function mixedAuth(): array
     {
+        $this->ensureMixedAuth();
+
+        return [
+            'username' => trim((string) Setting::getValue('telegram_mixed_auth_user', '')),
+            'password' => trim((string) Setting::getValue('telegram_mixed_auth_pass', '')),
+        ];
+    }
+
+    /**
+     * Ensure mixed-inbound credentials exist. Returns true when they were just created
+     * (caller should rebuild sing-box so the inbound users match).
+     */
+    public function ensureMixedAuth(): bool
+    {
         $user = trim((string) Setting::getValue('telegram_mixed_auth_user', ''));
         $pass = trim((string) Setting::getValue('telegram_mixed_auth_pass', ''));
         if ($user !== '' && $pass !== '') {
-            return ['username' => $user, 'password' => $pass];
+            return false;
         }
 
-        $user = 'tg_'.Str::lower(Str::random(10));
-        $pass = Str::random(32);
-        Setting::setValue('telegram_mixed_auth_user', $user);
-        Setting::setValue('telegram_mixed_auth_pass', $pass);
+        Setting::setValue('telegram_mixed_auth_user', 'tg_'.Str::lower(Str::random(10)));
+        Setting::setValue('telegram_mixed_auth_pass', Str::random(32));
 
-        return ['username' => $user, 'password' => $pass];
+        return true;
     }
 
     public function mixedProxyUrl(): string

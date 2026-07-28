@@ -66,26 +66,27 @@ class ResolverDiagnostics
         }
 
         $dnsListening = false;
-        $fakeipTun = false;
+        $tproxyListening = false;
+        $fakeipTproxy = false;
         $fakeipHits = 0;
-        $tunUp = false;
         try {
             $r = $this->docker->exec(
                 $container,
                 ['sh', '-c',
                     'ss -ulnp | grep -q ":'.ResolverService::DNS_LISTEN_PORT.' " && echo DNS_OK; '
-                    .'ip link show '.ResolverService::TUN_IFACE.' >/dev/null 2>&1 && echo TUN_OK; '
-                    .'iptables -t mangle -L PREROUTING -n -v 2>/dev/null | grep -E "MARK|'.ResolverService::FAKEIP_CIDR.'" || true; '
+                    .'ss -ulnp | grep -q ":'.ResolverService::TPROXY_PORT.' " && echo TPROXY_OK; '
+                    .'ss -tlnp | grep -q ":'.ResolverService::TPROXY_PORT.' " && echo TPROXY_TCP_OK; '
+                    .'iptables -t mangle -L PREROUTING -n -v 2>/dev/null | grep -E "TPROXY|'.ResolverService::FAKEIP_CIDR.'|RS_" || true; '
                     .'iptables -t nat -L PREROUTING -n -v 2>/dev/null | grep "dpt:53" || true',
                 ],
                 timeout: 10,
             );
             $out = $r->output();
             $dnsListening = str_contains($out, 'DNS_OK');
-            $tunUp = str_contains($out, 'TUN_OK');
-            $fakeipTun = str_contains($out, 'MARK') && (str_contains($out, '198.18') || $tunUp);
+            $tproxyListening = str_contains($out, 'TPROXY_OK') || str_contains($out, 'TPROXY_TCP_OK');
+            $fakeipTproxy = str_contains($out, 'TPROXY') && str_contains($out, '198.18');
             foreach (preg_split("/\r\n|\n|\r/", $out) ?: [] as $line) {
-                if (! str_contains($line, 'MARK') && ! str_contains($line, '198.18')) {
+                if (! str_contains($line, 'TPROXY') && ! str_contains($line, '198.18') && ! str_contains($line, 'RS_')) {
                     continue;
                 }
                 if (preg_match('/^\s*(\d+)\s+/', $line, $m)) {
@@ -103,14 +104,14 @@ class ResolverDiagnostics
             'detail' => $dnsListening ? __('resolver.diag_dns_listening', ['port' => ResolverService::DNS_LISTEN_PORT]) : __('resolver.diag_dns_not_listening', ['port' => ResolverService::DNS_LISTEN_PORT]),
         ];
         $checks[] = [
-            'id' => 'fakeip_tun',
-            'ok' => $tunUp && $fakeipTun,
-            'label' => 'FakeIP → TUN '.ResolverService::TUN_IFACE,
-            'detail' => $tunUp
-                ? __('resolver.diag_tun_up_marks', ['hits' => $fakeipHits])
-                : __('resolver.diag_tun_down', ['iface' => ResolverService::TUN_IFACE]),
+            'id' => 'fakeip_tproxy',
+            'ok' => $tproxyListening && $fakeipTproxy,
+            'label' => 'FakeIP → TPROXY :'.ResolverService::TPROXY_PORT,
+            'detail' => $tproxyListening
+                ? __('resolver.diag_tproxy_up_hits', ['hits' => $fakeipHits, 'port' => ResolverService::TPROXY_PORT])
+                : __('resolver.diag_tproxy_down', ['port' => ResolverService::TPROXY_PORT]),
         ];
-        if ($tunUp && $fakeipHits === 0) {
+        if ($tproxyListening && $fakeipHits === 0) {
             $hints[] = __('resolver.diag_no_fakeip_traffic');
         }
 
@@ -131,15 +132,18 @@ class ResolverDiagnostics
         }
         if ($fakeipHits > 20 && $clashConns === 0) {
             $checks[] = [
-                'id' => 'tun_delivery',
+                'id' => 'tproxy_delivery',
                 'ok' => false,
                 'label' => __('resolver.diag_fakeip_delivery'),
-                'detail' => "mark_hits≈{$fakeipHits}, clash_connections=0",
+                'detail' => "tproxy_hits≈{$fakeipHits}, clash_connections=0",
             ];
-            $hints[] = __('resolver.diag_marked_no_sessions', ['table' => ResolverService::TUN_TABLE, 'iface' => ResolverService::TUN_IFACE]);
+            $hints[] = __('resolver.diag_tproxy_no_sessions', [
+                'table' => ResolverService::TPROXY_TABLE,
+                'port' => ResolverService::TPROXY_PORT,
+            ]);
         } elseif ($clashConns > 0) {
             $checks[] = [
-                'id' => 'tun_delivery',
+                'id' => 'tproxy_delivery',
                 'ok' => true,
                 'label' => __('resolver.diag_fakeip_delivery'),
                 'detail' => __('resolver.diag_active_clash_connections', ['count' => $clashConns]),
