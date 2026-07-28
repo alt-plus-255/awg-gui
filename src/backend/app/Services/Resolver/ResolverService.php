@@ -880,7 +880,14 @@ class ResolverService
                     'server' => 'fakeip',
                     'rewrite_ttl' => 60,
                 ];
-                // source_ip required: overlapping lists (e.g. youtube) must not steal another AWG subnet.
+                // FakeIP catch-all for this subnet BEFORE domain sniff rules so traffic
+                // still proxies if sniff+source_ip AND matching fails on TPROXY.
+                $routeRules[] = [
+                    'source_ip_cidr' => $source,
+                    'ip_cidr' => [self::FAKEIP_CIDR],
+                    'outbound' => $routingTag,
+                ];
+                // Domain sniff rules also carry source_ip for multi-config isolation.
                 $routeRules[] = [
                     'inbound' => [self::TPROXY_INBOUND_TAG],
                     'source_ip_cidr' => $source,
@@ -907,12 +914,14 @@ class ResolverService
                 }
             }
 
-            // FakeIP for this VPN subnet → this config's outbound (never shared catch-all).
-            $routeRules[] = [
-                'source_ip_cidr' => $source,
-                'ip_cidr' => [self::FAKEIP_CIDR],
-                'outbound' => $routingTag,
-            ];
+            if ($lists === [] && $domains === []) {
+                // IP-only lists: still pin FakeIP (if any) for this subnet.
+                $routeRules[] = [
+                    'source_ip_cidr' => $source,
+                    'ip_cidr' => [self::FAKEIP_CIDR],
+                    'outbound' => $routingTag,
+                ];
+            }
         }
 
         $this->writeProxyCidrsAll($allProxyCidrs);

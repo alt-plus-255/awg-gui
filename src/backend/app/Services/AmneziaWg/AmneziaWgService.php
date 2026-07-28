@@ -1029,6 +1029,12 @@ class AmneziaWgService
         }
     }
 
+    /**
+     * Drop obsolete pre-chain FakeIP rules from older resolver builds.
+     * Do NOT touch DIVERT here — current TPROXY path needs it (created by resolver-mark.sh).
+     *
+     * @return list<string>
+     */
     private function legacyResolverIptablesCleanup(): array
     {
         $dnsPort = ResolverService::DNS_REDIRECT_PORT;
@@ -1036,19 +1042,21 @@ class AmneziaWgService
         $fakeip = ResolverService::FAKEIP_CIDR;
 
         return [
+            // Flat FakeIP TPROXY (before RS_<iface> chain)
             "iptables -t mangle -D PREROUTING -i %i -d {$fakeip} -p tcp -j TPROXY --on-port {$tproxy} --on-ip 127.0.0.1 --tproxy-mark 0x1/0x1 2>/dev/null || true",
             "iptables -t mangle -D PREROUTING -i %i -d {$fakeip} -p udp -j TPROXY --on-port {$tproxy} --on-ip 127.0.0.1 --tproxy-mark 0x1/0x1 2>/dev/null || true",
             "iptables -t mangle -D PREROUTING -i %i -d {$fakeip} -p tcp -j TPROXY --on-port {$tproxy} --on-ip 0.0.0.0 --tproxy-mark 0x1/0x1 2>/dev/null || true",
             "iptables -t mangle -D PREROUTING -i %i -d {$fakeip} -p udp -j TPROXY --on-port {$tproxy} --on-ip 0.0.0.0 --tproxy-mark 0x1/0x1 2>/dev/null || true",
             "iptables -t mangle -D PREROUTING -i %i -d {$fakeip} -p tcp -j TPROXY --on-port {$tproxy} --tproxy-mark 0x1/0x1 2>/dev/null || true",
             "iptables -t mangle -D PREROUTING -i %i -d {$fakeip} -p udp -j TPROXY --on-port {$tproxy} --tproxy-mark 0x1/0x1 2>/dev/null || true",
+            // Old DNS TPROXY to 5353
             "iptables -t mangle -D PREROUTING -i %i -p udp --dport 53 -j TPROXY --on-port {$dnsPort} --on-ip 127.0.0.1 --tproxy-mark 0x1/0x1 2>/dev/null || true",
             "iptables -t mangle -D PREROUTING -i %i -p tcp --dport 53 -j TPROXY --on-port {$dnsPort} --on-ip 127.0.0.1 --tproxy-mark 0x1/0x1 2>/dev/null || true",
-            'iptables -t mangle -D PREROUTING -p tcp -m socket -j DIVERT 2>/dev/null || true',
-            'iptables -t mangle -D PREROUTING -p udp -m socket -j DIVERT 2>/dev/null || true',
-            'iptables -t mangle -F DIVERT 2>/dev/null || true',
-            'iptables -t mangle -X DIVERT 2>/dev/null || true',
+            // Old NAT REDIRECT of FakeIP to tproxy port
             'iptables -t nat -D PREROUTING -i %i -d '.$fakeip.' -p tcp -j REDIRECT --to-ports '.$tproxy.' 2>/dev/null || true',
+            // Legacy TUN forward leftovers
+            'iptables -D FORWARD -i %i -o '.ResolverService::TUN_IFACE.' -j ACCEPT 2>/dev/null || true',
+            'iptables -D FORWARD -i '.ResolverService::TUN_IFACE.' -o %i -j ACCEPT 2>/dev/null || true',
         ];
     }
 
@@ -1065,10 +1073,10 @@ class AmneziaWgService
             $parts[] = 'iptables -t nat -A PREROUTING -i %i -p udp --dport 53 -j REDIRECT --to-ports '.ResolverService::DNS_LISTEN_PORT;
             $parts[] = 'iptables -t nat -A PREROUTING -i %i -p tcp --dport 53 -j REDIRECT --to-ports '.ResolverService::DNS_LISTEN_PORT;
 
-            // FakeIP + list CIDRs → TPROXY into sing-box; rest of full-tunnel traffic MASQUERADE on eth0
+            // Strip obsolete flat rules first, then install current TPROXY+DIVERT path.
+            $parts = array_merge($parts, $this->legacyResolverIptablesCleanup());
             app(ResolverService::class)->ensureResolverMarkScripts();
             $parts[] = 'sh /config/resolver-mark.sh %i';
-            $parts = array_merge($parts, $this->legacyResolverIptablesCleanup());
         }
 
         return implode('; ', $parts);
@@ -1086,9 +1094,7 @@ class AmneziaWgService
             $parts[] = 'iptables -t nat -D PREROUTING -i %i -p udp --dport 53 -j REDIRECT --to-ports '.ResolverService::DNS_LISTEN_PORT.' 2>/dev/null || true';
             $parts[] = 'iptables -t nat -D PREROUTING -i %i -p tcp --dport 53 -j REDIRECT --to-ports '.ResolverService::DNS_LISTEN_PORT.' 2>/dev/null || true';
             $parts[] = 'sh /config/resolver-unmark.sh %i 2>/dev/null || true';
-            // Legacy TUN forward rules from pre-TPROXY builds
-            $parts[] = 'iptables -D FORWARD -i %i -o '.ResolverService::TUN_IFACE.' -j ACCEPT 2>/dev/null || true';
-            $parts[] = 'iptables -D FORWARD -i '.ResolverService::TUN_IFACE.' -o %i -j ACCEPT 2>/dev/null || true';
+            // Do not wipe DIVERT — other resolver ifaces (or next PostUp) still need it.
             $parts = array_merge($parts, $this->legacyResolverIptablesCleanup());
         }
 
