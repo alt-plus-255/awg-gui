@@ -313,7 +313,7 @@ class ResolverListsService
 
         $needed = [];
         foreach (AwgConfig::query()->where('resolver_enabled', true)->get() as $cfg) {
-            foreach ($cfg->community_lists ?? [] as $tag) {
+            foreach ($this->mergedRulesets->asList($cfg->community_lists) as $tag) {
                 if (! is_string($tag) || $this->isCustomTag($tag)) {
                     continue;
                 }
@@ -713,7 +713,7 @@ class ResolverListsService
     public function detachCustomTagFromConfigs(string $slug): void
     {
         foreach (AwgConfig::query()->get() as $cfg) {
-            $lists = array_values($cfg->community_lists ?? []);
+            $lists = $this->mergedRulesets->asList($cfg->community_lists);
             if (! in_array($slug, $lists, true)) {
                 continue;
             }

@@ -489,7 +489,7 @@ class ResolverService
     {
         $tags = [];
         foreach ($configs as $config) {
-            foreach ($config->community_lists ?? [] as $tag) {
+            foreach ($this->mergedRulesets->asList($config->community_lists) as $tag) {
                 if (is_string($tag) && $tag !== '') {
                     $tags[$tag] = true;
                 }
@@ -807,9 +807,9 @@ class ResolverService
             $config->loadMissing('resolverConnection');
             $routingTag = $this->routingTagForConfig($config);
             $source = [$this->subnetCidr($config)];
-            $lists = array_values($config->community_lists ?? []);
-            $domains = array_values($config->user_domains ?? []);
-            $subnets = array_values($config->user_subnets ?? []);
+            $lists = $this->mergedRulesets->asList($config->community_lists);
+            $domains = $this->mergedRulesets->asList($config->user_domains);
+            $subnets = $this->mergedRulesets->asList($config->user_subnets);
 
             if ($config->resolver_reject_quic) {
                 $quicRejectRules[] = [
