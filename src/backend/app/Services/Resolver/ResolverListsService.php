@@ -49,6 +49,29 @@ class ResolverListsService
         return is_string($v) && $v !== '' ? $v : null;
     }
 
+    /**
+     * True until the first full community sync finishes (or if any community list is still missing).
+     */
+    public function needsInitialSync(): bool
+    {
+        if ($this->lastSyncAt() === null) {
+            return true;
+        }
+
+        foreach (app(ResolverService::class)->communityListCatalog() as $item) {
+            $tag = (string) ($item['tag'] ?? '');
+            if ($tag === '') {
+                continue;
+            }
+            $path = $this->paths->communityRulesetPath($tag);
+            if (! is_file($path) || filesize($path) <= 16) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     /** @return array<string, array{downloaded_at?: string, size?: int}> */
     public function listMeta(): array
     {
@@ -226,6 +249,7 @@ class ResolverListsService
         return [
             'sync_interval_minutes' => $this->syncIntervalMinutes(),
             'last_sync_at' => $this->lastSyncAt(),
+            'needs_initial_sync' => $this->needsInitialSync(),
             'lists' => $this->listsTableRows(),
         ];
     }

@@ -435,11 +435,13 @@ import { useQuasar } from 'quasar'
 import api from '@/boot/axios'
 import TagListInput from '@/components/TagListInput.vue'
 import { useApplyProgress } from '@/composables/useApplyProgress'
+import { useResolverListsBootstrap } from '@/composables/useResolverListsBootstrap'
 import { bcp47Locale } from '@/i18n'
 
 const { t, locale } = useI18n()
 const $q = useQuasar()
 const { withApplyProgress } = useApplyProgress()
+const { ensureListsReady } = useResolverListsBootstrap()
 const loading = ref(true)
 const savingId = ref(null)
 const expandedIds = ref([])
@@ -450,6 +452,7 @@ const status = reactive({
   message: '',
   fakeip_cidr: '198.18.0.0/15',
   updated_at: null,
+  needs_initial_sync: false,
   community_lists: [],
   custom_lists: [],
   connections: [],
@@ -630,6 +633,10 @@ async function load () {
     Object.assign(status, data)
     for (const cfg of data.configs || []) {
       syncForm(cfg)
+    }
+    if (data.needs_initial_sync) {
+      const synced = await ensureListsReady()
+      status.needs_initial_sync = !!synced?.needs_initial_sync
     }
   } catch (e) {
     $q.notify({ type: 'negative', message: e?.response?.data?.message || t('resolver.loadError') })

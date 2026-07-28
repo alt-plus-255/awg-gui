@@ -747,7 +747,9 @@ class ResolverService
                 }
             }
         } catch (\Throwable $e) {
-            Log::error('resolver apply failed: '.$e->getMessage());
+            $where = $e->getFile().':'.$e->getLine();
+            $message = $e->getMessage().' @ '.$where;
+            Log::error('resolver apply failed: '.$message);
             foreach ($configs as $config) {
                 $config->resolver_last_error = $e->getMessage();
                 $config->save();
@@ -756,6 +758,7 @@ class ResolverService
                 'enabled' => $configs !== [],
                 'healthy' => false,
                 'message' => $e->getMessage(),
+                'error_at' => $where,
                 'updated_at' => now()->toIso8601String(),
             ], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
             throw $e;
@@ -1246,6 +1249,7 @@ class ResolverService
             'fakeip_cidr' => self::FAKEIP_CIDR,
             'message' => $file['message'] ?? ($enabledCount > 0 ? 'OK' : __('resolver.disabled')),
             'updated_at' => $file['updated_at'] ?? null,
+            'needs_initial_sync' => $this->lists->needsInitialSync(),
             'community_lists' => $this->communityListCatalog(),
             'custom_lists' => $this->lists->customListCatalog(),
             'connections' => $connections,

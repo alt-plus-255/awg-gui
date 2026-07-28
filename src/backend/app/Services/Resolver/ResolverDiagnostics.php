@@ -160,6 +160,7 @@ class ResolverDiagnostics
         }
         $fileHealthy = (bool) ($statusFile['healthy'] ?? true);
         $fileMessage = trim((string) ($statusFile['message'] ?? ''));
+        $fileErrorAt = trim((string) ($statusFile['error_at'] ?? ''));
         $configApplyErrors = [];
         foreach ($enabled as $cfg) {
             if (filled($cfg->resolver_last_error)) {
@@ -167,15 +168,19 @@ class ResolverDiagnostics
             }
         }
         $applyOk = $fileHealthy && $configApplyErrors === [];
+        $applyDetail = $applyOk
+            ? ($fileMessage !== '' ? $fileMessage : 'OK')
+            : ($fileMessage !== ''
+                ? $fileMessage.($configApplyErrors !== [] ? ' · '.implode('; ', $configApplyErrors) : '')
+                : ($configApplyErrors !== [] ? implode('; ', $configApplyErrors) : __('resolver.apply_failed_after_save')));
+        if (! $applyOk && $fileErrorAt !== '') {
+            $applyDetail .= ' @ '.$fileErrorAt;
+        }
         $checks[] = [
             'id' => 'resolver_apply',
             'ok' => $applyOk,
             'label' => __('resolver.diag_apply_status'),
-            'detail' => $applyOk
-                ? ($fileMessage !== '' ? $fileMessage : 'OK')
-                : ($fileMessage !== ''
-                    ? $fileMessage.($configApplyErrors !== [] ? ' · '.implode('; ', $configApplyErrors) : '')
-                    : ($configApplyErrors !== [] ? implode('; ', $configApplyErrors) : __('resolver.apply_failed_after_save'))),
+            'detail' => $applyDetail,
         ];
         if (! $applyOk) {
             $hints[] = __('resolver.diag_apply_failed_hint');

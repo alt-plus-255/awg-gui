@@ -41,6 +41,9 @@ run_www_data "php artisan awg:bootstrap --no-interaction" 2>/dev/null || true
 # Background scheduler (resolver:refresh hourly, etc.)
 run_www_data "php artisan schedule:work --verbose" &
 
+# Kick first community-list sync early so a fresh install is ready before the minute tick
+run_www_data "php artisan resolver:sync-lists" &
+
 # AWG live stats WebSocket
 run_www_data "php artisan awg:ws-serve" &
 
