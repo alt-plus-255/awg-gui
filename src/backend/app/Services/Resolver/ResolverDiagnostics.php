@@ -53,6 +53,11 @@ class ResolverDiagnostics
         $checks = [];
         $hints = [];
         $container = $this->awg->containerName();
+        $enabled = $resolver->enabledServerConfigs();
+        $enabledIfaces = array_values(array_filter(array_map(
+            fn ($cfg) => trim((string) $cfg->iface),
+            $enabled
+        )));
 
         $singBoxRunning = $resolver->isSingBoxRunning();
         $checks[] = [
@@ -65,37 +70,13 @@ class ResolverDiagnostics
             $hints[] = __('resolver.diag_apply_resolver_hint');
         }
 
-        $dnsListening = false;
-        $tproxyListening = false;
-        $fakeipTproxy = false;
-        $fakeipHits = 0;
-        try {
-            $r = $this->docker->exec(
-                $container,
-                ['sh', '-c',
-                    'ss -ulnp | grep -q ":'.ResolverService::DNS_LISTEN_PORT.' " && echo DNS_OK; '
-                    .'ss -ulnp | grep -q ":'.ResolverService::TPROXY_PORT.' " && echo TPROXY_OK; '
-                    .'ss -tlnp | grep -q ":'.ResolverService::TPROXY_PORT.' " && echo TPROXY_TCP_OK; '
-                    .'iptables -t mangle -L PREROUTING -n -v 2>/dev/null | grep -E "TPROXY|'.ResolverService::FAKEIP_CIDR.'|RS_" || true; '
-                    .'iptables -t nat -L PREROUTING -n -v 2>/dev/null | grep "dpt:53" || true',
-                ],
-                timeout: 10,
-            );
-            $out = $r->output();
-            $dnsListening = str_contains($out, 'DNS_OK');
-            $tproxyListening = str_contains($out, 'TPROXY_OK') || str_contains($out, 'TPROXY_TCP_OK');
-            $fakeipTproxy = str_contains($out, 'TPROXY') && str_contains($out, '198.18');
-            foreach (preg_split("/\r\n|\n|\r/", $out) ?: [] as $line) {
-                if (! str_contains($line, 'TPROXY') && ! str_contains($line, '198.18') && ! str_contains($line, 'RS_')) {
-                    continue;
-                }
-                if (preg_match('/^\s*(\d+)\s+/', $line, $m)) {
-                    $fakeipHits += (int) $m[1];
-                }
-            }
-        } catch (\Throwable) {
-            // ignore
-        }
+        $runtime = $this->collectRuntimeSignals($container, $enabledIfaces);
+        $dnsListening = $runtime['listeners']['dns_udp'] || $runtime['listeners']['dns_tcp'];
+        $tproxyListening = $runtime['listeners']['tproxy_udp'] || $runtime['listeners']['tproxy_tcp'];
+        $fakeipTproxy = $runtime['iptables']['fakeip_rules_present'];
+        $fakeipHits = $runtime['iptables']['tproxy_fakeip_tcp_hits'] + $runtime['iptables']['tproxy_fakeip_udp_hits'];
+        $listHits = $runtime['iptables']['tproxy_list_tcp_hits'] + $runtime['iptables']['tproxy_list_udp_hits'];
+        $rsHits = array_sum($runtime['iptables']['prerouting_rs_hits_by_iface']);
 
         $checks[] = [
             'id' => 'dns_listen',
@@ -108,11 +89,30 @@ class ResolverDiagnostics
             'ok' => $tproxyListening && $fakeipTproxy,
             'label' => 'FakeIP → TPROXY :'.ResolverService::TPROXY_PORT,
             'detail' => $tproxyListening
-                ? __('resolver.diag_tproxy_up_hits', ['hits' => $fakeipHits, 'port' => ResolverService::TPROXY_PORT])
+                ? 'listen='.($runtime['config']['tproxy_listen_addr'] ?: 'n/a').':'.($runtime['config']['tproxy_listen_port'] ?: ResolverService::TPROXY_PORT)
+                    .", fakeip_hits={$fakeipHits}, list_hits={$listHits}, rs_hits={$rsHits}"
                 : __('resolver.diag_tproxy_down', ['port' => ResolverService::TPROXY_PORT]),
         ];
-        if ($tproxyListening && $fakeipHits === 0) {
+        if ($tproxyListening && $fakeipHits === 0 && $rsHits > 0) {
+            $hints[] = 'Трафик доходит до RS_<iface>, но не попадает в FakeIP TPROXY правила — проверьте DNS FakeIP, source subnet и live mangle rules.';
+        } elseif ($tproxyListening && $fakeipHits === 0) {
             $hints[] = __('resolver.diag_no_fakeip_traffic');
+        }
+
+        $checks[] = [
+            'id' => 'tproxy_policy',
+            'ok' => $runtime['policy_routing']['ip_rule_has_tproxy_mark'] && $runtime['policy_routing']['ip_route_table_100_local_default'],
+            'label' => 'Policy routing fwmark '.ResolverService::TPROXY_MARK.' → table '.ResolverService::TPROXY_TABLE,
+            'detail' => 'ip_rule='
+                .($runtime['policy_routing']['ip_rule_has_tproxy_mark'] ? 'ok' : 'missing')
+                .', table100='
+                .($runtime['policy_routing']['ip_route_table_100_local_default'] ? 'ok' : 'missing'),
+        ];
+        if (! $runtime['policy_routing']['ip_rule_has_tproxy_mark'] || ! $runtime['policy_routing']['ip_route_table_100_local_default']) {
+            $hints[] = __('resolver.diag_tproxy_no_sessions', [
+                'table' => ResolverService::TPROXY_TABLE,
+                'port' => ResolverService::TPROXY_PORT,
+            ]);
         }
 
         $clashOk = $this->clash->waitForClashApi(5, 150);
@@ -124,23 +124,46 @@ class ResolverDiagnostics
         ];
 
         $clashConns = 0;
+        $clashChains = [];
         if ($clashOk) {
             $connResp = $this->clash->clashApiRequest('/connections', [], 5);
             if (is_array($connResp['body']['connections'] ?? null)) {
                 $clashConns = count($connResp['body']['connections']);
+                foreach ($connResp['body']['connections'] as $conn) {
+                    if (! is_array($conn)) {
+                        continue;
+                    }
+                    foreach ($conn['chains'] ?? [] as $tag) {
+                        if (is_string($tag) && $tag !== '') {
+                            $clashChains[$tag] = true;
+                        }
+                    }
+                }
             }
         }
+        $runtime['clash'] = [
+            'api_ok' => $clashOk,
+            'connections_current' => $clashConns,
+            'connection_chains' => array_values(array_keys($clashChains)),
+        ];
         if ($fakeipHits > 20 && $clashConns === 0) {
             $checks[] = [
                 'id' => 'tproxy_delivery',
                 'ok' => false,
                 'label' => __('resolver.diag_fakeip_delivery'),
-                'detail' => "tproxy_hits≈{$fakeipHits}, clash_connections=0",
+                'detail' => "fakeip_hits={$fakeipHits}, clash_connections_current=0, rs_hits={$rsHits}",
             ];
             $hints[] = __('resolver.diag_tproxy_no_sessions', [
                 'table' => ResolverService::TPROXY_TABLE,
                 'port' => ResolverService::TPROXY_PORT,
             ]);
+        } elseif ($rsHits > 20 && $fakeipHits === 0) {
+            $checks[] = [
+                'id' => 'tproxy_delivery',
+                'ok' => false,
+                'label' => __('resolver.diag_fakeip_delivery'),
+                'detail' => "rs_hits={$rsHits}, fakeip_hits=0, clash_connections_current={$clashConns}",
+            ];
         } elseif ($clashConns > 0) {
             $checks[] = [
                 'id' => 'tproxy_delivery',
@@ -150,7 +173,6 @@ class ResolverDiagnostics
             ];
         }
 
-        $enabled = $resolver->enabledServerConfigs();
         $enabledTags = $resolver->collectCommunityTagsFromConfigs($enabled);
         $dnsSamples = [];
 
@@ -303,9 +325,301 @@ class ResolverDiagnostics
             'checks' => $checks,
             'hints' => array_values(array_unique([...$hints, ...$clientHints])),
             'fakeip_cidr' => ResolverService::FAKEIP_CIDR,
+            'details' => $runtime,
             'dns_samples' => $dnsSamples,
             'updated_at' => now()->toIso8601String(),
         ];
+    }
+
+    /**
+     * @param  list<string>  $enabledIfaces
+     * @return array{
+     *   listeners: array{dns_udp: bool,dns_tcp: bool,tproxy_udp: bool,tproxy_tcp: bool},
+     *   config: array{tproxy_listen_addr: ?string,tproxy_listen_port: ?int,dns_listen_addr: ?string,dns_listen_port: ?int},
+     *   policy_routing: array{ip_rule_has_tproxy_mark: bool,ip_route_table_100_local_default: bool,ip_rule_lines: list<string>,ip_route_table_100_lines: list<string>},
+     *   iptables: array{
+     *     prerouting_rs_hits_by_iface: array<string,int>,
+     *     divert_tcp_hits: int,
+     *     divert_udp_hits: int,
+     *     tproxy_fakeip_tcp_hits: int,
+     *     tproxy_fakeip_udp_hits: int,
+     *     tproxy_list_tcp_hits: int,
+     *     tproxy_list_udp_hits: int,
+     *     fakeip_rules_present: bool,
+     *     nat_dns_redirect_hits: int
+     *   },
+     *   clash?: array{api_ok: bool,connections_current: int,connection_chains: list<string>}
+     * }
+     */
+    private function collectRuntimeSignals(string $container, array $enabledIfaces): array
+    {
+        $signals = [
+            'listeners' => [
+                'dns_udp' => false,
+                'dns_tcp' => false,
+                'tproxy_udp' => false,
+                'tproxy_tcp' => false,
+            ],
+            'config' => [
+                'tproxy_listen_addr' => null,
+                'tproxy_listen_port' => null,
+                'dns_listen_addr' => null,
+                'dns_listen_port' => null,
+            ],
+            'policy_routing' => [
+                'ip_rule_has_tproxy_mark' => false,
+                'ip_route_table_100_local_default' => false,
+                'ip_rule_lines' => [],
+                'ip_route_table_100_lines' => [],
+            ],
+            'iptables' => [
+                'prerouting_rs_hits_by_iface' => [],
+                'divert_tcp_hits' => 0,
+                'divert_udp_hits' => 0,
+                'tproxy_fakeip_tcp_hits' => 0,
+                'tproxy_fakeip_udp_hits' => 0,
+                'tproxy_list_tcp_hits' => 0,
+                'tproxy_list_udp_hits' => 0,
+                'fakeip_rules_present' => false,
+                'nat_dns_redirect_hits' => 0,
+            ],
+        ];
+
+        $config = $this->readSingBoxRuntimeConfig();
+        if ($config !== []) {
+            $signals['config'] = array_merge($signals['config'], $config);
+        }
+
+        try {
+            $script = <<<'SH'
+echo "__SS_UDP__"
+ss -ulnp 2>/dev/null || true
+echo "__SS_TCP__"
+ss -tlnp 2>/dev/null || true
+echo "__IP_RULE__"
+ip rule show 2>/dev/null || true
+echo "__IP_ROUTE_100__"
+ip route show table 100 2>/dev/null || true
+echo "__MANGLE_SAVE__"
+iptables-save -t mangle -c 2>/dev/null || true
+echo "__NAT_SAVE__"
+iptables-save -t nat -c 2>/dev/null || true
+SH;
+            $r = $this->docker->exec($container, ['sh', '-c', $script], timeout: 10);
+            $sections = $this->splitSections($r->output());
+            $udp = $sections['__SS_UDP__'] ?? [];
+            $tcp = $sections['__SS_TCP__'] ?? [];
+            $ipRule = $sections['__IP_RULE__'] ?? [];
+            $route100 = $sections['__IP_ROUTE_100__'] ?? [];
+            $mangleSave = $sections['__MANGLE_SAVE__'] ?? [];
+            $natSave = $sections['__NAT_SAVE__'] ?? [];
+
+            $signals['listeners']['dns_udp'] = $this->hasListenerOnPort($udp, ResolverService::DNS_LISTEN_PORT);
+            $signals['listeners']['dns_tcp'] = $this->hasListenerOnPort($tcp, ResolverService::DNS_LISTEN_PORT);
+            $signals['listeners']['tproxy_udp'] = $this->hasListenerOnPort($udp, ResolverService::TPROXY_PORT);
+            $signals['listeners']['tproxy_tcp'] = $this->hasListenerOnPort($tcp, ResolverService::TPROXY_PORT);
+
+            $signals['policy_routing']['ip_rule_lines'] = $ipRule;
+            $signals['policy_routing']['ip_route_table_100_lines'] = $route100;
+            $signals['policy_routing']['ip_rule_has_tproxy_mark'] = $this->hasTproxyRule($ipRule);
+            $signals['policy_routing']['ip_route_table_100_local_default'] = $this->hasTproxyRoute($route100);
+
+            $signals['iptables'] = array_merge(
+                $signals['iptables'],
+                $this->parseIptablesCounters($mangleSave, $natSave, $enabledIfaces)
+            );
+        } catch (\Throwable) {
+            // ignore and return best-effort static config fields
+        }
+
+        return $signals;
+    }
+
+    /**
+     * @return array{tproxy_listen_addr: ?string,tproxy_listen_port: ?int,dns_listen_addr: ?string,dns_listen_port: ?int}
+     */
+    private function readSingBoxRuntimeConfig(): array
+    {
+        $path = $this->paths->singBoxConfigPath();
+        if (! is_file($path)) {
+            return [];
+        }
+
+        $decoded = json_decode((string) file_get_contents($path), true);
+        if (! is_array($decoded['inbounds'] ?? null)) {
+            return [];
+        }
+
+        $out = [
+            'tproxy_listen_addr' => null,
+            'tproxy_listen_port' => null,
+            'dns_listen_addr' => null,
+            'dns_listen_port' => null,
+        ];
+
+        foreach ($decoded['inbounds'] as $inbound) {
+            if (! is_array($inbound)) {
+                continue;
+            }
+            if (($inbound['tag'] ?? null) === ResolverService::TPROXY_INBOUND_TAG) {
+                $out['tproxy_listen_addr'] = is_string($inbound['listen'] ?? null) ? $inbound['listen'] : null;
+                $out['tproxy_listen_port'] = isset($inbound['listen_port']) ? (int) $inbound['listen_port'] : null;
+            }
+            if (($inbound['tag'] ?? null) === 'dns-in') {
+                $out['dns_listen_addr'] = is_string($inbound['listen'] ?? null) ? $inbound['listen'] : null;
+                $out['dns_listen_port'] = isset($inbound['listen_port']) ? (int) $inbound['listen_port'] : null;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * @return array<string, list<string>>
+     */
+    private function splitSections(string $output): array
+    {
+        $sections = [];
+        $current = null;
+        foreach (preg_split("/\r\n|\n|\r/", $output) ?: [] as $line) {
+            $trimmed = trim($line);
+            if (preg_match('/^__[A-Z0-9_]+__$/', $trimmed)) {
+                $current = $trimmed;
+                $sections[$current] = [];
+
+                continue;
+            }
+            if ($current !== null) {
+                $sections[$current][] = $line;
+            }
+        }
+
+        return $sections;
+    }
+
+    /** @param  list<string>  $lines */
+    private function hasListenerOnPort(array $lines, int $port): bool
+    {
+        foreach ($lines as $line) {
+            if (preg_match('/[:.]'.preg_quote((string) $port, '/').'\b/', $line)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /** @param  list<string>  $lines */
+    private function hasTproxyRule(array $lines): bool
+    {
+        foreach ($lines as $line) {
+            if (str_contains($line, 'fwmark '.ResolverService::TPROXY_MARK)
+                && str_contains($line, 'lookup '.(string) ResolverService::TPROXY_TABLE)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /** @param  list<string>  $lines */
+    private function hasTproxyRoute(array $lines): bool
+    {
+        foreach ($lines as $line) {
+            if (str_contains($line, 'local 0.0.0.0/0') && str_contains($line, 'dev lo')) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param  list<string>  $mangleLines
+     * @param  list<string>  $natLines
+     * @param  list<string>  $enabledIfaces
+     * @return array{
+     *   prerouting_rs_hits_by_iface: array<string,int>,
+     *   divert_tcp_hits: int,
+     *   divert_udp_hits: int,
+     *   tproxy_fakeip_tcp_hits: int,
+     *   tproxy_fakeip_udp_hits: int,
+     *   tproxy_list_tcp_hits: int,
+     *   tproxy_list_udp_hits: int,
+     *   fakeip_rules_present: bool,
+     *   nat_dns_redirect_hits: int
+     * }
+     */
+    private function parseIptablesCounters(array $mangleLines, array $natLines, array $enabledIfaces): array
+    {
+        $out = [
+            'prerouting_rs_hits_by_iface' => [],
+            'divert_tcp_hits' => 0,
+            'divert_udp_hits' => 0,
+            'tproxy_fakeip_tcp_hits' => 0,
+            'tproxy_fakeip_udp_hits' => 0,
+            'tproxy_list_tcp_hits' => 0,
+            'tproxy_list_udp_hits' => 0,
+            'fakeip_rules_present' => false,
+            'nat_dns_redirect_hits' => 0,
+        ];
+        foreach ($enabledIfaces as $iface) {
+            $out['prerouting_rs_hits_by_iface'][$iface] = 0;
+        }
+
+        foreach ($mangleLines as $line) {
+            if (! preg_match('/^\[(\d+):\d+\]\s+-A\s+(\S+)\s+(.*)$/', trim($line), $m)) {
+                continue;
+            }
+            $packets = (int) $m[1];
+            $chain = $m[2];
+            $rule = $m[3];
+
+            if ($chain === 'PREROUTING') {
+                foreach ($enabledIfaces as $iface) {
+                    if (str_contains($rule, '-i '.$iface) && str_contains($rule, '-j RS_'.$iface)) {
+                        $out['prerouting_rs_hits_by_iface'][$iface] += $packets;
+                    }
+                }
+                if (str_contains($rule, '-p tcp') && str_contains($rule, '-m socket') && str_contains($rule, '-j DIVERT')) {
+                    $out['divert_tcp_hits'] += $packets;
+                }
+                if (str_contains($rule, '-p udp') && str_contains($rule, '-m socket') && str_contains($rule, '-j DIVERT')) {
+                    $out['divert_udp_hits'] += $packets;
+                }
+            }
+
+            if (! str_starts_with($chain, 'RS_') || ! str_contains($rule, '-j TPROXY')) {
+                continue;
+            }
+
+            $isFakeIp = str_contains($rule, '-d '.ResolverService::FAKEIP_CIDR);
+            if ($isFakeIp) {
+                $out['fakeip_rules_present'] = true;
+            }
+            if (str_contains($rule, '--on-port '.(string) ResolverService::TPROXY_PORT)) {
+                if ($isFakeIp && str_contains($rule, '-p tcp')) {
+                    $out['tproxy_fakeip_tcp_hits'] += $packets;
+                } elseif ($isFakeIp && str_contains($rule, '-p udp')) {
+                    $out['tproxy_fakeip_udp_hits'] += $packets;
+                } elseif (str_contains($rule, '-p tcp')) {
+                    $out['tproxy_list_tcp_hits'] += $packets;
+                } elseif (str_contains($rule, '-p udp')) {
+                    $out['tproxy_list_udp_hits'] += $packets;
+                }
+            }
+        }
+
+        foreach ($natLines as $line) {
+            if (! preg_match('/^\[(\d+):\d+\]\s+-A\s+PREROUTING\s+(.*)$/', trim($line), $m)) {
+                continue;
+            }
+            if (str_contains($m[2], '--dport 53') && str_contains($m[2], '--to-ports '.(string) ResolverService::DNS_LISTEN_PORT)) {
+                $out['nat_dns_redirect_hits'] += (int) $m[1];
+            }
+        }
+
+        return $out;
     }
 
     /**

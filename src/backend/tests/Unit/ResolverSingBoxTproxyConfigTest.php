@@ -112,6 +112,7 @@ class ResolverSingBoxTproxyConfigTest extends TestCase
 
             $tproxy = collect($sb['inbounds'])->firstWhere('type', 'tproxy');
             $this->assertSame(ResolverService::TPROXY_INBOUND_TAG, $tproxy['tag']);
+            $this->assertSame(ResolverService::TPROXY_LISTEN, $tproxy['listen']);
             $this->assertSame(ResolverService::TPROXY_PORT, $tproxy['listen_port']);
             $this->assertTrue($tproxy['tcp_fast_open']);
             $this->assertTrue($tproxy['udp_fragment']);

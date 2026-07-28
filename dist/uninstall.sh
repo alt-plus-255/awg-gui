@@ -173,6 +173,7 @@ fi
 log "No production install found at ${INSTALL_DIR} — running fallback cleanup ..."
 
 confirm_uninstall() {
+  local target_desc ans=""
   if [[ "${YES}" -eq 1 ]]; then
     return 0
   fi
@@ -180,9 +181,12 @@ confirm_uninstall() {
     die "No interactive terminal for confirmation. Re-run with --yes, for example:
   curl -fsSL .../dist/uninstall.sh | sudo bash -s -- --yes"
   fi
-  local ans=""
-  read -r -p "Remove awggui stack, volumes, images, logs and build cache? [y/N]: " ans
-  [[ "${ans}" =~ ^[Yy]$ ]] || { echo "Aborted"; exit 0; }
+  target_desc="AWG GUI"
+  if [[ "${PURGE}" -eq 1 ]]; then
+    target_desc="${target_desc} and ${INSTALL_DIR}"
+  fi
+  read -r -p "Are you sure you want to remove ${target_desc}? [Y/n]: " ans
+  [[ -z "${ans}" || "${ans}" =~ ^[Yy]$ ]] || { echo "Aborted"; exit 0; }
 }
 
 confirm_uninstall

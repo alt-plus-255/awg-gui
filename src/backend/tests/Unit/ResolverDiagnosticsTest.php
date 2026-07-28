@@ -1,0 +1,175 @@
+<?php
+
+namespace Tests\Unit;
+
+use App\Models\AwgConfig;
+use App\Services\AmneziaWg\AmneziaWgService;
+use App\Services\Docker\DockerRuntime;
+use App\Services\Resolver\ClashApiClient;
+use App\Services\Resolver\ResolverDiagnostics;
+use App\Services\Resolver\ResolverPaths;
+use App\Services\Resolver\ResolverService;
+use Illuminate\Contracts\Process\ProcessResult;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Mockery;
+use Tests\TestCase;
+
+class ResolverDiagnosticsTest extends TestCase
+{
+    use RefreshDatabase;
+
+    private string $awgDir;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $this->awgDir = sys_get_temp_dir().'/awg-gui-diag-test-'.uniqid('', true);
+        mkdir($this->awgDir.'/rulesets', 0755, true);
+        putenv('AWG_CONFIG_DIR='.$this->awgDir);
+        $_ENV['AWG_CONFIG_DIR'] = $this->awgDir;
+        $_SERVER['AWG_CONFIG_DIR'] = $this->awgDir;
+    }
+
+    protected function tearDown(): void
+    {
+        $this->rmTree($this->awgDir);
+        parent::tearDown();
+    }
+
+    public function test_diagnose_separates_rs_chain_hits_from_fakeip_tproxy_hits(): void
+    {
+        $config = AwgConfig::query()->create([
+            'name' => 'Resolver Test',
+            'type' => 'server',
+            'iface' => 'awg0',
+            'listen_port' => 51820,
+            'internal_subnet' => '10.66.66.0/24',
+            'server_address' => '10.66.66.1',
+            'server_private_key' => 'priv',
+            'server_public_key' => 'pub',
+            'enabled' => true,
+            'resolver_enabled' => true,
+            'community_lists' => [],
+            'user_domains' => [],
+            'user_subnets' => [],
+        ]);
+
+        file_put_contents($this->awgDir.'/sing-box.json', json_encode([
+            'inbounds' => [
+                [
+                    'type' => 'direct',
+                    'tag' => 'dns-in',
+                    'listen' => '0.0.0.0',
+                    'listen_port' => 53,
+                ],
+                [
+                    'type' => 'tproxy',
+                    'tag' => ResolverService::TPROXY_INBOUND_TAG,
+                    'listen' => ResolverService::TPROXY_LISTEN,
+                    'listen_port' => ResolverService::TPROXY_PORT,
+                ],
+            ],
+        ], JSON_UNESCAPED_SLASHES)."\n");
+        file_put_contents($this->awgDir.'/rulesets/merged_cfg_'.$config->id.'.json', "{\"version\":1}\n");
+
+        $awg = Mockery::mock(AmneziaWgService::class);
+        $awg->shouldReceive('containerName')->andReturn('awggui-awg');
+
+        $docker = Mockery::mock(DockerRuntime::class);
+        $docker->shouldReceive('exec')
+            ->once()
+            ->andReturn($this->processResult('yes'));
+        $docker->shouldReceive('exec')
+            ->once()
+            ->andReturn($this->processResult(<<<'OUT'
+__SS_UDP__
+UNCONN 0 0 0.0.0.0:53 0.0.0.0:* users:(("sing-box",pid=1,fd=3))
+UNCONN 0 0 0.0.0.0:1602 0.0.0.0:* users:(("sing-box",pid=1,fd=4))
+__SS_TCP__
+LISTEN 0 4096 0.0.0.0:1602 0.0.0.0:* users:(("sing-box",pid=1,fd=5))
+__IP_RULE__
+0:      from all lookup local
+100:    from all fwmark 0x1 lookup 100
+__IP_ROUTE_100__
+local 0.0.0.0/0 dev lo scope host
+__MANGLE_SAVE__
+*mangle
+[42:2048] -A PREROUTING -i awg0 -j RS_awg0
+[0:0] -A PREROUTING -p tcp -m socket -j DIVERT
+[0:0] -A PREROUTING -p udp -m socket -j DIVERT
+[0:0] -A RS_awg0 -d 198.18.0.0/15 -p tcp -j TPROXY --on-port 1602 --on-ip 127.0.0.1 --tproxy-mark 0x1/0x1
+[0:0] -A RS_awg0 -d 198.18.0.0/15 -p udp -j TPROXY --on-port 1602 --on-ip 127.0.0.1 --tproxy-mark 0x1/0x1
+COMMIT
+__NAT_SAVE__
+*nat
+[7:420] -A PREROUTING -i awg0 -p udp -m udp --dport 53 -j REDIRECT --to-ports 53
+COMMIT
+OUT
+            ));
+
+        $clash = Mockery::mock(ClashApiClient::class);
+        $clash->shouldReceive('waitForClashApi')->once()->with(5, 150)->andReturn(true);
+        $clash->shouldReceive('clashApiRequest')
+            ->once()
+            ->with('/connections', [], 5)
+            ->andReturn([
+                'ok' => true,
+                'status' => 200,
+                'body' => ['connections' => []],
+                'raw' => '{"connections":[]}',
+                'error' => null,
+            ]);
+
+        $resolver = Mockery::mock(ResolverService::class);
+        $resolver->shouldReceive('isSingBoxRunning')->once()->andReturn(true);
+        $resolver->shouldReceive('enabledServerConfigs')->once()->andReturn([$config]);
+        $resolver->shouldReceive('collectCommunityTagsFromConfigs')->once()->with([$config])->andReturn([]);
+
+        $diag = new ResolverDiagnostics($awg, $docker, new ResolverPaths($awg), $clash);
+        $result = $diag->diagnose($resolver);
+
+        $this->assertSame(42, $result['details']['iptables']['prerouting_rs_hits_by_iface']['awg0']);
+        $this->assertSame(0, $result['details']['iptables']['tproxy_fakeip_tcp_hits']);
+        $this->assertSame(0, $result['details']['iptables']['tproxy_fakeip_udp_hits']);
+        $this->assertSame(7, $result['details']['iptables']['nat_dns_redirect_hits']);
+        $this->assertSame(0, $result['details']['clash']['connections_current']);
+        $this->assertSame(ResolverService::TPROXY_LISTEN, $result['details']['config']['tproxy_listen_addr']);
+
+        $delivery = collect($result['checks'])->firstWhere('id', 'tproxy_delivery');
+        $this->assertNotNull($delivery);
+        $this->assertFalse($delivery['ok']);
+        $this->assertStringContainsString('rs_hits=42', $delivery['detail']);
+        $this->assertStringContainsString('fakeip_hits=0', $delivery['detail']);
+    }
+
+    private function processResult(string $output): ProcessResult
+    {
+        $result = Mockery::mock(ProcessResult::class);
+        $result->shouldReceive('output')->andReturn($output);
+        $result->shouldReceive('errorOutput')->andReturn('');
+        $result->shouldReceive('successful')->andReturn(true);
+
+        return $result;
+    }
+
+    private function rmTree(string $dir): void
+    {
+        if (! is_dir($dir)) {
+            return;
+        }
+        $items = scandir($dir) ?: [];
+        foreach ($items as $item) {
+            if ($item === '.' || $item === '..') {
+                continue;
+            }
+            $path = $dir.DIRECTORY_SEPARATOR.$item;
+            if (is_dir($path)) {
+                $this->rmTree($path);
+            } else {
+                @unlink($path);
+            }
+        }
+        @rmdir($dir);
+    }
+}

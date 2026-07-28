@@ -116,6 +116,11 @@ human_size() {
   fi
 }
 
+human_mib() {
+  local bytes="${1:-0}"
+  awk -v b="${bytes}" 'BEGIN { printf "%.1f MiB", b / 1048576 }'
+}
+
 RELEASE_URL=""
 RELEASE_SIZE_BYTES=0
 
@@ -152,62 +157,59 @@ resolve_release_asset() {
 }
 
 fetch_url_with_progress() {
-  local url="$1" dest="$2" expected="${3:-0}" label total
-  label="[install] Downloading"
+  local url="$1" dest="$2" expected="${3:-0}" total is_tty=0
+  local spinner='|/-\'
   [[ "${expected}" -gt 0 ]] && total="$(human_size "${expected}")"
+  [[ -t 2 ]] && is_tty=1
+
+  log "Bundle download started${total:+ (${total})} ..."
 
   if command -v curl >/dev/null 2>&1; then
-    if [[ -t 2 ]]; then
-      log "Bundle download started${total:+ (${total})} — progress below:"
-      curl -fL --progress-bar -o "${dest}" "${url}"
-      echo >&2
-      return 0
-    fi
-
-    log "Bundle download started${total:+ (${total})} — updating size every 3s ..."
-    curl -fL -o "${dest}" "${url}" &
-    local pid=$!
-    while kill -0 "${pid}" 2>/dev/null; do
-      if [[ -f "${dest}" ]]; then
-        local cur; cur=$(stat -c%s "${dest}" 2>/dev/null || echo 0)
-        if [[ "${expected}" -gt 0 ]]; then
-          local pct=$(( cur * 100 / expected ))
-          printf '\r%s: %s / %s (%s%%)  ' "${label}" "$(human_size "${cur}")" "${total}" "${pct}" >&2
-        else
-          printf '\r%s: %s  ' "${label}" "$(human_size "${cur}")" >&2
-        fi
-      fi
-      sleep 3
-    done
-    wait "${pid}"
-    echo >&2
-    return 0
+    curl -fsSL -o "${dest}" "${url}" &
+  else
+    wget --no-config -q -O "${dest}" "${url}" &
   fi
 
-  if [[ -t 2 ]]; then
-    log "Bundle download started${total:+ (${total})} — progress below:"
-    wget --no-config --show-progress -O "${dest}" "${url}"
-    echo >&2
-    return 0
-  fi
-
-  log "Bundle download started${total:+ (${total})} — updating size every 3s ..."
-  wget --no-config -O "${dest}" "${url}" &
-  local pid=$!
+  local pid=$! tick=0 cur pct frame downloaded_mib total_mib line
   while kill -0 "${pid}" 2>/dev/null; do
-    if [[ -f "${dest}" ]]; then
-      local cur; cur=$(stat -c%s "${dest}" 2>/dev/null || echo 0)
-      if [[ "${expected}" -gt 0 ]]; then
-        local pct=$(( cur * 100 / expected ))
-        printf '\r%s: %s / %s (%s%%)  ' "${label}" "$(human_size "${cur}")" "${total}" "${pct}" >&2
-      else
-        printf '\r%s: %s  ' "${label}" "$(human_size "${cur}")" >&2
-      fi
+    cur=$(stat -c%s "${dest}" 2>/dev/null || echo 0)
+    frame="${spinner:tick%${#spinner}:1}"
+    downloaded_mib="$(human_mib "${cur}")"
+
+    if [[ "${expected}" -gt 0 ]]; then
+      pct=$(( cur * 100 / expected ))
+      (( pct > 100 )) && pct=100
+      total_mib="$(human_mib "${expected}")"
+      line="$(printf '[install] [%s] %3s%%  %9s / %-9s' "${frame}" "${pct}" "${downloaded_mib}" "${total_mib}")"
+    else
+      line="$(printf '[install] [%s]      %9s downloaded' "${frame}" "${downloaded_mib}")"
     fi
-    sleep 3
+
+    if (( is_tty )); then
+      printf '\033[2K\r%s' "${line}" >&2
+    else
+      printf '\r%s' "${line}" >&2
+    fi
+
+    tick=$((tick + 1))
+    sleep 1
   done
+
   wait "${pid}"
-  echo >&2
+  cur=$(stat -c%s "${dest}" 2>/dev/null || echo 0)
+  downloaded_mib="$(human_mib "${cur}")"
+  if [[ "${expected}" -gt 0 ]]; then
+    total_mib="$(human_mib "${expected}")"
+    line="$(printf '[install] [*] 100%%  %9s / %-9s' "${downloaded_mib}" "${total_mib}")"
+  else
+    line="$(printf '[install] [*]      %9s downloaded' "${downloaded_mib}")"
+  fi
+
+  if (( is_tty )); then
+    printf '\033[2K\r%s\n' "${line}" >&2
+  else
+    printf '\r%s\n' "${line}" >&2
+  fi
 }
 
 download_bundle() {

@@ -14,12 +14,13 @@ class ResolverMarkScripts
         private ResolverFileHelper $files,
     ) {}
 
-    public function ensureResolverMarkScripts(): void
+    public function ensureResolverMarkScripts(): bool
     {
         $dir = $this->awg->configDir();
         $mark = $dir.'/resolver-mark.sh';
         $unmark = $dir.'/resolver-unmark.sh';
         $reload = $dir.'/reload-singbox.sh';
+        $changed = false;
 
         // Remove obsolete TUN helper if present from older installs.
         $legacyTunRoutes = $dir.'/resolver-tun-routes.sh';
@@ -31,6 +32,7 @@ class ResolverMarkScripts
         $fakeip = ResolverService::FAKEIP_CIDR;
         $tproxyMark = ResolverService::TPROXY_MARK;
         $tproxyTable = ResolverService::TPROXY_TABLE;
+        $tproxyOnIp = ResolverService::TPROXY_ON_IP;
         $tunMark = '0x2';
         $tunTable = ResolverService::TUN_TABLE;
         $tunIface = ResolverService::TUN_IFACE;
@@ -77,9 +79,9 @@ iptables -t mangle -N "\$CHAIN" 2>/dev/null || iptables -t mangle -F "\$CHAIN"
 tproxy_add() {
   _cidr="\$1"
   iptables -t mangle -A "\$CHAIN" -d "\$_cidr" -p tcp -j TPROXY \\
-    --on-port "\$TPROXY_PORT" --on-ip 127.0.0.1 --tproxy-mark "\${TPROXY_MARK}/\${TPROXY_MARK}"
+    --on-port "\$TPROXY_PORT" --on-ip {$tproxyOnIp} --tproxy-mark "\${TPROXY_MARK}/\${TPROXY_MARK}"
   iptables -t mangle -A "\$CHAIN" -d "\$_cidr" -p udp -j TPROXY \\
-    --on-port "\$TPROXY_PORT" --on-ip 127.0.0.1 --tproxy-mark "\${TPROXY_MARK}/\${TPROXY_MARK}"
+    --on-port "\$TPROXY_PORT" --on-ip {$tproxyOnIp} --tproxy-mark "\${TPROXY_MARK}/\${TPROXY_MARK}"
 }
 
 tproxy_add "\$FAKEIP"
@@ -95,9 +97,9 @@ fi
 iptables -t mangle -C PREROUTING -i "\$IFACE" -j "\$CHAIN" 2>/dev/null \\
   || iptables -t mangle -A PREROUTING -i "\$IFACE" -j "\$CHAIN"
 
-echo "[sing-box] tproxy: \${IFACE} → 127.0.0.1:\${TPROXY_PORT} (\${FAKEIP} + list CIDRs)"
+echo "[sing-box] tproxy: \${IFACE} → {$tproxyOnIp}:\${TPROXY_PORT} (\${FAKEIP} + list CIDRs)"
 SH;
-        $this->files->writeExecutable($mark, $markBody);
+        $changed = $this->files->writeExecutable($mark, $markBody) || $changed;
 
         $unmarkBody = <<<SH
 #!/bin/sh
@@ -113,10 +115,10 @@ iptables -t mangle -X "\$CHAIN" 2>/dev/null || true
 
 # Legacy FakeIP MARK→TUN rules (pre-TPROXY restore)
 iptables -t mangle -D PREROUTING -i "\$IFACE" -d "\$FAKEIP" -j MARK --set-mark 0x2 2>/dev/null || true
-iptables -t mangle -D PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p tcp -j TPROXY --on-port "\$TPROXY_PORT" --on-ip 127.0.0.1 --tproxy-mark 0x1/0x1 2>/dev/null || true
-iptables -t mangle -D PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p udp -j TPROXY --on-port "\$TPROXY_PORT" --on-ip 127.0.0.1 --tproxy-mark 0x1/0x1 2>/dev/null || true
+iptables -t mangle -D PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p tcp -j TPROXY --on-port "\$TPROXY_PORT" --on-ip {$tproxyOnIp} --tproxy-mark 0x1/0x1 2>/dev/null || true
+iptables -t mangle -D PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p udp -j TPROXY --on-port "\$TPROXY_PORT" --on-ip {$tproxyOnIp} --tproxy-mark 0x1/0x1 2>/dev/null || true
 SH;
-        $this->files->writeExecutable($unmark, $unmarkBody);
+        $changed = $this->files->writeExecutable($unmark, $unmarkBody) || $changed;
 
         // Prefer volume copy so list-CIDR TPROXY works without rebuilding the AWG image.
         $reloadBody = <<<'SH'
@@ -191,7 +193,9 @@ start_singbox() {
 
 start_singbox
 SH;
-        $this->files->writeExecutable($reload, $reloadBody);
+        $changed = $this->files->writeExecutable($reload, $reloadBody) || $changed;
+
+        return $changed;
     }
 
     public function ensurePingProbeScript(): void

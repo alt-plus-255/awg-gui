@@ -173,6 +173,11 @@ export const useDiagnosticsStore = defineStore('diagnostics', () => {
   function errorReportJson (pretty = true) {
     const failedContainers = (status.value?.containers || []).filter((c) => !c.ok)
     const sb = status.value?.singbox
+    const failedGroupDetails = Object.fromEntries(
+      (result.value?.groups || [])
+        .filter((g) => (g.checks || []).some((c) => !c?.ok) && g?.details)
+        .map((g) => [g.id || 'group', g.details])
+    )
     const payload = {
       product: 'awg-gui',
       kind: 'diagnostics_error_report',
@@ -190,6 +195,7 @@ export const useDiagnosticsStore = defineStore('diagnostics', () => {
         ? { ok: !!sb.ok, detail: sb.detail || '' }
         : null,
       failed_checks: failedChecks.value,
+      group_details: failedGroupDetails,
       hints: result.value?.hints || []
     }
     return JSON.stringify(payload, null, pretty ? 2 : 0)

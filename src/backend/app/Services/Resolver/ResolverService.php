@@ -19,6 +19,10 @@ class ResolverService
 
     public const TPROXY_INBOUND_TAG = 'tproxy-in';
 
+    public const TPROXY_LISTEN = '0.0.0.0';
+
+    public const TPROXY_ON_IP = '127.0.0.1';
+
     /** fwmark for iptables TPROXY → local table (see resolver-mark.sh). */
     public const TPROXY_MARK = '0x1';
 
@@ -485,9 +489,9 @@ class ResolverService
     /**
      * FakeIP + list CIDR TPROXY helpers on the AWG config volume (no image rebuild).
      */
-    public function ensureResolverMarkScripts(): void
+    public function ensureResolverMarkScripts(): bool
     {
-        $this->markScripts->ensureResolverMarkScripts();
+        return $this->markScripts->ensureResolverMarkScripts();
     }
 
     /**
@@ -721,8 +725,8 @@ class ResolverService
             $ifacesContents = implode("\n", $ifaces)."\n";
             $ifacesChanged = $this->writeFileIfChanged($this->resolverIfacesPath(), $ifacesContents);
 
-            $this->ensureResolverMarkScripts();
-            if ($this->mergedRulesets->applyProxyCidrsChanged || $ifacesChanged) {
+            $markScriptsChanged = $this->ensureResolverMarkScripts();
+            if ($markScriptsChanged || $this->mergedRulesets->applyProxyCidrsChanged || $ifacesChanged) {
                 $this->refreshResolverMarksOnIfaces($ifaces);
             }
 
@@ -1005,7 +1009,7 @@ class ResolverService
                 [
                     'type' => 'tproxy',
                     'tag' => self::TPROXY_INBOUND_TAG,
-                    'listen' => '127.0.0.1',
+                    'listen' => self::TPROXY_LISTEN,
                     'listen_port' => self::TPROXY_PORT,
                     'tcp_fast_open' => true,
                     'udp_fragment' => true,

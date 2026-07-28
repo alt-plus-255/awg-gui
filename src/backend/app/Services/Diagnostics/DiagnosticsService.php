@@ -444,7 +444,9 @@ class DiagnosticsService
             __('system.group_resolver'),
             $checks,
             is_array($diagnose['hints'] ?? null) ? $diagnose['hints'] : []
-        );
+        ) + [
+            'details' => is_array($diagnose['details'] ?? null) ? $diagnose['details'] : null,
+        ];
     }
 
     /**
