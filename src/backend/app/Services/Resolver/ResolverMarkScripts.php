@@ -39,7 +39,11 @@ class ResolverMarkScripts
 
         $markBody = <<<SH
 #!/bin/sh
-# TPROXY FakeIP + list CIDRs into sing-box :{$tproxyPort}. Full-tunnel non-list traffic uses MASQUERADE.
+# Selective TPROXY only (NOT TUN/auto_route):
+# - AWG iface owns the client full-tunnel.
+# - Only FakeIP ({$fakeip}) + list CIDRs jump into sing-box :{$tproxyPort}.
+# - Everything else stays on \${1} and exits via POSTROUTING MASQUERADE (direct / VDS IP).
+# - fwmark/table {$tproxyTable} is ONLY for locally delivering marked TPROXY packets to lo.
 IFACE="\${1:?iface}"
 TPROXY_PORT={$tproxyPort}
 TPROXY_MARK={$tproxyMark}
@@ -57,6 +61,10 @@ ip rule add fwmark "\${TPROXY_MARK}" table "\${TPROXY_TABLE}" 2>/dev/null || tru
 ip route replace local 0.0.0.0/0 dev lo table "\${TPROXY_TABLE}" 2>/dev/null \\
   || ip route add local 0.0.0.0/0 dev lo table "\${TPROXY_TABLE}" 2>/dev/null || true
 
+# Required for TPROXY to 127.0.0.1 inside the container netns.
+sysctl -w net.ipv4.conf.all.route_localnet=1 >/dev/null 2>&1 || true
+sysctl -w net.ipv4.conf.lo.route_localnet=1 >/dev/null 2>&1 || true
+
 # Drop legacy TUN mark/table if still present.
 while ip rule show 2>/dev/null | grep -q "fwmark {$tunMark} lookup {$tunTable}"; do
   ip rule del fwmark {$tunMark} table {$tunTable} 2>/dev/null || break
@@ -64,15 +72,18 @@ done
 ip route flush table {$tunTable} 2>/dev/null || true
 ip link delete {$tunIface} 2>/dev/null || true
 
-# DIVERT for locally destined sockets (shared, once).
+# DIVERT only for transparent/TPROXY sockets (not normal :53/:9090 listeners).
+# Always re-insert at the top of PREROUTING so established TPROXY packets skip RS_*.
 iptables -t mangle -N "\$DIVERT" 2>/dev/null || true
 iptables -t mangle -F "\$DIVERT" 2>/dev/null || true
 iptables -t mangle -A "\$DIVERT" -j MARK --set-mark "\$TPROXY_MARK"
 iptables -t mangle -A "\$DIVERT" -j ACCEPT
-iptables -t mangle -C PREROUTING -p tcp -m socket -j "\$DIVERT" 2>/dev/null \\
-  || iptables -t mangle -A PREROUTING -p tcp -m socket -j "\$DIVERT"
-iptables -t mangle -C PREROUTING -p udp -m socket -j "\$DIVERT" 2>/dev/null \\
-  || iptables -t mangle -A PREROUTING -p udp -m socket -j "\$DIVERT"
+iptables -t mangle -D PREROUTING -p tcp -m socket -j "\$DIVERT" 2>/dev/null || true
+iptables -t mangle -D PREROUTING -p udp -m socket -j "\$DIVERT" 2>/dev/null || true
+iptables -t mangle -D PREROUTING -p tcp -m socket --transparent -j "\$DIVERT" 2>/dev/null || true
+iptables -t mangle -D PREROUTING -p udp -m socket --transparent -j "\$DIVERT" 2>/dev/null || true
+iptables -t mangle -I PREROUTING 1 -p tcp -m socket --transparent -j "\$DIVERT"
+iptables -t mangle -I PREROUTING 2 -p udp -m socket --transparent -j "\$DIVERT"
 
 iptables -t mangle -N "\$CHAIN" 2>/dev/null || iptables -t mangle -F "\$CHAIN"
 

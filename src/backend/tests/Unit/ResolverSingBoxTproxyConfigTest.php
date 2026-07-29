@@ -117,6 +117,14 @@ class ResolverSingBoxTproxyConfigTest extends TestCase
             $this->assertTrue($tproxy['tcp_fast_open']);
             $this->assertTrue($tproxy['udp_fragment']);
 
+            $this->assertFalse($sb['route']['auto_detect_interface']);
+            $this->assertSame(ResolverService::EGRESS_INTERFACE, $sb['route']['default_interface']);
+            $this->assertContains($ifaceA, $sb['route']['exclude_interface']);
+            $this->assertContains($ifaceB, $sb['route']['exclude_interface']);
+            $this->assertContains(ResolverService::TUN_IFACE, $sb['route']['exclude_interface']);
+            $this->assertSame('direct', $sb['route']['final']);
+            $this->assertNotContains('tun', array_column($sb['inbounds'], 'type'));
+
             $domainRoutes = array_values(array_filter(
                 $sb['route']['rules'],
                 fn (array $r) => isset($r['rule_set'], $r['outbound'], $r['source_ip_cidr'])

@@ -473,6 +473,92 @@ wait_for_app() {
   return 1
 }
 
+container_state() {
+  local name="$1"
+  docker inspect -f '{{.State.Status}}' "${name}" 2>/dev/null || true
+}
+
+container_health() {
+  local name="$1"
+  docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{end}}' "${name}" 2>/dev/null || true
+}
+
+wait_for_runtime_services() {
+  log "Waiting for runtime services to report healthy/running state..."
+  local attempts="${1:-60}" sleep_sec="${2:-3}" i c state health pending status
+  for i in $(seq 1 "${attempts}"); do
+    pending=0
+    for c in "${EXPECTED_CONTAINERS[@]}"; do
+      state="$(container_state "${c}")"
+      health="$(container_health "${c}")"
+      status="${state}"
+      [[ -n "${health}" ]] && status="${status}/${health}"
+
+      if [[ "${state}" != "running" ]]; then
+        pending=1
+        continue
+      fi
+      if [[ -n "${health}" && "${health}" != "healthy" ]]; then
+        pending=1
+        continue
+      fi
+    done
+
+    if [[ "${pending}" -eq 0 ]]; then
+      ok "All containers are running"
+      return 0
+    fi
+
+    sleep "${sleep_sec}"
+  done
+
+  return 1
+}
+
+verify_public_http() {
+  local panel_port="$1"
+  local url="http://127.0.0.1:${panel_port}/api/login/info"
+  local body_file http_code
+  body_file="$(mktemp)"
+  http_code="$(curl -fsS -o "${body_file}" -w '%{http_code}' --max-time 15 "${url}" || true)"
+  if [[ "${http_code}" != "200" ]]; then
+    rm -f "${body_file}"
+    return 1
+  fi
+  if ! grep -q '"panel_url"' "${body_file}" 2>/dev/null; then
+    rm -f "${body_file}"
+    return 1
+  fi
+  rm -f "${body_file}"
+  ok "Public API responded on ${url}"
+}
+
+print_startup_diagnostics() {
+  echo
+  warn "Startup diagnostics:"
+  compose ps || true
+  local c
+  for c in "${EXPECTED_CONTAINERS[@]}"; do
+    echo
+    warn "Recent logs for ${c}:"
+    docker logs --tail 60 "${c}" 2>&1 || true
+  done
+}
+
+verify_installation_runtime() {
+  local panel_port="$1"
+
+  wait_for_runtime_services 60 3 || {
+    print_startup_diagnostics
+    die "Not all awg-gui services reached running/healthy state after install"
+  }
+
+  verify_public_http "${panel_port}" || {
+    print_startup_diagnostics
+    die "Panel API did not become reachable after install"
+  }
+}
+
 wait_for_migrate_lock() {
   log "Waiting for in-container migrations to finish (if any)..."
   compose exec -T app bash -c '
@@ -576,6 +662,7 @@ main() {
     "${panel_port}" "${awg_port}" "${endpoint}" \
     "${internal_subnet}" "${peer_dns}" "${allowed_ips}" \
     "${admin_pass:-}"
+  verify_installation_runtime "${panel_port}"
 
   if [[ "${UPGRADE_MODE}" -eq 0 || ! -f /etc/awg-gui/webhook.conf ]] || ! grep -q '^PANEL_PORT=' /etc/awg-gui/webhook.conf 2>/dev/null; then
     cat > /etc/awg-gui/webhook.conf <<EOF

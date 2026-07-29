@@ -6,7 +6,10 @@ use App\Models\ResolverConnection;
 
 class SingBoxPingProbeBuilder
 {
-    public function __construct(private ConnectionOutboundBuilder $outboundBuilder) {}
+    public function __construct(
+        private ConnectionOutboundBuilder $outboundBuilder,
+        private ?ResolverService $resolver = null,
+    ) {}
 
     /**
      * @return array{config: array<string, mixed>, outbound_count: int, truncated_subscriptions: array<int, bool>}
@@ -19,6 +22,7 @@ class SingBoxPingProbeBuilder
             ->get();
 
         $built = $this->outboundBuilder->buildForConnections($connections);
+        $resolver = $this->resolver ?? app(ResolverService::class);
 
         $config = [
             'log' => [
@@ -38,6 +42,13 @@ class SingBoxPingProbeBuilder
                 'strategy' => 'ipv4_only',
             ],
             'outbounds' => $built['outbounds'],
+            // Same egress ownership as production: never dial via awg* when a peer is online.
+            'route' => [
+                'auto_detect_interface' => false,
+                'default_interface' => ResolverService::EGRESS_INTERFACE,
+                'exclude_interface' => $resolver->singBoxExcludeInterfaces([], $connections),
+                'default_domain_resolver' => 'bootstrap',
+            ],
             'experimental' => [
                 'clash_api' => [
                     'external_controller' => ResolverService::CLASH_PROBE_API_ADDR,

@@ -23,6 +23,12 @@ class ResolverService
 
     public const TPROXY_ON_IP = '127.0.0.1';
 
+    /**
+     * Physical egress inside the AWG container (docker bridge eth0).
+     * sing-box must bind outbounds here — never to awg*/awgc* (same class of bug as TUN auto_route).
+     */
+    public const EGRESS_INTERFACE = 'eth0';
+
     /** fwmark for iptables TPROXY → local table (see resolver-mark.sh). */
     public const TPROXY_MARK = '0x1';
 
@@ -1016,11 +1022,18 @@ class ResolverService
                 ],
             ], $outbounds, $routeRules, $outboundTagsAdded),
             'outbounds' => $outbounds,
+            // Routing ownership (anti-TUN-auto_route):
+            // 1) Client full-tunnel is owned by AWG (AllowedIPs 0.0.0.0/0) — not by sing-box.
+            // 2) TPROXY only delivers FakeIP/list CIDRs into sing-box; everything else stays on awg*
+            //    and exits via MASQUERADE (direct / VDS IP).
+            // 3) sing-box must never install default routes and never egress via awg*/awgc*.
             'route' => [
                 'rules' => $routeRules,
                 'rule_set' => $ruleSets,
                 'final' => 'direct',
-                'auto_detect_interface' => true,
+                'auto_detect_interface' => false,
+                'default_interface' => self::EGRESS_INTERFACE,
+                'exclude_interface' => $this->singBoxExcludeInterfaces($configs, $allConnections),
                 'default_domain_resolver' => 'bootstrap',
             ],
             'experimental' => [
@@ -1037,6 +1050,45 @@ class ResolverService
                 ],
             ],
         ];
+    }
+
+    /**
+     * Interfaces sing-box must not use for auto-detected outbound egress.
+     *
+     * @param  list<AwgConfig>  $configs
+     * @param  iterable<mixed>  $connections
+     * @return list<string>
+     */
+    public function singBoxExcludeInterfaces(array $configs, iterable $connections = []): array
+    {
+        $ifaces = [self::TUN_IFACE];
+        foreach ($configs as $config) {
+            $iface = trim((string) ($config->iface ?? ''));
+            if ($iface !== '') {
+                $ifaces[] = $iface;
+            }
+        }
+        // Exclude every live AWG server iface, even if resolver is off on some of them.
+        foreach (AwgConfig::query()->where('type', 'server')->where('enabled', true)->pluck('iface') as $iface) {
+            $iface = trim((string) $iface);
+            if ($iface !== '') {
+                $ifaces[] = $iface;
+            }
+        }
+        foreach ($connections as $conn) {
+            if (! $conn instanceof ResolverConnection || ! $conn->enabled || ! $conn->isAwg()) {
+                continue;
+            }
+            $ifaces[] = $conn->awgClientIface();
+        }
+
+        $ifaces = array_values(array_unique(array_filter(
+            $ifaces,
+            static fn (string $iface): bool => $iface !== ''
+        )));
+        sort($ifaces);
+
+        return $ifaces;
     }
 
     /**

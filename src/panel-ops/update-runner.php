@@ -36,10 +36,11 @@ function buildUpdateCommand(?string $version): array
     $repo = getenv('AWG_GUI_GITHUB_REPO') ?: 'alt-plus-255/awg-gui';
     $installUrl = sprintf('https://raw.githubusercontent.com/%s/refs/heads/main/dist/install.sh', $repo);
 
-    $hostShell = 'chroot /host /bin/bash -s -- --yes';
+    // nsenter -m switches to the host mount namespace; /host from a container bind is not visible there.
+    $hostShell = '/bin/bash -s -- --yes';
     if ($version !== null && $version !== '') {
         $hostShell = sprintf(
-            'chroot /host /usr/bin/env AWG_GUI_VERSION=%s /bin/bash -s -- --yes',
+            '/usr/bin/env AWG_GUI_VERSION=%s /bin/bash -s -- --yes',
             escapeshellarg($version)
         );
     }
@@ -58,8 +59,6 @@ function buildUpdateCommand(?string $version): array
         '--pid=host',
         '--network',
         'host',
-        '-v',
-        '/:/host',
         'alpine:3.20',
         'sh',
         '-lc',

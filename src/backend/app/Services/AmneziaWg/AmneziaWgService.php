@@ -640,8 +640,8 @@ class AmneziaWgService
         }
 
         if ($config->isResolverEnabled()) {
-            // Full tunnel to VDS — non-list MASQUERADE → VDS IP.
-            // List domains use FakeIP → sing-box → user VPN. Never put list CIDRs here.
+            // Client → AWG full tunnel. On the VDS, non-list traffic MASQUERADE → VDS IP (direct).
+            // List domains: FakeIP → selective TPROXY → sing-box → connection. Never put list CIDRs in AllowedIPs.
             return ['0.0.0.0/0', '::/0'];
         }
 
@@ -1069,11 +1069,12 @@ class AmneziaWgService
         ];
 
         if ($config->isResolverEnabled()) {
-            // Force ALL DNS from VPN clients into sing-box :53 (Amnezia often ignores tunnel DNS=)
+            // Resolver ON: AWG still owns the tunnel; DNS + selective FakeIP/list TPROXY are side-cars.
+            // Resolver OFF: PostUp is only FORWARD+MASQUERADE (all client traffic = direct / VDS IP).
             $parts[] = 'iptables -t nat -A PREROUTING -i %i -p udp --dport 53 -j REDIRECT --to-ports '.ResolverService::DNS_LISTEN_PORT;
             $parts[] = 'iptables -t nat -A PREROUTING -i %i -p tcp --dport 53 -j REDIRECT --to-ports '.ResolverService::DNS_LISTEN_PORT;
 
-            // Strip obsolete flat rules first, then install current TPROXY+DIVERT path.
+            // Strip obsolete flat rules first, then install current selective TPROXY+DIVERT path.
             $parts = array_merge($parts, $this->legacyResolverIptablesCleanup());
             app(ResolverService::class)->ensureResolverMarkScripts();
             $parts[] = 'sh /config/resolver-mark.sh %i';
