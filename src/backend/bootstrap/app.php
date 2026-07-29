@@ -75,6 +75,19 @@ return Application::configure(basePath: dirname(__DIR__))
             return response()->json([
                 'message' => __('api.server_error'),
                 'error' => 'server_error',
+                'debug' => [
+                    'exception' => get_class($e),
+                    'message'   => $e->getMessage(),
+                    'file'      => $e->getFile(),
+                    'line'      => $e->getLine(),
+                    'trace'     => array_slice(
+                        array_map(
+                            fn (array $f) => ($f['file'] ?? '') . ':' . ($f['line'] ?? '') . ' ' . ($f['class'] ?? '') . ($f['type'] ?? '') . ($f['function'] ?? ''),
+                            $e->getTrace()
+                        ),
+                        0, 15
+                    ),
+                ],
             ], 500);
         });
     })->create();

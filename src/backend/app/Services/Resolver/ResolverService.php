@@ -25,7 +25,7 @@ class ResolverService
 
     /**
      * Physical egress inside the AWG container (docker bridge eth0).
-     * sing-box must bind outbounds here — never to awg*/awgc* (same class of bug as TUN auto_route).
+     * sing-box must bind outbounds here — never to awg* or awgc* ifaces (same class of bug as TUN auto_route).
      */
     public const EGRESS_INTERFACE = 'eth0';
 

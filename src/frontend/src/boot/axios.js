@@ -1,6 +1,6 @@
 import axios from 'axios'
 import { DEFAULT_LOCALE, LOCALE_STORAGE_KEY, isValidLocale } from '@/i18n'
-import { logApiErrorDebug } from '@/utils/apiError'
+import { logApiErrorDebug, getApiDebugMessage } from '@/utils/apiError'
 
 const api = axios.create({
   baseURL: '/',
@@ -68,6 +68,17 @@ api.interceptors.response.use(
 
     if (status >= 500) {
       logApiErrorDebug(error)
+      const debugMsg = getApiDebugMessage(error)
+      if (debugMsg) {
+        const { Notify } = await import('quasar')
+        Notify.create({
+          type: 'negative',
+          message: `Server Error 500 · ${debugMsg}`,
+          caption: String(error.config?.url || ''),
+          timeout: 12000,
+          actions: [{ icon: 'close', color: 'white', flat: true }],
+        })
+      }
     }
 
     return Promise.reject(error)

@@ -17,7 +17,24 @@ export function apiErrorMessage (error, fallback) {
 
 export function logApiErrorDebug (error) {
   const debug = error?.response?.data?.debug
-  if (debug) {
-    console.error('[API debug]', debug)
-  }
+  if (!debug) return
+
+  const short = `${debug.exception ?? 'Exception'}: ${debug.message ?? ''}`
+  const location = `${debug.file ?? ''}:${debug.line ?? ''}`
+  const trace = Array.isArray(debug.trace) ? debug.trace.join('\n') : ''
+
+  console.group('[API 500]', short)
+  console.error('Location:', location)
+  if (trace) console.error('Trace:\n' + trace)
+  console.groupEnd()
+}
+
+export function getApiDebugMessage (error) {
+  const debug = error?.response?.data?.debug
+  if (!debug) return null
+  const ex = debug.exception ? debug.exception.replace(/^.*\\/, '') : ''
+  const msg = debug.message ?? ''
+  const loc = debug.file ? (debug.file.replace(/^.*\//, '') + ':' + (debug.line ?? '')) : ''
+  const parts = [ex, msg, loc].filter(Boolean)
+  return parts.join(' · ')
 }
