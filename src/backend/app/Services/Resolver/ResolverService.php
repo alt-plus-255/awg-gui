@@ -1010,7 +1010,6 @@ class ResolverService
                     'tag' => 'dns-in',
                     'listen' => '0.0.0.0',
                     'listen_port' => self::DNS_LISTEN_PORT,
-                    'sniff' => true,
                 ],
                 [
                     'type' => 'tproxy',

@@ -41,6 +41,7 @@ FROM alpine:latest
 RUN apk add --no-cache \
     bash \
     curl \
+    gcompat \
     iptables \
     ip6tables \
     iproute2 \
