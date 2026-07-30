@@ -85,15 +85,17 @@ services:
     restart: unless-stopped
     logging: *default-logging
     environment:
-      MYSQL_DATABASE: ${DB_DATABASE:-awggui}
-      MYSQL_USER: ${DB_USERNAME:-awggui}
-      MYSQL_PASSWORD: ${DB_PASSWORD}
-      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
+      MARIADB_DATABASE: ${DB_DATABASE:-awggui}
+      MARIADB_USER: ${DB_USERNAME:-awggui}
+      MARIADB_PASSWORD: ${DB_PASSWORD}
+      MARIADB_ROOT_PASSWORD: ${DB_PASSWORD}
+      MARIADB_AUTO_UPGRADE: "1"
       TZ: ${TZ:-UTC}
     volumes:
       - db_data:/var/lib/mysql
     healthcheck:
       test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      start_period: 60s
       interval: 5s
       timeout: 5s
       retries: 20
