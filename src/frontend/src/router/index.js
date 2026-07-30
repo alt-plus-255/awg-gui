@@ -17,6 +17,7 @@ const routes = [
       { path: 'configs', name: 'configs', component: () => import('@/pages/ConfigsPage.vue') },
       { path: 'resolver', name: 'resolver', component: () => import('@/pages/ResolverPage.vue') },
       { path: 'resolver/connections', name: 'resolver-connections', component: () => import('@/pages/ConnectionsPage.vue') },
+      { path: 'resolver/speed-test', name: 'resolver-speed-test', component: () => import('@/pages/SpeedTestPage.vue') },
       { path: 'resolver/settings', name: 'resolver-settings', component: () => import('@/pages/ResolverSettingsPage.vue') },
       { path: 'diagnostics', name: 'diagnostics', component: () => import('@/pages/DiagnosticsPage.vue') },
       { path: 'settings', name: 'settings', component: () => import('@/pages/SettingsPage.vue') },

@@ -55,6 +55,19 @@ class ResolverService
 
     public const CLASH_PROBE_API_ADDR = '127.0.0.1:9091';
 
+    /** Ephemeral speed-test probe Clash API (must not collide with prod/ping). */
+    public const CLASH_SPEED_API_ADDR = '127.0.0.1:9092';
+
+    public const SPEED_MIXED_LISTEN = '127.0.0.1';
+
+    public const SPEED_MIXED_PORT = 19091;
+
+    public const SPEED_TEST_BYTES = 25_000_000;
+
+    public const SPEED_DOWN_URL = 'https://speed.cloudflare.com/__down?bytes=25000000';
+
+    public const SPEED_UP_URL = 'https://speed.cloudflare.com/__up';
+
     public const DELAY_TEST_URL = 'https://www.gstatic.com/generate_204';
 
     public const RULESET_BASE_URL = 'https://github.com/itdoginfo/allow-domains/releases/latest/download';

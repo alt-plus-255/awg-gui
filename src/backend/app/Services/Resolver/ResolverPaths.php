@@ -70,6 +70,11 @@ class ResolverPaths
         return $this->awg->configDir().'/sing-box-ping.json';
     }
 
+    public function singBoxSpeedConfigPath(): string
+    {
+        return $this->awg->configDir().'/sing-box-speed.json';
+    }
+
     public function resolverIfacesPath(): string
     {
         return $this->awg->configDir().'/resolver-ifaces.txt';

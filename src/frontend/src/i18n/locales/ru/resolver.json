@@ -117,5 +117,27 @@
   "listSaved": "Список сохранён",
   "listSaveError": "Ошибка сохранения списка",
   "deleteListTitle": "Удалить список?",
-  "deleteListConfirm": "«{label}» будет удалён с диска и из конфигов."
+  "deleteListConfirm": "«{label}» будет удалён с диска и из конфигов.",
+
+  "speedTestTitle": "Замер скорости",
+  "speedTestDesc": "Ping, download и upload с VDS через ваши подключения (outbound).",
+  "speedTestHint": "Замер идёт с сервера через прокси, не с телефона. Канал до VDS ~100 Мбит: если здесь ~80 Mbps, а YouTube на телефоне тормозит — проблема в AWG/FakeIP-пути, не в линке до VDS.",
+  "speedTestConnections": "Подключения",
+  "speedTestAll": "Прогнать все",
+  "speedTestRun": "Замер",
+  "speedTestNodes": "Ноды",
+  "speedTestNodesHint": "Отдельный замер конкретной ноды подписки (urltest).",
+  "speedTestNode": "Нода",
+  "speedTestColName": "Имя",
+  "speedTestColMode": "Режим",
+  "speedTestColStatus": "Статус",
+  "speedTestRunning": "Идёт замер…",
+  "speedTestDone": "Готово",
+  "speedTestDisabled": "выкл",
+  "speedTestUrltest": "urltest · {n}",
+  "speedTestSingle": "single",
+  "speedTestManual": "manual",
+  "speedTestLoadFailed": "Не удалось загрузить подключения",
+  "speedTestFailed": "Замер не удался",
+  "speedTestBatchDone": "Пакетный замер завершён"
 }

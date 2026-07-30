@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\ResolverSettingsController;
 use App\Http\Controllers\Api\StatsController;
 use App\Http\Controllers\Api\SystemController;
 use App\Http\Controllers\Api\SettingsController;
+use App\Http\Controllers\Api\SpeedTestController;
 use App\Http\Controllers\Api\TelegramWebhookController;
 use App\Http\Controllers\Api\TwoFactorController;
 use App\Http\Controllers\Api\WsTokenController;
@@ -105,6 +106,8 @@ Route::post('/resolver/connections/{connection}/ping-subscription-stream', [Reso
 Route::post('/resolver/connections/{connection}/ping-subscription-node', [ResolverConnectionController::class, 'pingConnectionSubscriptionNode']);
 Route::post('/resolver/connections/{connection}/sync-best-pick', [ResolverConnectionController::class, 'syncBestPick']);
 Route::post('/resolver/connections/{connection}/test', [ResolverConnectionController::class, 'test']);
+Route::post('/resolver/connections/{connection}/speed-test', [SpeedTestController::class, 'runConnection']);
+Route::post('/resolver/speed-test/batch', [SpeedTestController::class, 'runBatch']);
 Route::put('/resolver/connections/{connection}', [ResolverConnectionController::class, 'update']);
 Route::delete('/resolver/connections/{connection}', [ResolverConnectionController::class, 'destroy']);
 

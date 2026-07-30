@@ -117,5 +117,27 @@
   "listSaved": "List saved",
   "listSaveError": "Failed to save list",
   "deleteListTitle": "Delete list?",
-  "deleteListConfirm": "“{label}” will be removed from disk and from configs."
+  "deleteListConfirm": "“{label}” will be removed from disk and from configs.",
+
+  "speedTestTitle": "Speed test",
+  "speedTestDesc": "Ping, download and upload from the VDS through your connections (outbound).",
+  "speedTestHint": "This runs on the server via the proxy, not on the phone. Link to VDS is ~100 Mbps: if you see ~80 Mbps here but YouTube on the phone is slow — the issue is the AWG/FakeIP path, not the uplink to the VDS.",
+  "speedTestConnections": "Connections",
+  "speedTestAll": "Test all",
+  "speedTestRun": "Run",
+  "speedTestNodes": "Nodes",
+  "speedTestNodesHint": "Per-node test for a subscription (urltest).",
+  "speedTestNode": "Node",
+  "speedTestColName": "Name",
+  "speedTestColMode": "Mode",
+  "speedTestColStatus": "Status",
+  "speedTestRunning": "Running…",
+  "speedTestDone": "Done",
+  "speedTestDisabled": "off",
+  "speedTestUrltest": "urltest · {n}",
+  "speedTestSingle": "single",
+  "speedTestManual": "manual",
+  "speedTestLoadFailed": "Failed to load connections",
+  "speedTestFailed": "Speed test failed",
+  "speedTestBatchDone": "Batch speed test finished"
 }

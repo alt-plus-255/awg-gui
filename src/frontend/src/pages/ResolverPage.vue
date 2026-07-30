@@ -18,6 +18,15 @@
             dense
             no-wrap
             color="primary"
+            icon="speed"
+            :label="t('nav.speedTest')"
+            :to="{ name: 'resolver-speed-test' }"
+          />
+          <q-btn
+            flat
+            dense
+            no-wrap
+            color="primary"
             icon="tune"
             :label="t('resolver.listSettingsLink')"
             :to="{ name: 'resolver-settings' }"

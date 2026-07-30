@@ -77,6 +77,7 @@ class ResolverDiagnostics
         $fakeipHits = $runtime['iptables']['tproxy_fakeip_tcp_hits'] + $runtime['iptables']['tproxy_fakeip_udp_hits'];
         $listHits = $runtime['iptables']['tproxy_list_tcp_hits'] + $runtime['iptables']['tproxy_list_udp_hits'];
         $rsHits = array_sum($runtime['iptables']['prerouting_rs_hits_by_iface']);
+        $deliveryMode = ($runtime['config']['delivery_inbound_type'] ?? '') === 'redirect' ? 'redirect' : 'tproxy';
 
         $checks[] = [
             'id' => 'dns_listen',
@@ -87,32 +88,45 @@ class ResolverDiagnostics
         $checks[] = [
             'id' => 'fakeip_tproxy',
             'ok' => $tproxyListening && $fakeipTproxy,
-            'label' => 'FakeIP → TPROXY :'.ResolverService::TPROXY_PORT,
+            'label' => $deliveryMode === 'redirect'
+                ? 'FakeIP → REDIRECT :'.ResolverService::TPROXY_PORT
+                : 'FakeIP → TPROXY :'.ResolverService::TPROXY_PORT,
             'detail' => $tproxyListening
-                ? 'listen='.($runtime['config']['tproxy_listen_addr'] ?: 'n/a').':'.($runtime['config']['tproxy_listen_port'] ?: ResolverService::TPROXY_PORT)
+                ? 'mode='.$deliveryMode
+                    .', listen='.($runtime['config']['tproxy_listen_addr'] ?: 'n/a').':'.($runtime['config']['tproxy_listen_port'] ?: ResolverService::TPROXY_PORT)
                     .", fakeip_hits={$fakeipHits}, list_hits={$listHits}, rs_hits={$rsHits}"
                 : __('resolver.diag_tproxy_down', ['port' => ResolverService::TPROXY_PORT]),
         ];
         if ($tproxyListening && $fakeipHits === 0 && $rsHits > 0) {
-            $hints[] = 'Трафик доходит до RS_<iface>, но не попадает в FakeIP TPROXY правила — проверьте DNS FakeIP, source subnet и live mangle rules.';
+            $hints[] = __('resolver.diag_rs_without_fakeip');
         } elseif ($tproxyListening && $fakeipHits === 0) {
             $hints[] = __('resolver.diag_no_fakeip_traffic');
         }
 
-        $checks[] = [
-            'id' => 'tproxy_policy',
-            'ok' => $runtime['policy_routing']['ip_rule_has_tproxy_mark'] && $runtime['policy_routing']['ip_route_table_100_local_default'],
-            'label' => 'Policy routing fwmark '.ResolverService::TPROXY_MARK.' → table '.ResolverService::TPROXY_TABLE,
-            'detail' => 'ip_rule='
-                .($runtime['policy_routing']['ip_rule_has_tproxy_mark'] ? 'ok' : 'missing')
-                .', table100='
-                .($runtime['policy_routing']['ip_route_table_100_local_default'] ? 'ok' : 'missing'),
-        ];
-        if (! $runtime['policy_routing']['ip_rule_has_tproxy_mark'] || ! $runtime['policy_routing']['ip_route_table_100_local_default']) {
-            $hints[] = __('resolver.diag_tproxy_no_sessions', [
-                'table' => ResolverService::TPROXY_TABLE,
-                'port' => ResolverService::TPROXY_PORT,
-            ]);
+        if ($deliveryMode === 'redirect') {
+            // NAT REDIRECT does not use fwmark/table 100 (that was for TPROXY→127.0.0.1).
+            $checks[] = [
+                'id' => 'tproxy_policy',
+                'ok' => true,
+                'label' => __('resolver.diag_delivery_mode_redirect'),
+                'detail' => __('resolver.diag_delivery_mode_redirect_detail'),
+            ];
+        } else {
+            $checks[] = [
+                'id' => 'tproxy_policy',
+                'ok' => $runtime['policy_routing']['ip_rule_has_tproxy_mark'] && $runtime['policy_routing']['ip_route_table_100_local_default'],
+                'label' => 'Policy routing fwmark '.ResolverService::TPROXY_MARK.' → table '.ResolverService::TPROXY_TABLE,
+                'detail' => 'ip_rule='
+                    .($runtime['policy_routing']['ip_rule_has_tproxy_mark'] ? 'ok' : 'missing')
+                    .', table100='
+                    .($runtime['policy_routing']['ip_route_table_100_local_default'] ? 'ok' : 'missing'),
+            ];
+            if (! $runtime['policy_routing']['ip_rule_has_tproxy_mark'] || ! $runtime['policy_routing']['ip_route_table_100_local_default']) {
+                $hints[] = __('resolver.diag_tproxy_no_sessions', [
+                    'table' => ResolverService::TPROXY_TABLE,
+                    'port' => ResolverService::TPROXY_PORT,
+                ]);
+            }
         }
 
         $clashOk = $this->clash->waitForClashApi(5, 150);
@@ -365,6 +379,7 @@ class ResolverDiagnostics
                 'tproxy_listen_port' => null,
                 'dns_listen_addr' => null,
                 'dns_listen_port' => null,
+                'delivery_inbound_type' => null,
             ],
             'policy_routing' => [
                 'ip_rule_has_tproxy_mark' => false,
@@ -436,7 +451,13 @@ SH;
     }
 
     /**
-     * @return array{tproxy_listen_addr: ?string,tproxy_listen_port: ?int,dns_listen_addr: ?string,dns_listen_port: ?int}
+     * @return array{
+     *   tproxy_listen_addr: ?string,
+     *   tproxy_listen_port: ?int,
+     *   dns_listen_addr: ?string,
+     *   dns_listen_port: ?int,
+     *   delivery_inbound_type: ?string
+     * }
      */
     private function readSingBoxRuntimeConfig(): array
     {
@@ -455,6 +476,7 @@ SH;
             'tproxy_listen_port' => null,
             'dns_listen_addr' => null,
             'dns_listen_port' => null,
+            'delivery_inbound_type' => null,
         ];
 
         foreach ($decoded['inbounds'] as $inbound) {
@@ -464,6 +486,7 @@ SH;
             if (($inbound['tag'] ?? null) === ResolverService::TPROXY_INBOUND_TAG) {
                 $out['tproxy_listen_addr'] = is_string($inbound['listen'] ?? null) ? $inbound['listen'] : null;
                 $out['tproxy_listen_port'] = isset($inbound['listen_port']) ? (int) $inbound['listen_port'] : null;
+                $out['delivery_inbound_type'] = is_string($inbound['type'] ?? null) ? $inbound['type'] : null;
             }
             if (($inbound['tag'] ?? null) === 'dns-in') {
                 $out['dns_listen_addr'] = is_string($inbound['listen'] ?? null) ? $inbound['listen'] : null;

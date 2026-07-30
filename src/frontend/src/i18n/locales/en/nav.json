@@ -6,6 +6,8 @@
   "resolverCaption": "Selective routing",
   "connections": "Connections",
   "connectionsCaption": "VPN / proxy endpoints",
+  "speedTest": "Speed",
+  "speedTestCaption": "Ping / ↓↑ via outbound",
   "diagnostics": "Diagnostics",
   "diagnosticsCaption": "Resolver checks",
   "resolverSettings": "Settings",

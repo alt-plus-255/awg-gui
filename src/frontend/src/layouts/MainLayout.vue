@@ -80,6 +80,23 @@
                 </q-item-section>
               </q-item>
 
+              <q-item
+                clickable
+                v-close-popup
+                :active="route.name === 'resolver-speed-test'"
+                class="resolver-dropdown-item"
+                active-class="resolver-dropdown-item--active"
+                @click="router.push({ name: 'resolver-speed-test' })"
+              >
+                <q-item-section avatar>
+                  <q-icon name="speed" size="18px" />
+                </q-item-section>
+                <q-item-section>
+                  <q-item-label>{{ t('nav.speedTest') }}</q-item-label>
+                  <q-item-label caption class="text-grey-5">{{ t('nav.speedTestCaption') }}</q-item-label>
+                </q-item-section>
+              </q-item>
+
               <q-separator />
 
               <q-item
@@ -352,6 +369,13 @@ const resolverNavItems = computed(() => [
     to: { name: 'resolver-connections' }
   },
   {
+    name: 'resolver-speed-test',
+    label: t('nav.speedTest'),
+    caption: t('nav.speedTestCaption'),
+    icon: 'speed',
+    to: { name: 'resolver-speed-test' }
+  },
+  {
     name: 'diagnostics',
     label: t('nav.diagnostics'),
     caption: t('nav.diagnosticsCaption'),
@@ -368,7 +392,7 @@ const resolverNavItems = computed(() => [
 ])
 
 const resolverMenuActive = computed(() =>
-  ['resolver', 'resolver-connections', 'diagnostics', 'resolver-settings'].includes(route.name)
+  ['resolver', 'resolver-connections', 'resolver-speed-test', 'diagnostics', 'resolver-settings'].includes(route.name)
 )
 
 function go (to) {

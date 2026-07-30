@@ -166,6 +166,11 @@ OUT
         $this->assertSame(7, $result['details']['iptables']['nat_dns_redirect_hits']);
         $this->assertSame(0, $result['details']['clash']['connections_current']);
         $this->assertSame(ResolverService::TPROXY_LISTEN, $result['details']['config']['tproxy_listen_addr']);
+        $this->assertSame('redirect', $result['details']['config']['delivery_inbound_type']);
+
+        $policy = collect($result['checks'])->firstWhere('id', 'tproxy_policy');
+        $this->assertNotNull($policy);
+        $this->assertTrue($policy['ok']);
 
         $delivery = collect($result['checks'])->firstWhere('id', 'tproxy_delivery');
         $this->assertNotNull($delivery);
