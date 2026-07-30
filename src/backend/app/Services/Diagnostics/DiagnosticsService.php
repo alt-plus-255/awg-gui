@@ -232,7 +232,7 @@ class DiagnosticsService
             try {
                 $r = $this->docker->exec(
                     $this->awg->containerName(),
-                    ['sh', '-c', 'pgrep -x sing-box >/dev/null && echo yes || echo no'],
+                    ['sh', '-c', 'pid=$(cat /run/sing-box.pid 2>/dev/null); if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then echo yes; elif pgrep -f "/usr/local/bin/sing-box run -c /config/sing-box.json" >/dev/null 2>&1; then echo yes; else echo no; fi'],
                     timeout: 10,
                 );
                 $running = trim($r->output()) === 'yes';

@@ -141,6 +141,7 @@ CONFIG=/config/sing-box.json
 PIDFILE=/run/sing-box.pid
 BIN=/usr/local/bin/sing-box
 CACHE_FILE=/config/sing-box-cache.db
+LOG_FILE=/config/sing-box.log
 # Soft cap: bbolt does not shrink; drop oversized cache so disk cannot fill unbounded.
 CACHE_MAX_BYTES=$((32 * 1024 * 1024))
 
@@ -179,7 +180,9 @@ stop_singbox() {
     fi
     rm -f "${PIDFILE}"
   fi
-  pkill -x sing-box 2>/dev/null || true
+  # Do not use pkill -x sing-box: gcompat renames process comm.
+  pkill -f "${BIN} run -c ${CONFIG}" 2>/dev/null || true
+  sleep 0.2
 }
 
 start_singbox() {
@@ -197,9 +200,28 @@ start_singbox() {
   prune_cache_if_huge
   stop_singbox
   cleanup_legacy_tun
-  "${BIN}" run -c "${CONFIG}" &
+
+  # setsid: survive parent exit (docker exec from panel kills the session otherwise).
+  # Redirect stdio so a closed exec tty cannot SIGPIPE the daemon.
+  : >>"${LOG_FILE}"
+  setsid "${BIN}" run -c "${CONFIG}" >>"${LOG_FILE}" 2>&1 </dev/null &
   echo $! > "${PIDFILE}"
-  echo "[sing-box] started pid=$(cat "${PIDFILE}")"
+
+  local pid
+  pid="$(cat "${PIDFILE}")"
+  local i
+  for i in 1 2 3 4 5 6 7 8 9 10; do
+    if kill -0 "${pid}" 2>/dev/null; then
+      echo "[sing-box] started pid=${pid}"
+      return 0
+    fi
+    sleep 0.2
+  done
+
+  echo "[sing-box] failed to stay running (pid=${pid}); last log:" >&2
+  tail -n 40 "${LOG_FILE}" >&2 || true
+  rm -f "${PIDFILE}"
+  return 1
 }
 
 start_singbox
@@ -299,9 +321,25 @@ start_ping() {
     fi
   fi
 
-  "${BIN}" run -c "${CONFIG}" &
+  # setsid: survive parent exit (docker exec from panel kills the session otherwise).
+  setsid "${BIN}" run -c "${CONFIG}" >>/config/sing-box-ping.log 2>&1 </dev/null &
   echo $! > "${PIDFILE}"
-  echo "[sing-box-ping] started pid=$(cat "${PIDFILE}")"
+
+  local pid
+  pid="$(cat "${PIDFILE}")"
+  local i
+  for i in 1 2 3 4 5 6 7 8 9 10; do
+    if kill -0 "${pid}" 2>/dev/null; then
+      echo "[sing-box-ping] started pid=${pid}"
+      return 0
+    fi
+    sleep 0.2
+  done
+
+  echo "[sing-box-ping] failed to stay running (pid=${pid}); last log:" >&2
+  tail -n 40 /config/sing-box-ping.log >&2 || true
+  rm -f "${PIDFILE}"
+  return 1
 }
 
 reload_ping() {

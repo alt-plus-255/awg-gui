@@ -40,9 +40,25 @@ start_ping() {
     fi
   fi
 
-  "${BIN}" run -c "${CONFIG}" &
+  # setsid: survive parent exit (docker exec from panel kills the session otherwise).
+  setsid "${BIN}" run -c "${CONFIG}" >>/config/sing-box-ping.log 2>&1 </dev/null &
   echo $! > "${PIDFILE}"
-  echo "[sing-box-ping] started pid=$(cat "${PIDFILE}")"
+
+  local pid
+  pid="$(cat "${PIDFILE}")"
+  local i
+  for i in 1 2 3 4 5 6 7 8 9 10; do
+    if kill -0 "${pid}" 2>/dev/null; then
+      echo "[sing-box-ping] started pid=${pid}"
+      return 0
+    fi
+    sleep 0.2
+  done
+
+  echo "[sing-box-ping] failed to stay running (pid=${pid}); last log:" >&2
+  tail -n 40 /config/sing-box-ping.log >&2 || true
+  rm -f "${PIDFILE}"
+  return 1
 }
 
 reload_ping() {

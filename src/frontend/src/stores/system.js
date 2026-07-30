@@ -127,6 +127,11 @@ export const useSystemStore = defineStore('system', () => {
     }
   }
 
+  async function restartSingbox () {
+    const { data } = await api.post('/api/system/restart-singbox')
+    return data
+  }
+
   return {
     status,
     checking,
@@ -139,6 +144,7 @@ export const useSystemStore = defineStore('system', () => {
     checkStatus,
     restartAwg,
     restartAll,
+    restartSingbox,
     stopBlockedPoll
   }
 })

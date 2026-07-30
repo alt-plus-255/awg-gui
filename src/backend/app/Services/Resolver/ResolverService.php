@@ -424,9 +424,10 @@ class ResolverService
     public function isSingBoxRunning(): bool
     {
         try {
+            // gcompat renames process comm (ld-musl-*/ld-linux-*); match PID file or cmdline.
             $r = $this->docker->exec(
                 $this->awg->containerName(),
-                ['sh', '-c', 'pgrep -x sing-box >/dev/null && echo yes || echo no'],
+                ['sh', '-c', 'pid=$(cat /run/sing-box.pid 2>/dev/null); if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then echo yes; elif pgrep -f "/usr/local/bin/sing-box run -c /config/sing-box.json" >/dev/null 2>&1; then echo yes; else echo no; fi'],
                 timeout: 10,
             );
 
@@ -1252,6 +1253,85 @@ class ResolverService
             Log::warning('reload-singbox: '.($err !== '' ? $err : 'command failed'));
             throw new RuntimeException($err !== '' ? $err : 'sing-box reload failed');
         }
+    }
+
+    /**
+     * Force reload/start sing-box and return diagnostics-friendly status.
+     *
+     * @return array{ok: bool, running: bool, config_exists: bool, message: string, check_output: string, reload_output: string}
+     */
+    public function restartSingBox(): array
+    {
+        $configPath = $this->singBoxConfigPath();
+        $configExists = is_file($configPath);
+        $container = $this->awg->containerName();
+
+        if (! $this->awg->isContainerRunning()) {
+            return [
+                'ok' => false,
+                'running' => false,
+                'config_exists' => $configExists,
+                'message' => __('system.awg_container_not_running'),
+                'check_output' => '',
+                'reload_output' => '',
+            ];
+        }
+
+        if (! $configExists) {
+            return [
+                'ok' => false,
+                'running' => false,
+                'config_exists' => false,
+                'message' => __('system.singbox_json_not_found'),
+                'check_output' => '',
+                'reload_output' => '',
+            ];
+        }
+
+        $check = $this->docker->exec(
+            $container,
+            ['/usr/local/bin/sing-box', 'check', '-c', '/config/sing-box.json'],
+            timeout: 20,
+        );
+        $checkOut = trim($check->errorOutput()."\n".$check->output());
+        if (! $check->successful()) {
+            return [
+                'ok' => false,
+                'running' => $this->isSingBoxRunning(),
+                'config_exists' => true,
+                'message' => $checkOut !== '' ? $checkOut : __('system.singbox_check_failed'),
+                'check_output' => $checkOut,
+                'reload_output' => '',
+            ];
+        }
+
+        $reload = $this->docker->exec(
+            $container,
+            ['sh', '-c', 'if [ -x /config/reload-singbox.sh ]; then /config/reload-singbox.sh; else /usr/local/bin/reload-singbox.sh; fi'],
+            timeout: 30,
+        );
+        $reloadOut = trim($reload->errorOutput()."\n".$reload->output());
+        $running = $this->isSingBoxRunning();
+
+        if (! $reload->successful() || ! $running) {
+            return [
+                'ok' => false,
+                'running' => $running,
+                'config_exists' => true,
+                'message' => $reloadOut !== '' ? $reloadOut : __('system.singbox_restart_failed'),
+                'check_output' => $checkOut,
+                'reload_output' => $reloadOut,
+            ];
+        }
+
+        return [
+            'ok' => true,
+            'running' => true,
+            'config_exists' => true,
+            'message' => __('system.singbox_restart_ok'),
+            'check_output' => $checkOut,
+            'reload_output' => $reloadOut,
+        ];
     }
 
     /**

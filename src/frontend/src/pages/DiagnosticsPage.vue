@@ -249,8 +249,17 @@
                 icon="restart_alt"
                 :label="t('diagnostics.restartAwg')"
                 :loading="systemStore.restartBusy"
-                :disable="systemStore.restartBusy"
+                :disable="systemStore.restartBusy || restartingSingbox"
                 @click="restartAwg"
+              />
+              <q-btn
+                outline
+                color="secondary"
+                icon="play_circle"
+                :label="t('diagnostics.restartSingbox')"
+                :loading="restartingSingbox"
+                :disable="systemStore.restartBusy || restartingSingbox"
+                @click="restartSingbox"
               />
               <q-btn
                 outline
@@ -258,7 +267,7 @@
                 icon="power_settings_new"
                 :label="t('diagnostics.restartServices')"
                 :loading="systemStore.restartBusy"
-                :disable="systemStore.restartBusy"
+                :disable="systemStore.restartBusy || restartingSingbox"
                 @click="restartAll"
               />
               <q-btn
@@ -382,7 +391,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useQuasar } from 'quasar'
 import { useDiagnosticsStore } from '@/stores/diagnostics'
@@ -398,6 +407,7 @@ const mobileDialog = useMobileDialog()
 const store = useDiagnosticsStore()
 const systemStore = useSystemStore()
 const settingsStore = useSettingsStore()
+const restartingSingbox = ref(false)
 
 const resultBadgeColor = computed(() => {
   const s = store.result?.status
@@ -458,6 +468,26 @@ async function restartAwg () {
     await store.fetchStatus()
   } catch (e) {
     $q.notify({ type: 'negative', message: e?.response?.data?.message || t('diagnostics.restartAwgError') })
+  }
+}
+
+async function restartSingbox () {
+  restartingSingbox.value = true
+  try {
+    const data = await systemStore.restartSingbox()
+    $q.notify({
+      type: data.ok ? 'positive' : 'negative',
+      message: data.message || (data.ok ? t('diagnostics.singboxRestarted') : t('diagnostics.restartSingboxError')),
+      multiLine: true,
+      timeout: data.ok ? 2500 : 8000
+    })
+    await store.fetchStatus()
+  } catch (e) {
+    const msg = e?.response?.data?.message || e?.response?.data?.details?.message || t('diagnostics.restartSingboxError')
+    $q.notify({ type: 'negative', message: msg, multiLine: true, timeout: 8000 })
+    await store.fetchStatus()
+  } finally {
+    restartingSingbox.value = false
   }
 }
 

@@ -72,6 +72,18 @@ sync_configs() {
   done
 }
 
+# gcompat may show process comm as ld-musl-*/ld-linux-* — never rely on pgrep -x sing-box.
+singbox_is_running() {
+  if [[ -f /run/sing-box.pid ]]; then
+    local pid
+    pid="$(cat /run/sing-box.pid 2>/dev/null || true)"
+    if [[ -n "${pid}" ]] && kill -0 "${pid}" 2>/dev/null; then
+      return 0
+    fi
+  fi
+  pgrep -f '/usr/local/bin/sing-box run -c /config/sing-box.json' >/dev/null 2>&1
+}
+
 sync_singbox() {
   local SB="${CONFIG_DIR}/sing-box.json"
   local MT=0
@@ -82,11 +94,11 @@ sync_singbox() {
     echo "[sing-box] config changed, reloading..."
     if [[ -x /config/reload-singbox.sh ]]; then /config/reload-singbox.sh || true; else /usr/local/bin/reload-singbox.sh || true; fi
     LAST_SB_MTIME="${MT}"
-  elif [[ -f "${SB}" ]] && ! pgrep -x sing-box >/dev/null 2>&1; then
+  elif [[ -f "${SB}" ]] && ! singbox_is_running; then
     echo "[sing-box] process missing, starting..."
     if [[ -x /config/reload-singbox.sh ]]; then /config/reload-singbox.sh || true; else /usr/local/bin/reload-singbox.sh || true; fi
     LAST_SB_MTIME="${MT}"
-  elif [[ ! -f "${SB}" ]] && pgrep -x sing-box >/dev/null 2>&1; then
+  elif [[ ! -f "${SB}" ]] && singbox_is_running; then
     echo "[sing-box] config removed, stopping..."
     if [[ -x /config/reload-singbox.sh ]]; then /config/reload-singbox.sh || true; else /usr/local/bin/reload-singbox.sh || true; fi
     LAST_SB_MTIME=0

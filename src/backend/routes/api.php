@@ -32,6 +32,7 @@ Route::delete('/2fa', [TwoFactorController::class, 'destroy']);
 Route::get('/system/status', [SystemController::class, 'status']);
 Route::get('/system/processes', [SystemController::class, 'processes']);
 Route::post('/system/restart-awg', [SystemController::class, 'restartAwg']);
+Route::post('/system/restart-singbox', [SystemController::class, 'restartSingBox']);
 Route::post('/system/restart-all', [SystemController::class, 'restartAll']);
 
 Route::get('/diagnostics/status', [DiagnosticsController::class, 'status']);
