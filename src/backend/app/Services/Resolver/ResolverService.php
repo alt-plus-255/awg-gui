@@ -19,9 +19,15 @@ class ResolverService
 
     public const TPROXY_INBOUND_TAG = 'tproxy-in';
 
-    public const TPROXY_LISTEN = '127.0.0.1';
+    /**
+     * Bind all interfaces. Do NOT use 127.0.0.1: Docker often leaves
+     * net.ipv4.conf.lo.route_localnet=0 (and blocks sysctl), so TPROXY
+     * --on-ip 127.0.0.1 blackholes FakeIP while iptables counters still rise.
+     */
+    public const TPROXY_LISTEN = '0.0.0.0';
 
-    public const TPROXY_ON_IP = '127.0.0.1';
+    /** 0.0.0.0 → primary address of the ingress iface (awg0), no route_localnet needed. */
+    public const TPROXY_ON_IP = '0.0.0.0';
 
     /**
      * Physical egress inside the AWG container (docker bridge is usually eth0).
@@ -1020,19 +1026,17 @@ class ResolverService
                     'listen_port' => self::DNS_LISTEN_PORT,
                 ],
                 [
-                    'type' => 'tproxy',
+                    'type' => 'redirect',
                     'tag' => self::TPROXY_INBOUND_TAG,
                     'listen' => self::TPROXY_LISTEN,
                     'listen_port' => self::TPROXY_PORT,
-                    'tcp_fast_open' => true,
-                    'udp_fragment' => true,
                 ],
             ], $outbounds, $routeRules, $outboundTagsAdded),
             'outbounds' => $outbounds,
             // Routing ownership (anti-TUN-auto_route):
             // 1) Client full-tunnel is owned by AWG (AllowedIPs 0.0.0.0/0) — not by sing-box.
-            // 2) TPROXY only delivers FakeIP/list CIDRs into sing-box; everything else stays on awg*
-            //    and exits via MASQUERADE (direct / VDS IP).
+            // 2) TCP FakeIP/list CIDRs are NAT-REDIRECT'd into sing-box; everything else stays on awg*
+            //    and exits via MASQUERADE (direct / VDS IP). REDIRECT avoids Docker lo.route_localnet.
             // 3) Pin egress to the resolved NIC (auto-detect or settings override).
             //    route.exclude_interface does not exist in sing-box (TUN-inbound only).
             'route' => [

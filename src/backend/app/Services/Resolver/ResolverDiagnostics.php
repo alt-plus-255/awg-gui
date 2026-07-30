@@ -584,7 +584,8 @@ SH;
 
             if ($chain === 'PREROUTING') {
                 foreach ($enabledIfaces as $iface) {
-                    if (str_contains($rule, '-i '.$iface) && str_contains($rule, '-j RS_'.$iface)) {
+                    if (str_contains($rule, '-i '.$iface)
+                        && (str_contains($rule, '-j RS_'.$iface) || str_contains($rule, '-j RSNAT_'.$iface))) {
                         $out['prerouting_rs_hits_by_iface'][$iface] += $packets;
                     }
                 }
@@ -596,33 +597,59 @@ SH;
                 }
             }
 
-            if (! str_starts_with($chain, 'RS_') || ! str_contains($rule, '-j TPROXY')) {
-                continue;
-            }
-
-            $isFakeIp = str_contains($rule, '-d '.ResolverService::FAKEIP_CIDR);
-            if ($isFakeIp) {
-                $out['fakeip_rules_present'] = true;
-            }
-            if (str_contains($rule, '--on-port '.(string) ResolverService::TPROXY_PORT)) {
-                if ($isFakeIp && str_contains($rule, '-p tcp')) {
-                    $out['tproxy_fakeip_tcp_hits'] += $packets;
-                } elseif ($isFakeIp && str_contains($rule, '-p udp')) {
-                    $out['tproxy_fakeip_udp_hits'] += $packets;
-                } elseif (str_contains($rule, '-p tcp')) {
-                    $out['tproxy_list_tcp_hits'] += $packets;
-                } elseif (str_contains($rule, '-p udp')) {
-                    $out['tproxy_list_udp_hits'] += $packets;
+            // Legacy mangle TPROXY counters (pre-REDIRECT builds).
+            if (str_starts_with($chain, 'RS_') && str_contains($rule, '-j TPROXY')) {
+                $isFakeIp = str_contains($rule, '-d '.ResolverService::FAKEIP_CIDR);
+                if ($isFakeIp) {
+                    $out['fakeip_rules_present'] = true;
+                }
+                if (str_contains($rule, '--on-port '.(string) ResolverService::TPROXY_PORT)) {
+                    if ($isFakeIp && str_contains($rule, '-p tcp')) {
+                        $out['tproxy_fakeip_tcp_hits'] += $packets;
+                    } elseif ($isFakeIp && str_contains($rule, '-p udp')) {
+                        $out['tproxy_fakeip_udp_hits'] += $packets;
+                    } elseif (str_contains($rule, '-p tcp')) {
+                        $out['tproxy_list_tcp_hits'] += $packets;
+                    } elseif (str_contains($rule, '-p udp')) {
+                        $out['tproxy_list_udp_hits'] += $packets;
+                    }
                 }
             }
         }
 
         foreach ($natLines as $line) {
-            if (! preg_match('/^\[(\d+):\d+\]\s+-A\s+PREROUTING\s+(.*)$/', trim($line), $m)) {
+            if (! preg_match('/^\[(\d+):\d+\]\s+-A\s+(\S+)\s+(.*)$/', trim($line), $m)) {
                 continue;
             }
-            if (str_contains($m[2], '--dport 53') && str_contains($m[2], '--to-ports '.(string) ResolverService::DNS_LISTEN_PORT)) {
-                $out['nat_dns_redirect_hits'] += (int) $m[1];
+            $packets = (int) $m[1];
+            $chain = $m[2];
+            $rule = $m[3];
+
+            if ($chain === 'PREROUTING') {
+                foreach ($enabledIfaces as $iface) {
+                    if (str_contains($rule, '-i '.$iface) && str_contains($rule, '-j RSNAT_'.$iface)) {
+                        $out['prerouting_rs_hits_by_iface'][$iface] += $packets;
+                    }
+                }
+                if (str_contains($rule, '--dport 53') && str_contains($rule, '--to-ports '.(string) ResolverService::DNS_LISTEN_PORT)) {
+                    $out['nat_dns_redirect_hits'] += $packets;
+                }
+            }
+
+            // Current path: TCP FakeIP/list via nat REDIRECT into sing-box.
+            if (str_starts_with($chain, 'RSNAT_') && str_contains($rule, '-j REDIRECT')) {
+                $isFakeIp = str_contains($rule, '-d '.ResolverService::FAKEIP_CIDR);
+                if ($isFakeIp) {
+                    $out['fakeip_rules_present'] = true;
+                }
+                if (str_contains($rule, '--to-ports '.(string) ResolverService::TPROXY_PORT)
+                    || str_contains($rule, '--to-ports='.(string) ResolverService::TPROXY_PORT)) {
+                    if ($isFakeIp && str_contains($rule, '-p tcp')) {
+                        $out['tproxy_fakeip_tcp_hits'] += $packets;
+                    } elseif (str_contains($rule, '-p tcp')) {
+                        $out['tproxy_list_tcp_hits'] += $packets;
+                    }
+                }
             }
         }
 

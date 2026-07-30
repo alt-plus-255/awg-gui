@@ -72,6 +72,10 @@ class ConnectionOutboundBuilder
                         'outbounds' => $childTags,
                         'url' => ResolverService::DELAY_TEST_URL,
                         'interval' => $conn->urltestIntervalDuration(),
+                        // Avoid flapping between similarly-latency nodes mid-stream.
+                        'tolerance' => 150,
+                        // Keep long-lived video TCP sessions on the chosen node.
+                        'interrupt_exist_connections' => false,
                     ];
                     $tagsAdded[$tag] = true;
                 }

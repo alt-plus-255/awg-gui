@@ -107,15 +107,16 @@ class ResolverSingBoxTproxyConfigTest extends TestCase
             $sb = app(ResolverService::class)->buildSingBoxConfig([$cfgA, $cfgB], forceSyncLists: false);
 
             $inboundTypes = array_column($sb['inbounds'], 'type');
-            $this->assertContains('tproxy', $inboundTypes);
+            $this->assertContains('redirect', $inboundTypes);
             $this->assertNotContains('tun', $inboundTypes);
+            $this->assertNotContains('tproxy', $inboundTypes);
 
-            $tproxy = collect($sb['inbounds'])->firstWhere('type', 'tproxy');
-            $this->assertSame(ResolverService::TPROXY_INBOUND_TAG, $tproxy['tag']);
-            $this->assertSame(ResolverService::TPROXY_LISTEN, $tproxy['listen']);
-            $this->assertSame(ResolverService::TPROXY_PORT, $tproxy['listen_port']);
-            $this->assertTrue($tproxy['tcp_fast_open']);
-            $this->assertTrue($tproxy['udp_fragment']);
+            $redir = collect($sb['inbounds'])->firstWhere('type', 'redirect');
+            $this->assertSame(ResolverService::TPROXY_INBOUND_TAG, $redir['tag']);
+            $this->assertSame(ResolverService::TPROXY_LISTEN, $redir['listen']);
+            $this->assertSame(ResolverService::TPROXY_PORT, $redir['listen_port']);
+            $this->assertArrayNotHasKey('tcp_fast_open', $redir);
+            $this->assertArrayNotHasKey('udp_fragment', $redir);
 
             $dnsIn = collect($sb['inbounds'])->firstWhere('tag', 'dns-in');
             $this->assertSame('direct', $dnsIn['type']);
