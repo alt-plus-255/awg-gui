@@ -221,6 +221,8 @@ class AmneziaWgService
             'telegram_webhook_secret' => '',
             'telegram_mixed_auth_user' => '',
             'telegram_mixed_auth_pass' => '',
+            // auto = detect default-route NIC inside AWG container; or explicit iface name.
+            'singbox_egress_interface' => 'auto',
         ];
     }
 
@@ -1062,10 +1064,11 @@ class AmneziaWgService
 
     private function buildPostUp(AwgConfig $config): string
     {
+        $egress = app(\App\Services\Resolver\EgressInterfaceResolver::class)->resolve();
         $parts = [
             'iptables -A FORWARD -i %i -j ACCEPT',
             'iptables -A FORWARD -o %i -j ACCEPT',
-            'iptables -t nat -A POSTROUTING -o eth+ -j MASQUERADE',
+            'iptables -t nat -A POSTROUTING -o '.$egress.' -j MASQUERADE',
         ];
 
         if ($config->isResolverEnabled()) {
@@ -1085,10 +1088,13 @@ class AmneziaWgService
 
     private function buildPostDown(AwgConfig $config): string
     {
+        $egress = app(\App\Services\Resolver\EgressInterfaceResolver::class)->resolve();
         $parts = [
             'iptables -D FORWARD -i %i -j ACCEPT',
             'iptables -D FORWARD -o %i -j ACCEPT',
-            'iptables -t nat -D POSTROUTING -o eth+ -j MASQUERADE',
+            'iptables -t nat -D POSTROUTING -o '.$egress.' -j MASQUERADE',
+            // Legacy wildcard MASQUERADE from older builds.
+            'iptables -t nat -D POSTROUTING -o eth+ -j MASQUERADE 2>/dev/null || true',
         ];
 
         if ($config->isResolverEnabled()) {

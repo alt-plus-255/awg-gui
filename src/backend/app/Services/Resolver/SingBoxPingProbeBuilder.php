@@ -8,7 +8,6 @@ class SingBoxPingProbeBuilder
 {
     public function __construct(
         private ConnectionOutboundBuilder $outboundBuilder,
-        private ?ResolverService $resolver = null,
     ) {}
 
     /**
@@ -22,7 +21,6 @@ class SingBoxPingProbeBuilder
             ->get();
 
         $built = $this->outboundBuilder->buildForConnections($connections);
-        $resolver = $this->resolver ?? app(ResolverService::class);
 
         $config = [
             'log' => [
@@ -42,11 +40,10 @@ class SingBoxPingProbeBuilder
                 'strategy' => 'ipv4_only',
             ],
             'outbounds' => $built['outbounds'],
-            // Same egress ownership as production: never dial via awg* when a peer is online.
+            // Same egress ownership as production: pin dials to resolved NIC.
             'route' => [
                 'auto_detect_interface' => false,
-                'default_interface' => ResolverService::EGRESS_INTERFACE,
-                'exclude_interface' => $resolver->singBoxExcludeInterfaces([], $connections),
+                'default_interface' => app(EgressInterfaceResolver::class)->resolve(),
                 'default_domain_resolver' => 'bootstrap',
             ],
             'experimental' => [

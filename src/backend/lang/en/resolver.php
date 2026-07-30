@@ -80,6 +80,8 @@ return [
     'outbound_json_required' => 'Enter outbound JSON',
     'outbound_json_object_expected' => 'Expected a sing-box outbound JSON object',
     'outbound_type_required' => 'Outbound must include a type field',
+    'outbound_wireguard_removed' => 'Outbound type "wireguard" was removed in sing-box 1.13. Use an AWG connection (config_type=awg) or a WireGuard endpoint.',
+    'outbound_special_removed' => 'Outbound type ":type" was removed in sing-box 1.13. Use route/DNS rule actions instead.',
     'share_url_required' => 'Enter a connection URL',
     'unsupported_scheme' => 'Unsupported scheme: :scheme. Available: vless, ss, trojan, hy2/hysteria2, socks',
     'invalid_vless_url' => 'Invalid vless:// URL',

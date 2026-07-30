@@ -17,7 +17,6 @@ class SingBoxPingProbeBuilderTest extends TestCase
     {
         $builder = new SingBoxPingProbeBuilder(
             new ConnectionOutboundBuilder(new SingBoxOutboundParser),
-            app(ResolverService::class),
         );
 
         $result = $builder->build();
@@ -34,8 +33,8 @@ class SingBoxPingProbeBuilderTest extends TestCase
         $this->assertArrayNotHasKey('inbounds', $config);
         $this->assertArrayHasKey('route', $config);
         $this->assertFalse($config['route']['auto_detect_interface']);
-        $this->assertSame(ResolverService::EGRESS_INTERFACE, $config['route']['default_interface']);
-        $this->assertContains(ResolverService::TUN_IFACE, $config['route']['exclude_interface']);
+        $this->assertNotSame('', $config['route']['default_interface']);
+        $this->assertArrayNotHasKey('exclude_interface', $config['route']);
         $this->assertFalse(isset($config['experimental']['cache_file']));
 
         $json = $builder->encode($config);

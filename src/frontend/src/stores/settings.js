@@ -19,6 +19,12 @@ export const useSettingsStore = defineStore('settings', () => {
   })
   const webhookSchema = ref({})
   const timezones = ref(['UTC'])
+  const egress = ref({
+    setting: 'auto',
+    resolved: 'eth0',
+    detected: null,
+    options: []
+  })
   const loaded = ref(false)
   const loading = ref(false)
   let inFlight = null
@@ -40,6 +46,16 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
+  function applyEgress (payload) {
+    if (!payload || typeof payload !== 'object') return
+    egress.value = {
+      setting: payload.setting || 'auto',
+      resolved: payload.resolved || 'eth0',
+      detected: payload.detected || null,
+      options: Array.isArray(payload.options) ? payload.options : []
+    }
+  }
+
   async function fetch (force = false) {
     if (loaded.value && !force) return settings.value
     if (inFlight && !force) return inFlight
@@ -52,6 +68,7 @@ export const useSettingsStore = defineStore('settings', () => {
         panelUrl.value = data.panel_url || ''
         webhookSchema.value = data.webhook_schema || {}
         applySsl(data.ssl)
+        applyEgress(data.egress)
         if (Array.isArray(data.timezones) && data.timezones.length) {
           timezones.value = data.timezones
         }
@@ -75,6 +92,7 @@ export const useSettingsStore = defineStore('settings', () => {
     if (data.display_endpoint != null) displayEndpoint.value = data.display_endpoint
     if (data.panel_url != null) panelUrl.value = data.panel_url
     if (data.ssl) applySsl(data.ssl)
+    if (data.egress) applyEgress(data.egress)
     if (Array.isArray(data.timezones) && data.timezones.length) {
       timezones.value = data.timezones
     }
@@ -122,6 +140,7 @@ export const useSettingsStore = defineStore('settings', () => {
     ssl,
     webhookSchema,
     timezones,
+    egress,
     loaded,
     loading,
     serverEndpoint,

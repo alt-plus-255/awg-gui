@@ -36,10 +36,17 @@ apply_config() {
     ip address replace "${addr}" dev "${IFACE}" 2>/dev/null || true
   fi
   awg setconf "${IFACE}" < <(awg-quick strip "${CONF}") || true
-  iptables -t nat -C POSTROUTING -o eth+ -j MASQUERADE 2>/dev/null \
-    || iptables -t nat -A POSTROUTING -o eth+ -j MASQUERADE || true
   iptables -C FORWARD -i "${IFACE}" -j ACCEPT 2>/dev/null \
     || iptables -A FORWARD -i "${IFACE}" -j ACCEPT || true
+  EGRESS="$(ip -4 route show default 0.0.0.0/0 2>/dev/null | awk '{for (i=1;i<=NF;i++) if ($i=="dev") {print $(i+1); exit}}')"
+  if [[ -z "${EGRESS}" ]]; then
+    EGRESS="$(ip -o -4 route get 1.1.1.1 2>/dev/null | awk '{for (i=1;i<=NF;i++) if ($i=="dev") {print $(i+1); exit}}')"
+  fi
+  EGRESS="${EGRESS:-eth0}"
+  iptables -t nat -C POSTROUTING -o "${EGRESS}" -j MASQUERADE 2>/dev/null \
+    || iptables -t nat -A POSTROUTING -o "${EGRESS}" -j MASQUERADE || true
+  # Drop legacy eth+ MASQUERADE if present from older images.
+  iptables -t nat -D POSTROUTING -o eth+ -j MASQUERADE 2>/dev/null || true
   echo "[awg] ${IFACE} userspace path active"
 }
 

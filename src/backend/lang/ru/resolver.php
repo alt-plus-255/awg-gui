@@ -80,6 +80,8 @@ return [
     'outbound_json_required' => 'Укажите outbound JSON',
     'outbound_json_object_expected' => 'Ожидается JSON-объект outbound sing-box',
     'outbound_type_required' => 'В outbound обязательно поле type',
+    'outbound_wireguard_removed' => 'Тип outbound «wireguard» удалён в sing-box 1.13. Используйте AWG-подключение (config_type=awg) или endpoint WireGuard.',
+    'outbound_special_removed' => 'Тип outbound «:type» удалён в sing-box 1.13. Используйте route/DNS rule actions.',
     'share_url_required' => 'Укажите ссылку подключения',
     'unsupported_scheme' => 'Неподдерживаемая схема: :scheme. Доступны vless, ss, trojan, hy2/hysteria2, socks',
     'invalid_vless_url' => 'Некорректная vless:// ссылка',

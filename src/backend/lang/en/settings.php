@@ -2,6 +2,8 @@
 
 return [
     'caddy_ports_apply_failed' => 'Settings saved, but failed to apply new Caddy ports: :error',
+    'invalid_egress_interface' => 'Invalid network interface name',
+    'egress_apply_failed' => 'Settings saved, but failed to apply egress interface: :error',
     'ssl_already_issued' => 'Certificate already issued — HTTPS enabled',
     'ssl_add_txt_record' => 'Add the TXT record in DNS, then click «Continue».',
     'ssl_issued' => 'Certificate issued, HTTPS enabled',

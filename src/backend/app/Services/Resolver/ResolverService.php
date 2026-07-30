@@ -24,12 +24,11 @@ class ResolverService
     public const TPROXY_ON_IP = '127.0.0.1';
 
     /**
-     * Physical egress inside the AWG container (docker bridge eth0).
-     * sing-box must bind outbounds here — never to awg* or awgc* ifaces (same class of bug as TUN auto_route).
+     * Physical egress inside the AWG container (docker bridge is usually eth0).
+     * Prefer EgressInterfaceResolver::resolve() — this constant is only a fallback.
      */
     public const EGRESS_INTERFACE = 'eth0';
 
-    /** fwmark for iptables TPROXY → local table (see resolver-mark.sh). */
     public const TPROXY_MARK = '0x1';
 
     public const TPROXY_TABLE = 100;
@@ -868,6 +867,7 @@ class ResolverService
                 $routeRules[] = [
                     'source_ip_cidr' => $source,
                     'ip_cidr' => [self::FAKEIP_CIDR],
+                    'action' => 'route',
                     'outbound' => $routingTag,
                 ];
 
@@ -887,6 +887,7 @@ class ResolverService
                 $dnsRules[] = [
                     'source_ip_cidr' => $source,
                     'rule_set' => [$mergedTag],
+                    'action' => 'route',
                     'server' => 'fakeip',
                     'rewrite_ttl' => 60,
                 ];
@@ -895,6 +896,7 @@ class ResolverService
                 $routeRules[] = [
                     'source_ip_cidr' => $source,
                     'ip_cidr' => [self::FAKEIP_CIDR],
+                    'action' => 'route',
                     'outbound' => $routingTag,
                 ];
                 // Domain sniff rules also carry source_ip for multi-config isolation.
@@ -902,6 +904,7 @@ class ResolverService
                     'inbound' => [self::TPROXY_INBOUND_TAG],
                     'source_ip_cidr' => $source,
                     'rule_set' => [$mergedTag],
+                    'action' => 'route',
                     'outbound' => $routingTag,
                 ];
             }
@@ -917,6 +920,7 @@ class ResolverService
                     'inbound' => [self::TPROXY_INBOUND_TAG],
                     'source_ip_cidr' => $source,
                     'rule_set' => [$merged['ip_tag']],
+                    'action' => 'route',
                     'outbound' => $routingTag,
                 ];
                 foreach ($merged['ip_cidrs'] as $cidr) {
@@ -929,6 +933,7 @@ class ResolverService
                 $routeRules[] = [
                     'source_ip_cidr' => $source,
                     'ip_cidr' => [self::FAKEIP_CIDR],
+                    'action' => 'route',
                     'outbound' => $routingTag,
                 ];
             }
@@ -941,6 +946,7 @@ class ResolverService
         }
 
         $dnsRules[] = [
+            'action' => 'route',
             'server' => 'remote',
         ];
 
@@ -974,6 +980,7 @@ class ResolverService
             // Insert before the final catch-all rule
             array_splice($dnsRules, -1, 0, [[
                 'source_ip_cidr' => [$this->subnetCidr($config)],
+                'action' => 'route',
                 'server' => $tag,
             ]]);
         }
@@ -1000,7 +1007,7 @@ class ResolverService
                 'servers' => $dnsServers,
                 'rules' => $dnsRules,
                 'final' => 'remote',
-                'independent_cache' => true,
+                // independent_cache is deprecated in 1.14+; omit it (cache is keyed by transport).
                 'cache_capacity' => 4096,
                 'strategy' => 'ipv4_only',
             ],
@@ -1025,14 +1032,14 @@ class ResolverService
             // 1) Client full-tunnel is owned by AWG (AllowedIPs 0.0.0.0/0) — not by sing-box.
             // 2) TPROXY only delivers FakeIP/list CIDRs into sing-box; everything else stays on awg*
             //    and exits via MASQUERADE (direct / VDS IP).
-            // 3) sing-box must never install default routes and never egress via awg*/awgc*.
+            // 3) Pin egress to the resolved NIC (auto-detect or settings override).
+            //    route.exclude_interface does not exist in sing-box (TUN-inbound only).
             'route' => [
                 'rules' => $routeRules,
                 'rule_set' => $ruleSets,
                 'final' => 'direct',
                 'auto_detect_interface' => false,
-                'default_interface' => self::EGRESS_INTERFACE,
-                'exclude_interface' => $this->singBoxExcludeInterfaces($configs, $allConnections),
+                'default_interface' => app(EgressInterfaceResolver::class)->resolve(),
                 'default_domain_resolver' => 'bootstrap',
             ],
             'experimental' => [
@@ -1049,45 +1056,6 @@ class ResolverService
                 ],
             ],
         ];
-    }
-
-    /**
-     * Interfaces sing-box must not use for auto-detected outbound egress.
-     *
-     * @param  list<AwgConfig>  $configs
-     * @param  iterable<mixed>  $connections
-     * @return list<string>
-     */
-    public function singBoxExcludeInterfaces(array $configs, iterable $connections = []): array
-    {
-        $ifaces = [self::TUN_IFACE];
-        foreach ($configs as $config) {
-            $iface = trim((string) ($config->iface ?? ''));
-            if ($iface !== '') {
-                $ifaces[] = $iface;
-            }
-        }
-        // Exclude every live AWG server iface, even if resolver is off on some of them.
-        foreach (AwgConfig::query()->where('type', 'server')->where('enabled', true)->pluck('iface') as $iface) {
-            $iface = trim((string) $iface);
-            if ($iface !== '') {
-                $ifaces[] = $iface;
-            }
-        }
-        foreach ($connections as $conn) {
-            if (! $conn instanceof ResolverConnection || ! $conn->enabled || ! $conn->isAwg()) {
-                continue;
-            }
-            $ifaces[] = $conn->awgClientIface();
-        }
-
-        $ifaces = array_values(array_unique(array_filter(
-            $ifaces,
-            static fn (string $iface): bool => $iface !== ''
-        )));
-        sort($ifaces);
-
-        return $ifaces;
     }
 
     /**
@@ -1171,6 +1139,7 @@ class ResolverService
 
         $this->insertRouteRuleAfterDnsHijack($routeRules, [
             'inbound' => [TelegramSettings::MIXED_INBOUND_TAG],
+            'action' => 'route',
             'outbound' => $outTag,
         ]);
 

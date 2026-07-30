@@ -123,12 +123,35 @@ class ResolverSingBoxTproxyConfigTest extends TestCase
             $this->assertArrayNotHasKey('sniff', $dnsIn);
 
             $this->assertFalse($sb['route']['auto_detect_interface']);
-            $this->assertSame(ResolverService::EGRESS_INTERFACE, $sb['route']['default_interface']);
-            $this->assertContains($ifaceA, $sb['route']['exclude_interface']);
-            $this->assertContains($ifaceB, $sb['route']['exclude_interface']);
-            $this->assertContains(ResolverService::TUN_IFACE, $sb['route']['exclude_interface']);
+            $this->assertNotSame('', $sb['route']['default_interface']);
+            $this->assertMatchesRegularExpression('/^[A-Za-z0-9_.-]+$/', $sb['route']['default_interface']);
+            $this->assertArrayNotHasKey('exclude_interface', $sb['route']);
             $this->assertSame('direct', $sb['route']['final']);
             $this->assertNotContains('tun', array_column($sb['inbounds'], 'type'));
+            $this->assertArrayNotHasKey('independent_cache', $sb['dns']);
+
+            foreach ($sb['inbounds'] as $inbound) {
+                $this->assertArrayNotHasKey('sniff', $inbound);
+                $this->assertArrayNotHasKey('sniff_override_destination', $inbound);
+                $this->assertArrayNotHasKey('domain_strategy', $inbound);
+            }
+            foreach ($sb['dns']['servers'] as $server) {
+                $this->assertArrayHasKey('type', $server);
+                $this->assertArrayNotHasKey('address', $server);
+            }
+            foreach ($sb['dns']['rules'] as $rule) {
+                $this->assertArrayHasKey('action', $rule);
+            }
+            foreach ($sb['route']['rules'] as $rule) {
+                $this->assertArrayHasKey('action', $rule);
+            }
+            foreach ($sb['outbounds'] as $outbound) {
+                $this->assertNotSame('wireguard', $outbound['type'] ?? null);
+                $this->assertNotSame('block', $outbound['type'] ?? null);
+                $this->assertNotSame('dns', $outbound['type'] ?? null);
+                $this->assertArrayNotHasKey('override_address', $outbound);
+                $this->assertArrayNotHasKey('override_port', $outbound);
+            }
 
             $domainRoutes = array_values(array_filter(
                 $sb['route']['rules'],

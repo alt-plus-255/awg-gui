@@ -2,6 +2,8 @@
 
 return [
     'caddy_ports_apply_failed' => 'Настройки сохранены, но не удалось применить новые порты Caddy: :error',
+    'invalid_egress_interface' => 'Некорректное имя сетевого интерфейса',
+    'egress_apply_failed' => 'Настройки сохранены, но не удалось применить egress-интерфейс: :error',
     'ssl_already_issued' => 'Сертификат уже выпущен — HTTPS включён',
     'ssl_add_txt_record' => 'Добавьте TXT-запись в DNS, затем нажмите «Продолжить».',
     'ssl_issued' => 'Сертификат выпущен, HTTPS включён',

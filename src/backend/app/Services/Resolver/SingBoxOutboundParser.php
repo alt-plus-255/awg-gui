@@ -25,18 +25,54 @@ class SingBoxOutboundParser
     }
 
     /**
-     * Bring outbound to sing-box 1.12+ shape used by our resolver.
+     * Bring outbound to sing-box 1.12+/1.13 shape used by our resolver.
      *
      * @param  array<string, mixed>  $outbound
      * @return array<string, mixed>
      */
     public function normalize(array $outbound): array
     {
-        unset($outbound['tag']);
+        unset(
+            $outbound['tag'],
+            // Removed legacy inbound-style fields if pasted into outbound JSON.
+            $outbound['sniff'],
+            $outbound['sniff_override_destination'],
+            $outbound['sniff_timeout'],
+            $outbound['domain_strategy'],
+            $outbound['udp_disable_domain_unmapping'],
+        );
 
-        $type = (string) ($outbound['type'] ?? '');
+        $type = strtolower(trim((string) ($outbound['type'] ?? '')));
+        $aliases = [
+            'ss' => 'shadowsocks',
+            'hy2' => 'hysteria2',
+            'hysteria' => 'hysteria2',
+            'socks5' => 'socks',
+        ];
+        if (isset($aliases[$type])) {
+            $type = $aliases[$type];
+            $outbound['type'] = $type;
+        }
+
         if ($type === '') {
             return $outbound;
+        }
+
+        // Removed in sing-box 1.13.0 — fail early with a clear message.
+        if ($type === 'wireguard') {
+            throw ValidationException::withMessages([
+                'outbound_json' => [__('resolver.outbound_wireguard_removed')],
+            ]);
+        }
+        if ($type === 'block' || $type === 'dns') {
+            throw ValidationException::withMessages([
+                'outbound_json' => [__('resolver.outbound_special_removed', ['type' => $type])],
+            ]);
+        }
+
+        if ($type === 'direct') {
+            // Removed in sing-box 1.13.0 — use route rule actions instead.
+            unset($outbound['override_address'], $outbound['override_port']);
         }
 
         if ($type === 'vless') {

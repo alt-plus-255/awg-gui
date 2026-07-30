@@ -184,6 +184,17 @@
                     @filter="filterTimezones"
                   />
                 </div>
+                <div class="col-12 col-md-6">
+                  <q-select
+                    v-model="form.singbox_egress_interface"
+                    :options="egressInterfaceOptions"
+                    :label="t('settings.egressInterface')"
+                    :hint="egressInterfaceHint"
+                    filled
+                    emit-value
+                    map-options
+                  />
+                </div>
                 <div v-if="hasDomain" class="col-12">
                   <q-toggle
                     v-model="form.endpoint_use_domain"
@@ -768,7 +779,8 @@ const form = reactive({
   telegram_language: 'en',
   telegram_proxies: [],
   telegram_proxy_strategy: 'fastest',
-  telegram_notifications_enabled: true
+  telegram_notifications_enabled: true,
+  singbox_egress_interface: 'auto'
 })
 
 const telegramTesting = ref(false)
@@ -933,7 +945,8 @@ function snapshotForm () {
     telegram_language: form.telegram_language || 'en',
     telegram_proxies: form.telegram_proxies,
     telegram_proxy_strategy: form.telegram_proxy_strategy || 'fastest',
-    telegram_notifications_enabled: !!form.telegram_notifications_enabled
+    telegram_notifications_enabled: !!form.telegram_notifications_enabled,
+    singbox_egress_interface: String(form.singbox_egress_interface || 'auto').trim() || 'auto'
   })
 }
 
@@ -945,6 +958,29 @@ function buildTimezoneOptions (list) {
   const values = (Array.isArray(list) && list.length) ? list : ['UTC']
   return values.map((tz) => ({ label: tz, value: tz }))
 }
+
+const egressInterfaceOptions = computed(() => {
+  const eg = settingsStore.egress || {}
+  const detected = eg.detected || eg.resolved || 'eth0'
+  const opts = [{ label: t('settings.egressInterfaceAuto', { iface: detected }), value: 'auto' }]
+  const seen = new Set(['auto'])
+  for (const iface of (eg.options || [])) {
+    if (!iface || seen.has(iface)) continue
+    seen.add(iface)
+    opts.push({ label: iface, value: iface })
+  }
+  const current = String(form.singbox_egress_interface || 'auto')
+  if (current !== 'auto' && !seen.has(current)) {
+    opts.push({ label: current, value: current })
+  }
+  return opts
+})
+
+const egressInterfaceHint = computed(() => {
+  const eg = settingsStore.egress || {}
+  const resolved = eg.resolved || eg.detected || '—'
+  return t('settings.egressInterfaceHint', { iface: resolved })
+})
 
 function filterTimezones (val, update) {
   const all = buildTimezoneOptions(settingsStore.timezones)
@@ -974,6 +1010,9 @@ function applySettings (s) {
   if (s.telegram_proxy_strategy !== undefined) form.telegram_proxy_strategy = String(s.telegram_proxy_strategy || 'fastest')
   if (s.telegram_notifications_enabled !== undefined) {
     form.telegram_notifications_enabled = asBool(s.telegram_notifications_enabled)
+  }
+  if (s.singbox_egress_interface !== undefined) {
+    form.singbox_egress_interface = String(s.singbox_egress_interface || 'auto').trim() || 'auto'
   }
   if (s.telegram_proxies !== undefined) {
     const rows = normalizeTelegramProxies(s.telegram_proxies)
@@ -1300,6 +1339,7 @@ async function save () {
       telegram_language: form.telegram_language || 'en',
       telegram_proxy_strategy: form.telegram_proxy_strategy || 'fastest',
       telegram_notifications_enabled: !!form.telegram_notifications_enabled,
+      singbox_egress_interface: String(form.singbox_egress_interface || 'auto').trim() || 'auto',
       telegram_proxies: form.telegram_proxies
         .filter((p) => p.type === 'url' ? String(p.url || '').trim() !== '' : !!p.connection_id)
         .map((p) => ({

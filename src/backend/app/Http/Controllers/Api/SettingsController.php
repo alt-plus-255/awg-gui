@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Setting;
 use App\Services\AmneziaWg\AmneziaWgService;
 use App\Services\AmneziaWg\SslCertificateService;
+use App\Services\Resolver\EgressInterfaceResolver;
 use App\Services\System\ProjectUpdateService;
 use App\Services\Telegram\TelegramSettings;
 use App\Services\Telegram\TelegramWebhookSync;
@@ -22,6 +23,7 @@ class SettingsController extends Controller
         private ProjectUpdateService $projectUpdate,
         private TelegramSettings $telegram,
         private TelegramWebhookSync $telegramSync,
+        private EgressInterfaceResolver $egress,
     ) {}
 
     public function show()
@@ -43,6 +45,7 @@ class SettingsController extends Controller
             'ssl' => $this->ssl->status(),
             'webhook_schema' => $this->webhookSchema(),
             'timezones' => $this->timezoneOptions(),
+            'egress' => $this->egress->status(),
         ]);
     }
 
@@ -68,7 +71,22 @@ class SettingsController extends Controller
             'telegram_proxy_strategy' => ['sometimes', 'string', Rule::in(['fastest', 'first_ok'])],
             'telegram_notifications_enabled' => ['sometimes', 'boolean'],
             'telegram_language' => ['sometimes', 'string', Rule::in(['en', 'ru'])],
+            'singbox_egress_interface' => ['sometimes', 'string', 'max:32'],
         ]);
+
+        if (array_key_exists('singbox_egress_interface', $data)) {
+            $iface = trim((string) $data['singbox_egress_interface']);
+            if ($iface === '' || strtolower($iface) === EgressInterfaceResolver::AUTO) {
+                $data['singbox_egress_interface'] = EgressInterfaceResolver::AUTO;
+            } elseif (! $this->egress->isValidIfaceName($iface)) {
+                return response()->json([
+                    'message' => __('settings.invalid_egress_interface'),
+                    'errors' => ['singbox_egress_interface' => [__('settings.invalid_egress_interface')]],
+                ], 422);
+            } else {
+                $data['singbox_egress_interface'] = $iface;
+            }
+        }
 
         // Frontend always sends Telegram fields; only sync/rebuild when values actually change.
         $telegramChanged = false;
@@ -251,12 +269,31 @@ class SettingsController extends Controller
             $telegramSync = $this->telegramSync->syncAfterSettingsChange($proxiesChanged);
         }
 
+        if (array_key_exists('singbox_egress_interface', $data)) {
+            $this->egress->forgetCache();
+            try {
+                $this->awg->applyConfig();
+            } catch (\Throwable $e) {
+                return response()->json([
+                    'message' => __('settings.egress_apply_failed', ['error' => $e->getMessage()]),
+                    'settings' => $this->settingsPayload(),
+                    'display_endpoint' => $this->awg->resolveEndpointHost(),
+                    'panel_url' => $this->awg->resolvePanelUrl(),
+                    'ssl' => $this->ssl->status(),
+                    'timezones' => $this->timezoneOptions(),
+                    'egress' => $this->egress->status(),
+                    'telegram_sync' => $telegramSync,
+                ], 500);
+            }
+        }
+
         return response()->json([
             'settings' => $this->settingsPayload(),
             'display_endpoint' => $this->awg->resolveEndpointHost(),
             'panel_url' => $this->awg->resolvePanelUrl(),
             'ssl' => $this->ssl->status(),
             'timezones' => $this->timezoneOptions(),
+            'egress' => $this->egress->status(),
             'telegram_sync' => $telegramSync,
         ]);
     }
