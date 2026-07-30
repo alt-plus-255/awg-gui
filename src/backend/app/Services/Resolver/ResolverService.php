@@ -1272,15 +1272,16 @@ class ResolverService
     public function reloadSingBox(): void
     {
         $container = $this->awg->containerName();
-        try {
-            // Prefer volume copy (list CIDR routes) so AWG image rebuild is not required.
-            $this->docker->exec(
-                $container,
-                ['sh', '-c', 'if [ -x /config/reload-singbox.sh ]; then /config/reload-singbox.sh; else /usr/local/bin/reload-singbox.sh; fi'],
-                timeout: 30,
-            );
-        } catch (\Throwable $e) {
-            Log::warning('reload-singbox: '.$e->getMessage());
+        // Prefer volume copy (list CIDR routes) so AWG image rebuild is not required.
+        $result = $this->docker->exec(
+            $container,
+            ['sh', '-c', 'if [ -x /config/reload-singbox.sh ]; then /config/reload-singbox.sh; else /usr/local/bin/reload-singbox.sh; fi'],
+            timeout: 30,
+        );
+        if (! $result->successful()) {
+            $err = trim($result->errorOutput()."\n".$result->output());
+            Log::warning('reload-singbox: '.($err !== '' ? $err : 'command failed'));
+            throw new RuntimeException($err !== '' ? $err : 'sing-box reload failed');
         }
     }
 
