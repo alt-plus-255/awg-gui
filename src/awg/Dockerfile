@@ -23,7 +23,7 @@ RUN git clone --depth 1 https://github.com/amnezia-vpn/amneziawg-tools.git \
  && make install
 
 # Prefer vendored tarball to avoid flaky GitHub TLS during image build.
-ARG SING_BOX_VERSION=1.12.12
+ARG SING_BOX_VERSION=1.13.14
 COPY vendor/sing-box-${SING_BOX_VERSION}-linux-*.tar.gz /tmp/sing-box.tgz
 RUN ARCH="$(uname -m)" \
  && case "${ARCH}" in \
