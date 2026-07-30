@@ -381,6 +381,18 @@ remove_legacy_certbot_container() {
   docker rm -f awggui-certbot 2>/dev/null || true
 }
 
+cleanup_loaded_image_archives() {
+  local tar_file removed=0
+  for tar_file in "${SCRIPT_DIR}"/images/awggui-all-*.tar.gz "${SCRIPT_DIR}"/images/awggui-all-*.tar; do
+    [[ -f "${tar_file}" ]] || continue
+    rm -f "${tar_file}"
+    removed=1
+  done
+  if [[ "${removed}" -eq 1 ]]; then
+    ok "Removed bundled image archive(s) from ${SCRIPT_DIR}/images"
+  fi
+}
+
 load_images() {
   local tar_file=""
   for tar_file in "${SCRIPT_DIR}"/images/awggui-all-*.tar.gz "${SCRIPT_DIR}"/images/awggui-all-*.tar; do
@@ -391,6 +403,7 @@ load_images() {
   log "Loading Docker images from ${tar_file} ..."
   docker load -i "${tar_file}"
   ok "Images loaded"
+  cleanup_loaded_image_archives
 }
 
 seed_host_ssl_files() {

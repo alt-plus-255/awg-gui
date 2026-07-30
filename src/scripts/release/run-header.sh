@@ -44,6 +44,6 @@ ARGS=()
 [[ "${YES}" -eq 1 ]] && ARGS+=(--yes)
 
 echo "[run] Starting installer in ${INSTALL_DIR} ..."
-exec "${INSTALL_DIR}/bundle-install.sh" "${ARGS[@]}"
+"${INSTALL_DIR}/bundle-install.sh" "${ARGS[@]}"
 exit 0
 #__PAYLOAD__

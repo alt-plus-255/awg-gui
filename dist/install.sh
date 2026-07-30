@@ -7,6 +7,10 @@ VERSION="${AWG_GUI_VERSION:-}"
 INSTALL_DIR="${AWG_GUI_INSTALL_DIR:-/opt/awg-gui}"
 YES=0
 BUNDLE_LOCAL=""
+DOWNLOAD_TMP_DIR=""
+MIN_TMP_FREE_BYTES=$((1024 * 1024 * 1024))
+MIN_INSTALL_FREE_BYTES=$((768 * 1024 * 1024))
+MIN_DOCKER_FREE_BYTES=$((5 * 1024 * 1024 * 1024))
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -18,6 +22,14 @@ log() { echo -e "${CYAN}[install]${NC} $*" >&2; }
 ok() { echo -e "${GREEN}[ok]${NC} $*" >&2; }
 warn() { echo -e "${YELLOW}[warn]${NC} $*" >&2; }
 die() { echo -e "${RED}[error]${NC} $*" >&2; exit 1; }
+
+cleanup() {
+  if [[ -n "${DOWNLOAD_TMP_DIR}" && -d "${DOWNLOAD_TMP_DIR}" ]]; then
+    rm -rf "${DOWNLOAD_TMP_DIR}"
+  fi
+}
+
+trap cleanup EXIT
 
 usage() {
   cat <<EOF
@@ -121,6 +133,100 @@ human_mib() {
   awk -v b="${bytes}" 'BEGIN { printf "%.1f MiB", b / 1048576 }'
 }
 
+read_tty() {
+  local prompt="$1" ans=""
+  if [[ -r /dev/tty ]]; then
+    printf '%s' "${prompt}" > /dev/tty
+    read -r ans < /dev/tty || true
+  elif [[ -t 0 ]]; then
+    read -r -p "${prompt}" ans || true
+  fi
+  printf '%s' "${ans}"
+}
+
+confirm() {
+  local msg="$1" default="${2:-n}" ans hint
+  if [[ "${YES}" -eq 1 ]]; then
+    log "${msg} → yes (--yes)"
+    return 0
+  fi
+  if [[ "${default}" == "y" ]]; then
+    hint="[Y/n]"
+  else
+    hint="[y/N]"
+  fi
+  ans="$(read_tty "${msg} ${hint}: ")"
+  ans="${ans:-${default}}"
+  case "${ans}" in
+    y|Y|yes|YES) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+existing_parent_dir() {
+  local path="$1"
+  while [[ ! -e "${path}" && "${path}" != "/" ]]; do
+    path="$(dirname "${path}")"
+  done
+  printf '%s\n' "${path}"
+}
+
+available_bytes() {
+  local path="$1"
+  df -Pk "${path}" 2>/dev/null | awk 'NR==2 { print $4 * 1024 }'
+}
+
+docker_root_dir() {
+  docker info --format '{{.DockerRootDir}}' 2>/dev/null || printf '/var/lib/docker\n'
+}
+
+cleanup_stale_tmp_artifacts() {
+  local paths=() count=0 size=0
+  shopt -s nullglob
+  paths=(/tmp/awg-gui-install.* /tmp/awg-gui-extract.*)
+  shopt -u nullglob
+  count=${#paths[@]}
+  (( count > 0 )) || return 0
+
+  size="$(du -sb "${paths[@]}" 2>/dev/null | awk '{sum+=$1} END {print sum+0}')"
+  warn "Found ${count} stale awg-gui temp artifact(s) in /tmp using $(human_size "${size}")"
+  if confirm "Remove stale awg-gui temp files from /tmp before install?" y; then
+    rm -rf "${paths[@]}"
+    ok "Removed stale awg-gui temp files from /tmp"
+  else
+    warn "Keeping stale /tmp artifacts may cause install to run out of disk space"
+  fi
+}
+
+require_free_space() {
+  local path="$1" required="$2" label="$3" avail
+  avail="$(available_bytes "${path}")"
+  [[ "${avail}" =~ ^[0-9]+$ ]] || die "Failed to check free space for ${path}"
+  if (( avail < required )); then
+    die "Not enough free space for ${label} at ${path}: need at least $(human_size "${required}") free, have $(human_size "${avail}"). Clean disk space and retry."
+  fi
+  ok "${label} free space OK at ${path} ($(human_size "${avail}") available)"
+}
+
+preflight_disk_checks() {
+  local bundle_bytes="$1"
+  local tmp_required install_required docker_required install_parent docker_root
+
+  tmp_required=$(( bundle_bytes * 2 + 256 * 1024 * 1024 ))
+  (( tmp_required < MIN_TMP_FREE_BYTES )) && tmp_required="${MIN_TMP_FREE_BYTES}"
+
+  install_required=$(( bundle_bytes + 256 * 1024 * 1024 ))
+  (( install_required < MIN_INSTALL_FREE_BYTES )) && install_required="${MIN_INSTALL_FREE_BYTES}"
+
+  docker_required="${MIN_DOCKER_FREE_BYTES}"
+  install_parent="$(existing_parent_dir "${INSTALL_DIR}")"
+  docker_root="$(docker_root_dir)"
+
+  require_free_space "/tmp" "${tmp_required}" "installer temp space"
+  require_free_space "${install_parent}" "${install_required}" "install directory space"
+  require_free_space "${docker_root}" "${docker_required}" "Docker data space"
+}
+
 RELEASE_URL=""
 RELEASE_SIZE_BYTES=0
 
@@ -215,6 +321,7 @@ fetch_url_with_progress() {
 download_bundle() {
   local dest dir url size_bytes filename
   dir="$(mktemp -d /tmp/awg-gui-install.XXXXXX)"
+  DOWNLOAD_TMP_DIR="${dir}"
   dest="${dir}/bundle.run"
 
   if [[ -n "${BUNDLE_LOCAL}" ]]; then
@@ -222,7 +329,7 @@ download_bundle() {
     cp "${BUNDLE_LOCAL}" "${dest}"
     ok "Using local bundle ${BUNDLE_LOCAL}"
   else
-    resolve_release_asset
+    [[ -n "${RELEASE_URL}" ]] || resolve_release_asset
     url="${RELEASE_URL}"
     size_bytes="${RELEASE_SIZE_BYTES}"
     filename="${url##*/}"
@@ -240,17 +347,26 @@ download_bundle() {
 }
 
 main() {
+  local bundle args=() bundle_bytes=0
   need_downloader
   # Ask / install Docker before downloading ~500 MiB release bundle
   load_ensure_docker
   ensure_docker_engine
-
-  local bundle args=()
+  if [[ -n "${BUNDLE_LOCAL}" ]]; then
+    [[ -f "${BUNDLE_LOCAL}" ]] || die "Bundle not found: ${BUNDLE_LOCAL}"
+    bundle_bytes="$(stat -c%s "${BUNDLE_LOCAL}" 2>/dev/null || echo 0)"
+  else
+    resolve_release_asset
+    bundle_bytes="${RELEASE_SIZE_BYTES}"
+  fi
+  [[ "${bundle_bytes}" =~ ^[0-9]+$ ]] || bundle_bytes=0
+  cleanup_stale_tmp_artifacts
+  preflight_disk_checks "${bundle_bytes}"
   bundle="$(download_bundle)"
   args=(--dir="${INSTALL_DIR}")
   [[ "${YES}" -eq 1 ]] && args+=(--yes)
   log "Running release installer ..."
-  exec "${bundle}" "${args[@]}"
+  "${bundle}" "${args[@]}"
 }
 
 main "$@"
