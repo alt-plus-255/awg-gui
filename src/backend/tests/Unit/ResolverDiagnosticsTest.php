@@ -126,12 +126,11 @@ __IP_ROUTE_100__
 local default dev lo scope host
 __MANGLE_SAVE__
 *mangle
-[0:0] -A PREROUTING -i awg0 -d 198.18.0.0/15 -p tcp -m socket -j DIVERT
 [0:0] -A PREROUTING -i awg0 -d 198.18.0.0/15 -p udp -m socket -j DIVERT
 [42:2048] -A PREROUTING -i awg0 -j RS_awg0
-[0:0] -A RS_awg0 -d 198.18.0.0/15 -p tcp -j TPROXY --on-port 1602 --on-ip 0.0.0.0 --tproxy-mark 0x1/0x1
-[0:0] -A RS_awg0 -d 198.18.0.0/15 -p udp -j TPROXY --on-port 1602 --on-ip 0.0.0.0 --tproxy-mark 0x1/0x1
-[5:300] -A RS_awg0 -d 104.16.0.0/12 -p tcp -j TPROXY --on-port 1602 --on-ip 0.0.0.0 --tproxy-mark 0x1/0x1
+[0:0] -A RS_awg0 -d 198.18.0.0/15 -p tcp -j TPROXY --on-port 1602 --on-ip 10.66.66.1 --tproxy-mark 0x1/0x1
+[0:0] -A RS_awg0 -d 198.18.0.0/15 -p udp -j TPROXY --on-port 1602 --on-ip 10.66.66.1 --tproxy-mark 0x1/0x1
+[5:300] -A RS_awg0 -d 104.16.0.0/12 -p tcp -j TPROXY --on-port 1602 --on-ip 10.66.66.1 --tproxy-mark 0x1/0x1
 COMMIT
 __NAT_SAVE__
 *nat

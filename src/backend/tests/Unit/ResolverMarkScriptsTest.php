@@ -52,16 +52,20 @@ class ResolverMarkScriptsTest extends TestCase
         $this->assertStringContainsString('tproxy_add "$FAKEIP" tcp', $mark);
         $this->assertStringContainsString('tproxy_add "$FAKEIP" udp', $mark);
         $this->assertStringContainsString('tproxy_add "$cidr" tcp', $mark);
+        // TCP DIVERT blackholes FakeIP TCP in Docker — only UDP DIVERT.
+        $this->assertStringContainsString('-d "$FAKEIP" -p udp -m socket -j DIVERT', $mark);
+        $this->assertStringNotContainsString(
+            'iptables -t mangle -I PREROUTING 1 -i "$IFACE" -d "$FAKEIP" -p tcp -m socket -j DIVERT',
+            $mark
+        );
+        $this->assertStringContainsString('ip -4 -o addr show dev "$IFACE"', $mark);
+        $this->assertStringContainsString('ip route replace local "$FAKEIP" dev lo table', $mark);
         // No NAT REDIRECT install for FakeIP/list (legacy cleanup only).
         $this->assertStringNotContainsString('REDIRECT --to-ports', $mark);
         $this->assertStringNotContainsString(
             'iptables -I FORWARD 1 -i "$IFACE" -d "$FAKEIP" -p udp -j REJECT',
             $mark
         );
-        // DIVERT must be FakeIP-scoped for both tcp and udp.
-        $this->assertStringContainsString('-d "$FAKEIP" -p tcp -m socket -j DIVERT', $mark);
-        $this->assertStringContainsString('-d "$FAKEIP" -p udp -m socket -j DIVERT', $mark);
-        $this->assertStringContainsString('iptables -t mangle -D PREROUTING -p udp -m socket -j DIVERT', $mark);
 
         $unmark = (string) file_get_contents($this->awgDir.'/resolver-unmark.sh');
         $this->assertStringContainsString('TPROXY_PORT='.ResolverService::TPROXY_PORT, $unmark);
