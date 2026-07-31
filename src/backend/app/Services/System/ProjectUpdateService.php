@@ -26,7 +26,10 @@ class ProjectUpdateService
     public function status(bool $checkRelease = false): array
     {
         $install = $this->readKeyValueFile($this->hostGuiDir.'/install.state');
-        $update = $this->readJsonFile($this->hostGuiDir.'/update.state');
+        $update = $this->reconcileUpdateState(
+            $this->readJsonFile($this->hostGuiDir.'/update.state'),
+            $install
+        );
 
         $currentVersion = $this->detectCurrentVersion($install);
         $running = $this->isRunningState($update);
@@ -178,6 +181,68 @@ class ProjectUpdateService
     private function isRunningState(array $update): bool
     {
         return ($update['status'] ?? null) === 'running';
+    }
+
+    /**
+     * Heal stuck "running" after panel-ops was recreated mid-upgrade (runner never wrote success).
+     *
+     * @param  array<string, mixed>  $update
+     * @param  array<string, string>  $install
+     * @return array<string, mixed>
+     */
+    private function reconcileUpdateState(array $update, array $install): array
+    {
+        if (($update['status'] ?? null) !== 'running') {
+            return $update;
+        }
+
+        $target = ltrim(trim((string) ($update['target_version'] ?? '')), 'v');
+        $installed = ltrim(trim((string) ($install['bundle_version'] ?? '')), 'v');
+        if ($installed === '' || $installed === 'unknown') {
+            $installed = ltrim(trim((string) ($this->detectCurrentVersion($install)['version'] ?? '')), 'v');
+        }
+
+        $completedAt = trim((string) ($install['completed_at'] ?? ''));
+        $startedAt = trim((string) ($update['started_at'] ?? ''));
+
+        if (
+            $target !== ''
+            && $installed !== ''
+            && $installed !== 'unknown'
+            && $target === $installed
+            && $completedAt !== ''
+            && $startedAt !== ''
+            && strcmp($completedAt, $startedAt) >= 0
+        ) {
+            $update['status'] = 'success';
+            $update['finished_at'] = $completedAt;
+            $update['message'] = 'Update completed successfully.';
+            $this->persistUpdateState($update);
+
+            return $update;
+        }
+
+        $startedTs = $startedAt !== '' ? strtotime($startedAt) : false;
+        if ($startedTs !== false && (time() - $startedTs) > 7200) {
+            $update['status'] = 'failed';
+            $update['finished_at'] = gmdate('Y-m-d\TH:i:s\Z');
+            $update['message'] = 'Update timed out or was interrupted.';
+            $this->persistUpdateState($update);
+        }
+
+        return $update;
+    }
+
+    /**
+     * @param  array<string, mixed>  $state
+     */
+    private function persistUpdateState(array $state): void
+    {
+        $path = $this->hostGuiDir.'/update.state';
+        @file_put_contents(
+            $path,
+            json_encode($state, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES).PHP_EOL
+        );
     }
 
     private function normalizeStatus(mixed $status): string

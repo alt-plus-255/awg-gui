@@ -66,6 +66,8 @@ class ProjectUpdateServiceTest extends TestCase
         file_put_contents($hostDir.'/update.state', json_encode([
             'pid' => getmypid(),
             'status' => 'running',
+            'target_version' => '2.0.0',
+            'started_at' => '2026-07-31T07:00:00Z',
             'message' => 'busy',
         ], JSON_PRETTY_PRINT));
 
@@ -84,6 +86,67 @@ class ProjectUpdateServiceTest extends TestCase
         $this->expectExceptionMessage('update_already_running');
 
         $service->start();
+    }
+
+    public function test_status_heals_stale_running_when_install_completed_target(): void
+    {
+        putenv('PANEL_OPS_TOKEN=test-token');
+        $_ENV['PANEL_OPS_TOKEN'] = 'test-token';
+
+        $hostDir = $this->makeTempDir();
+        $composeDir = $this->makeTempDir();
+
+        file_put_contents($hostDir.'/install.state', implode("\n", [
+            'completed_at=2026-07-31T07:20:00Z',
+            'bundle_version=1.0.1',
+        ]));
+
+        file_put_contents($hostDir.'/update.state', json_encode([
+            'pid' => 1,
+            'status' => 'running',
+            'target_version' => '1.0.1',
+            'started_at' => '2026-07-31T07:13:00Z',
+            'finished_at' => null,
+            'message' => 'Updating to 1.0.1...',
+        ], JSON_PRETTY_PRINT));
+
+        $service = new ProjectUpdateService(new PanelOpsClient, $hostDir, $composeDir);
+        $status = $service->status();
+
+        $this->assertSame('success', $status['status']);
+        $this->assertFalse($status['running']);
+
+        $persisted = json_decode((string) file_get_contents($hostDir.'/update.state'), true);
+        $this->assertSame('success', $persisted['status'] ?? null);
+    }
+
+    public function test_status_marks_stale_running_update_as_failed_after_timeout(): void
+    {
+        putenv('PANEL_OPS_TOKEN=test-token');
+        $_ENV['PANEL_OPS_TOKEN'] = 'test-token';
+
+        $hostDir = $this->makeTempDir();
+        $composeDir = $this->makeTempDir();
+
+        file_put_contents($hostDir.'/install.state', implode("\n", [
+            'completed_at=2026-07-01T00:00:00Z',
+            'bundle_version=1.0.0',
+        ]));
+
+        file_put_contents($hostDir.'/update.state', json_encode([
+            'pid' => 1,
+            'status' => 'running',
+            'target_version' => '1.0.1',
+            'started_at' => gmdate('Y-m-d\TH:i:s\Z', time() - 8000),
+            'finished_at' => null,
+            'message' => 'Updating...',
+        ], JSON_PRETTY_PRINT));
+
+        $service = new ProjectUpdateService(new PanelOpsClient, $hostDir, $composeDir);
+        $status = $service->status();
+
+        $this->assertSame('failed', $status['status']);
+        $this->assertFalse($status['running']);
     }
 
     public function test_start_rejects_when_already_on_latest_version(): void

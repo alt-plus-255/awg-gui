@@ -31,7 +31,7 @@ class ResolverMarkScriptsTest extends TestCase
         parent::tearDown();
     }
 
-    public function test_mark_script_branches_on_reject_quic_flag(): void
+    public function test_mark_script_uses_unified_tproxy_for_fakeip_tcp_udp(): void
     {
         $awg = Mockery::mock(AmneziaWgService::class);
         $awg->shouldReceive('configDir')->andReturn($this->awgDir);
@@ -45,18 +45,27 @@ class ResolverMarkScriptsTest extends TestCase
         $this->assertTrue($scripts->ensureResolverMarkScripts());
 
         $mark = (string) file_get_contents($this->awgDir.'/resolver-mark.sh');
-        $this->assertStringContainsString('REJECT_QUIC="${2:-1}"', $mark);
-        $this->assertStringContainsString('UDP_PORT='.ResolverService::UDP_TPROXY_PORT, $mark);
-        $this->assertStringContainsString('if [ "$REJECT_QUIC" = "0" ]; then', $mark);
+        $this->assertStringContainsString('REJECT_QUIC="${2:-0}"', $mark);
+        $this->assertStringNotContainsString('if [ "$REJECT_QUIC" = "0" ]; then', $mark);
+        $this->assertStringContainsString('TPROXY_PORT='.ResolverService::TPROXY_PORT, $mark);
         $this->assertStringContainsString('-j TPROXY', $mark);
-        $this->assertStringContainsString('--on-port "$UDP_PORT"', $mark);
-        $this->assertStringContainsString('-j REJECT --reject-with icmp-port-unreachable', $mark);
-        $this->assertStringContainsString('REDIR_PORT='.ResolverService::TPROXY_PORT, $mark);
+        $this->assertStringContainsString('tproxy_add "$FAKEIP" tcp', $mark);
+        $this->assertStringContainsString('tproxy_add "$FAKEIP" udp', $mark);
+        $this->assertStringContainsString('tproxy_add "$cidr" tcp', $mark);
+        // No NAT REDIRECT install for FakeIP/list (legacy cleanup only).
+        $this->assertStringNotContainsString('REDIRECT --to-ports', $mark);
+        $this->assertStringNotContainsString(
+            'iptables -I FORWARD 1 -i "$IFACE" -d "$FAKEIP" -p udp -j REJECT',
+            $mark
+        );
+        // DIVERT must be FakeIP-scoped for both tcp and udp.
+        $this->assertStringContainsString('-d "$FAKEIP" -p tcp -m socket -j DIVERT', $mark);
+        $this->assertStringContainsString('-d "$FAKEIP" -p udp -m socket -j DIVERT', $mark);
+        $this->assertStringContainsString('iptables -t mangle -D PREROUTING -p udp -m socket -j DIVERT', $mark);
 
         $unmark = (string) file_get_contents($this->awgDir.'/resolver-unmark.sh');
-        $this->assertStringContainsString('UDP_PORT='.ResolverService::UDP_TPROXY_PORT, $unmark);
+        $this->assertStringContainsString('TPROXY_PORT='.ResolverService::TPROXY_PORT, $unmark);
         $this->assertStringContainsString('-j TPROXY', $unmark);
-        $this->assertStringContainsString('-j REJECT --reject-with icmp-port-unreachable', $unmark);
     }
 
     private function rmTree(string $dir): void

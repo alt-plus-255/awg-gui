@@ -36,19 +36,23 @@ function buildUpdateCommand(?string $version): array
     $repo = getenv('AWG_GUI_GITHUB_REPO') ?: 'alt-plus-255/awg-gui';
     $installUrl = sprintf('https://raw.githubusercontent.com/%s/refs/heads/main/dist/install.sh', $repo);
 
-    // nsenter -m switches to the host mount namespace; /host from a container bind is not visible there.
-    $hostShell = '/bin/bash -s -- --yes';
+    // Host install must outlive panel-ops recreate (compose up restarts this container).
+    // setsid + log redirect detach from the alpine helper / panel-ops lifetime.
+    // bundle-install.sh finalizes /etc/awg-gui/update.state when the upgrade finishes.
+    $versionExport = '';
     if ($version !== null && $version !== '') {
-        $hostShell = sprintf(
-            '/usr/bin/env AWG_GUI_VERSION=%s /bin/bash -s -- --yes',
-            escapeshellarg($version)
-        );
+        $versionExport = sprintf('export AWG_GUI_VERSION=%s; ', escapeshellarg($version));
     }
 
+    $hostJob = $versionExport.sprintf(
+        'curl -fsSL %s | /bin/bash -s -- --yes >>/etc/awg-gui/update.log 2>&1',
+        escapeshellarg($installUrl)
+    );
+
     $helper = sprintf(
-        'set -eu; apk add --no-cache util-linux curl >/dev/null; curl -fsSL %s | nsenter -t 1 -m -u -i -n -p -- %s',
-        escapeshellarg($installUrl),
-        $hostShell
+        'set -eu; apk add --no-cache util-linux curl >/dev/null; '.
+        'nsenter -t 1 -m -u -i -n -p -- setsid -f /bin/bash -c %s </dev/null >/dev/null 2>&1',
+        escapeshellarg($hostJob)
     );
 
     return [
@@ -64,61 +68,6 @@ function buildUpdateCommand(?string $version): array
         '-lc',
         $helper,
     ];
-}
-
-/**
- * Best-effort host /tmp + helper image cleanup after a successful update.
- * Bundle install also drops unused awggui:* tags; this covers leftovers and alpine:3.20.
- */
-function cleanupAfterUpdate(string $logPath): void
-{
-    $tmpClean = implode(' ', [
-        'find /host-tmp -maxdepth 1 -type d',
-        '\\( -name \'awg-gui-install.*\' -o -name \'awg-gui-extract.*\' \\)',
-        '-exec rm -rf {} + 2>/dev/null || true;',
-        'find /host-tmp -maxdepth 1 -type f',
-        '\\( -name \'awg-gui-install.sh\' -o -name \'awg-gui-ensure-docker.*\'',
-        '-o -name \'awg-gui*.log\' -o -name \'awg-gui-*.log\' \\)',
-        '-delete 2>/dev/null || true',
-    ]);
-
-    $command = [
-        'docker',
-        'run',
-        '--rm',
-        '-v',
-        '/tmp:/host-tmp',
-        'alpine:3.20',
-        'sh',
-        '-lc',
-        $tmpClean,
-    ];
-
-    $descriptors = [
-        0 => ['file', '/dev/null', 'r'],
-        1 => ['file', $logPath, 'a'],
-        2 => ['file', $logPath, 'a'],
-    ];
-
-    $process = @proc_open($command, $descriptors, $pipes);
-    if (is_resource($process)) {
-        proc_close($process);
-    }
-
-    // Drop unused previous project tags if an older bundle skipped that step.
-    $images = [];
-    @exec("docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null", $images);
-    foreach ($images as $image) {
-        $image = trim($image);
-        if ($image === '' || ! str_starts_with($image, 'awggui-') || str_contains($image, ':<none>')) {
-            continue;
-        }
-        // Without -f, in-use images are kept.
-        @exec('docker rmi '.escapeshellarg($image).' >/dev/null 2>&1');
-    }
-
-    @exec('docker image prune -f >/dev/null 2>&1');
-    @exec('docker rmi alpine:3.20 >/dev/null 2>&1');
 }
 
 $targetVersion = trim((string) getenv('AWG_GUI_UPDATE_VERSION'));
@@ -147,7 +96,6 @@ $descriptors = [
     2 => ['file', $logPath, 'a'],
 ];
 
-$exitCode = 1;
 try {
     $process = proc_open($command, $descriptors, $pipes);
     if (! is_resource($process)) {
@@ -155,6 +103,9 @@ try {
     }
 
     $exitCode = proc_close($process);
+    if ($exitCode !== 0) {
+        throw new RuntimeException("Update helper container exited with code {$exitCode}.");
+    }
 } catch (Throwable $e) {
     @file_put_contents($logPath, '['.isoNow().'] '.$e->getMessage().PHP_EOL, FILE_APPEND);
     $state['status'] = 'failed';
@@ -164,16 +115,11 @@ try {
     exit(1);
 }
 
-if ($exitCode === 0) {
-    @file_put_contents($logPath, '['.isoNow()."] cleaning temporary update artifacts\n", FILE_APPEND);
-    cleanupAfterUpdate($logPath);
-}
+// Host install continues detached. Keep status=running; installer writes the final state.
+@file_put_contents(
+    $logPath,
+    '['.isoNow()."] host update job started (detached); waiting for installer to finish\n",
+    FILE_APPEND
+);
 
-$state['status'] = $exitCode === 0 ? 'success' : 'failed';
-$state['finished_at'] = isoNow();
-$state['message'] = $exitCode === 0
-    ? 'Update completed successfully.'
-    : "Update failed with exit code {$exitCode}.";
-writeRunnerState($state);
-
-exit($exitCode);
+exit(0);

@@ -97,7 +97,7 @@ class ResolverDiagnosticsTest extends TestCase
                     'listen_port' => 53,
                 ],
                 [
-                    'type' => 'redirect',
+                    'type' => 'tproxy',
                     'tag' => ResolverService::TPROXY_INBOUND_TAG,
                     'listen' => ResolverService::TPROXY_LISTEN,
                     'listen_port' => ResolverService::TPROXY_PORT,
@@ -113,26 +113,29 @@ class ResolverDiagnosticsTest extends TestCase
         $docker = Mockery::mock(DockerRuntime::class);
         $docker->shouldReceive('exec')
             ->once()
-            ->andReturn($this->processResult('yes'));
-        $docker->shouldReceive('exec')
-            ->once()
             ->andReturn($this->processResult(<<<'OUT'
 __SS_UDP__
 UNCONN 0 0 0.0.0.0:53 0.0.0.0:* users:(("sing-box",pid=1,fd=3))
+UNCONN 0 0 0.0.0.0:1602 0.0.0.0:* users:(("sing-box",pid=1,fd=4))
 __SS_TCP__
 LISTEN 0 4096 0.0.0.0:1602 0.0.0.0:* users:(("sing-box",pid=1,fd=5))
 __IP_RULE__
 0:      from all lookup local
+32765:  from all fwmark 0x1 lookup 100
 __IP_ROUTE_100__
+local default dev lo scope host
 __MANGLE_SAVE__
 *mangle
+[0:0] -A PREROUTING -i awg0 -d 198.18.0.0/15 -p tcp -m socket -j DIVERT
+[0:0] -A PREROUTING -i awg0 -d 198.18.0.0/15 -p udp -m socket -j DIVERT
+[42:2048] -A PREROUTING -i awg0 -j RS_awg0
+[0:0] -A RS_awg0 -d 198.18.0.0/15 -p tcp -j TPROXY --on-port 1602 --on-ip 0.0.0.0 --tproxy-mark 0x1/0x1
+[0:0] -A RS_awg0 -d 198.18.0.0/15 -p udp -j TPROXY --on-port 1602 --on-ip 0.0.0.0 --tproxy-mark 0x1/0x1
+[5:300] -A RS_awg0 -d 104.16.0.0/12 -p tcp -j TPROXY --on-port 1602 --on-ip 0.0.0.0 --tproxy-mark 0x1/0x1
 COMMIT
 __NAT_SAVE__
 *nat
-[42:2048] -A PREROUTING -i awg0 -j RSNAT_awg0
 [7:420] -A PREROUTING -i awg0 -p udp -m udp --dport 53 -j REDIRECT --to-ports 53
-[0:0] -A RSNAT_awg0 -d 198.18.0.0/15 -p tcp -j REDIRECT --to-ports 1602
-[5:300] -A RSNAT_awg0 -d 104.16.0.0/12 -p tcp -j REDIRECT --to-ports 1602
 COMMIT
 OUT
             ));
@@ -166,7 +169,7 @@ OUT
         $this->assertSame(7, $result['details']['iptables']['nat_dns_redirect_hits']);
         $this->assertSame(0, $result['details']['clash']['connections_current']);
         $this->assertSame(ResolverService::TPROXY_LISTEN, $result['details']['config']['tproxy_listen_addr']);
-        $this->assertSame('redirect', $result['details']['config']['delivery_inbound_type']);
+        $this->assertSame('tproxy', $result['details']['config']['delivery_inbound_type']);
 
         $policy = collect($result['checks'])->firstWhere('id', 'tproxy_policy');
         $this->assertNotNull($policy);

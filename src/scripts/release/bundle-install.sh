@@ -11,6 +11,7 @@ PROJECT_NAME=awggui
 YES=0
 UPGRADE_MODE=0
 REPAIR_MODE=0
+BUNDLE_VERSION=""
 PANEL_PORT_DEFAULT=8877
 AWG_PORT_DEFAULT=51820
 INTERNAL_SUBNET_DEFAULT="10.66.66.0/24"
@@ -222,16 +223,68 @@ choose_install_mode() {
   esac
 }
 
-mark_install_complete() {
-  local version=""
-  local tar_file=""
+detect_bundle_version() {
+  local tar_file="" version=""
   for tar_file in "${SCRIPT_DIR}"/images/awggui-all-*.tar.gz "${SCRIPT_DIR}"/images/awggui-all-*.tar; do
     [[ -f "${tar_file}" ]] || continue
     version="$(basename "${tar_file}" .tar.gz)"
     version="$(basename "${version}" .tar)"
     version="${version#awggui-all-}"
-    break
+    BUNDLE_VERSION="${version}"
+    return 0
   done
+  if [[ -f "${COMPOSE_FILE}" ]]; then
+    version="$(grep -Eo 'image:[[:space:]]*awggui-app:[^[:space:]]+' "${COMPOSE_FILE}" | head -1 | sed 's/.*awggui-app://')"
+    if [[ -n "${version}" ]]; then
+      BUNDLE_VERSION="${version}"
+      return 0
+    fi
+  fi
+  return 1
+}
+
+# Panel update-runner may die when panel-ops is recreated; finalize its state from the host install.
+finalize_running_update_state() {
+  local new_status="$1"
+  local message="$2"
+  local state_file=/etc/awg-gui/update.state
+  local raw pid target started finished
+
+  [[ -f "${state_file}" ]] || return 0
+  raw="$(cat "${state_file}" 2>/dev/null || true)"
+  [[ "${raw}" == *'"status": "running"'* || "${raw}" == *'"status":"running"'* ]] || return 0
+
+  pid="$(printf '%s' "${raw}" | tr -d '\n' | sed -n 's/.*"pid"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p')"
+  target="$(printf '%s' "${raw}" | tr -d '\n' | sed -n 's/.*"target_version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
+  started="$(printf '%s' "${raw}" | tr -d '\n' | sed -n 's/.*"started_at"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
+  finished="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+  # Keep JSON simple (messages are fixed English strings without quotes).
+  cat > "${state_file}" <<EOF
+{
+  "pid": ${pid:-0},
+  "status": "${new_status}",
+  "target_version": "${target}",
+  "started_at": "${started}",
+  "finished_at": "${finished}",
+  "message": "${message}"
+}
+EOF
+}
+
+on_install_exit() {
+  local ec=$?
+  if [[ "${UPGRADE_MODE}" -eq 1 && "${ec}" -ne 0 ]]; then
+    finalize_running_update_state "failed" "Update failed with exit code ${ec}."
+  fi
+}
+
+mark_install_complete() {
+  local version="${BUNDLE_VERSION}"
+  if [[ -z "${version}" ]]; then
+    detect_bundle_version || true
+    version="${BUNDLE_VERSION}"
+  fi
   mkdir -p /etc/awg-gui
   cat > /etc/awg-gui/install.state <<EOF
 completed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -415,9 +468,20 @@ cleanup_unused_project_images() {
   fi
 }
 
+cleanup_tmp_install_artifacts() {
+  find /tmp -maxdepth 1 -type d \( -name 'awg-gui-install.*' -o -name 'awg-gui-extract.*' \) \
+    -exec rm -rf {} + 2>/dev/null || true
+  find /tmp -maxdepth 1 -type f \
+    \( -name 'awg-gui-install.sh' -o -name 'awg-gui-ensure-docker.*' \
+       -o -name 'awg-gui*.log' -o -name 'awg-gui-*.log' \) \
+    -delete 2>/dev/null || true
+  docker rmi alpine:3.20 >/dev/null 2>&1 || true
+}
+
 cleanup_after_install() {
   cleanup_loaded_image_archives
   cleanup_unused_project_images
+  cleanup_tmp_install_artifacts
 }
 
 load_images() {
@@ -426,6 +490,8 @@ load_images() {
     [[ -f "${tar_file}" ]] && break
   done
   [[ -f "${tar_file}" ]] || die "Missing ${SCRIPT_DIR}/images/awggui-all-*.tar.gz"
+
+  detect_bundle_version || true
 
   log "Loading Docker images from ${tar_file} ..."
   docker load -i "${tar_file}"
@@ -654,6 +720,8 @@ main() {
   [[ -f "${COMPOSE_FILE}" ]] || die "Missing ${COMPOSE_FILE}"
   [[ -d /dev/net/tun ]] || warn "/dev/net/tun not found — AWG userspace may still work"
 
+  trap on_install_exit EXIT
+
   ensure_curl
   ensure_docker_engine
   choose_install_mode
@@ -732,6 +800,10 @@ EOF
   install_cli_and_systemd
   mark_install_complete
   cleanup_after_install
+
+  if [[ "${UPGRADE_MODE}" -eq 1 ]]; then
+    finalize_running_update_state "success" "Update completed successfully."
+  fi
 
   local url="http://${display_host}:${panel_port}"
   print_helper

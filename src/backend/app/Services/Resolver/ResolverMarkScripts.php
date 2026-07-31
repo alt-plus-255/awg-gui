@@ -42,13 +42,16 @@ class ResolverMarkScripts
 #!/bin/sh
 # Selective FakeIP/list delivery into sing-box (NOT TUN/auto_route):
 # - AWG iface owns the client full-tunnel.
-# - TCP FakeIP + list CIDRs → NAT REDIRECT → sing-box :{$tproxyPort} (Docker-safe).
-# - UDP FakeIP: arg2 reject_quic=1 → REJECT (force TCP); reject_quic=0 → TPROXY :{$udpTproxyPort}.
+# - FakeIP TCP+UDP + list CIDR TCP → TPROXY :{$tproxyPort} (podkop/forkop-style).
+#   Use --on-ip 0.0.0.0 (NOT 127.0.0.1) — Docker route_localnet-safe.
+# - Block QUIC is enforced in sing-box (protocol=quic reject), not iptables.
+# - Arg2 (legacy reject_quic) is accepted for PostUp compatibility but ignored.
 # - Everything else stays on \${1} and exits via POSTROUTING MASQUERADE (direct / VDS IP).
 IFACE="\${1:?iface}"
-REJECT_QUIC="\${2:-1}"
-REDIR_PORT={$tproxyPort}
-UDP_PORT={$udpTproxyPort}
+# Legacy PostUp still passes reject_quic as \$2; keep for compatibility.
+REJECT_QUIC="\${2:-0}"
+TPROXY_PORT={$tproxyPort}
+LEGACY_UDP_PORT={$udpTproxyPort}
 FAKEIP={$fakeip}
 TPROXY_MARK={$tproxyMark}
 TPROXY_TABLE={$tproxyTable}
@@ -64,59 +67,69 @@ done
 ip route flush table {$tunTable} 2>/dev/null || true
 ip link delete {$tunIface} 2>/dev/null || true
 
-# Drop legacy per-iface mangle TCP TPROXY chain (pre-REDIRECT builds).
+# Drop legacy NAT REDIRECT chain (pre-unified-TPROXY builds).
+iptables -t nat -D PREROUTING -i "\$IFACE" -j "\$NAT_CHAIN" 2>/dev/null || true
+iptables -t nat -F "\$NAT_CHAIN" 2>/dev/null || true
+iptables -t nat -X "\$NAT_CHAIN" 2>/dev/null || true
+
+# Clear previous per-iface mangle chain / UDP REJECT / split UDP :1603 TPROXY.
+iptables -D FORWARD -i "\$IFACE" -d "\$FAKEIP" -p udp -j REJECT --reject-with icmp-port-unreachable 2>/dev/null || true
 iptables -t mangle -D PREROUTING -i "\$IFACE" -j "\$MANGLE_CHAIN" 2>/dev/null || true
 iptables -t mangle -F "\$MANGLE_CHAIN" 2>/dev/null || true
 iptables -t mangle -X "\$MANGLE_CHAIN" 2>/dev/null || true
+iptables -t mangle -D PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p udp -j TPROXY --on-port "\$LEGACY_UDP_PORT" --on-ip "\$TPROXY_ON_IP" --tproxy-mark "\$TPROXY_MARK/\$TPROXY_MARK" 2>/dev/null || true
+iptables -t mangle -D PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p udp -j TPROXY --on-port "\$LEGACY_UDP_PORT" --on-ip 127.0.0.1 --tproxy-mark "\$TPROXY_MARK/\$TPROXY_MARK" 2>/dev/null || true
+iptables -t mangle -D PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p tcp -j TPROXY --on-port "\$TPROXY_PORT" --on-ip "\$TPROXY_ON_IP" --tproxy-mark "\$TPROXY_MARK/\$TPROXY_MARK" 2>/dev/null || true
+iptables -t mangle -D PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p udp -j TPROXY --on-port "\$TPROXY_PORT" --on-ip "\$TPROXY_ON_IP" --tproxy-mark "\$TPROXY_MARK/\$TPROXY_MARK" 2>/dev/null || true
+iptables -t mangle -D PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p tcp -m socket -j DIVERT 2>/dev/null || true
+iptables -t mangle -D PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p udp -m socket -j DIVERT 2>/dev/null || true
 
-# Clear previous UDP FakeIP REJECT / TPROXY for this iface (re-install below).
-iptables -D FORWARD -i "\$IFACE" -d "\$FAKEIP" -p udp -j REJECT --reject-with icmp-port-unreachable 2>/dev/null || true
-iptables -t mangle -D PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p udp -j TPROXY --on-port "\$UDP_PORT" --on-ip "\$TPROXY_ON_IP" --tproxy-mark "\$TPROXY_MARK/\$TPROXY_MARK" 2>/dev/null || true
-iptables -t mangle -D PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p udp -j TPROXY --on-port "\$UDP_PORT" --on-ip 127.0.0.1 --tproxy-mark "\$TPROXY_MARK/\$TPROXY_MARK" 2>/dev/null || true
+# IMPORTANT: DIVERT must be scoped to FakeIP on this iface only.
+# A global "-p udp -m socket -j DIVERT" + fwmark→lo blackholes sing-box's own
+# DNS replies (8.8.8.8/1.1.1.1) → "lookup … context deadline exceeded".
+iptables -t mangle -D PREROUTING -p udp -m socket -j DIVERT 2>/dev/null || true
+iptables -t mangle -D PREROUTING -p tcp -m socket -j DIVERT 2>/dev/null || true
+iptables -t mangle -D PREROUTING -p udp -m socket --transparent -j DIVERT 2>/dev/null || true
+iptables -t mangle -D PREROUTING -p tcp -m socket --transparent -j DIVERT 2>/dev/null || true
+iptables -t mangle -N DIVERT 2>/dev/null || true
+iptables -t mangle -C DIVERT -j MARK --set-mark "\$TPROXY_MARK" 2>/dev/null \\
+  || iptables -t mangle -A DIVERT -j MARK --set-mark "\$TPROXY_MARK"
+iptables -t mangle -C DIVERT -j ACCEPT 2>/dev/null \\
+  || iptables -t mangle -A DIVERT -j ACCEPT
+iptables -t mangle -C PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p tcp -m socket -j DIVERT 2>/dev/null \\
+  || iptables -t mangle -I PREROUTING 1 -i "\$IFACE" -d "\$FAKEIP" -p tcp -m socket -j DIVERT
+iptables -t mangle -C PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p udp -m socket -j DIVERT 2>/dev/null \\
+  || iptables -t mangle -I PREROUTING 1 -i "\$IFACE" -d "\$FAKEIP" -p udp -m socket -j DIVERT
 
-iptables -t nat -N "\$NAT_CHAIN" 2>/dev/null || iptables -t nat -F "\$NAT_CHAIN"
+if ! ip rule show 2>/dev/null | grep -q "fwmark \$TPROXY_MARK lookup \$TPROXY_TABLE"; then
+  ip rule add fwmark "\$TPROXY_MARK" lookup "\$TPROXY_TABLE" 2>/dev/null || true
+fi
+ip route replace local default dev lo table "\$TPROXY_TABLE" 2>/dev/null || true
 
-redir_add() {
+iptables -t mangle -N "\$MANGLE_CHAIN" 2>/dev/null || iptables -t mangle -F "\$MANGLE_CHAIN"
+
+tproxy_add() {
   _cidr="\$1"
-  iptables -t nat -A "\$NAT_CHAIN" -d "\$_cidr" -p tcp -j REDIRECT --to-ports "\$REDIR_PORT"
+  _proto="\$2"
+  iptables -t mangle -A "\$MANGLE_CHAIN" -d "\$_cidr" -p "\$_proto" -j TPROXY \\
+    --on-port "\$TPROXY_PORT" --on-ip "\$TPROXY_ON_IP" --tproxy-mark "\$TPROXY_MARK/\$TPROXY_MARK"
 }
 
-redir_add "\$FAKEIP"
+tproxy_add "\$FAKEIP" tcp
+tproxy_add "\$FAKEIP" udp
 
 if [ -f "\$CIDR_FILE" ]; then
   while IFS= read -r cidr || [ -n "\$cidr" ]; do
     cidr=\$(echo "\$cidr" | tr -d '\\r' | sed 's/#.*//;s/^[[:space:]]*//;s/[[:space:]]*\$//')
     [ -z "\$cidr" ] && continue
-    redir_add "\$cidr"
+    tproxy_add "\$cidr" tcp
   done < "\$CIDR_FILE"
 fi
 
-iptables -t nat -C PREROUTING -i "\$IFACE" -j "\$NAT_CHAIN" 2>/dev/null \\
-  || iptables -t nat -A PREROUTING -i "\$IFACE" -j "\$NAT_CHAIN"
+iptables -t mangle -C PREROUTING -i "\$IFACE" -j "\$MANGLE_CHAIN" 2>/dev/null \\
+  || iptables -t mangle -A PREROUTING -i "\$IFACE" -j "\$MANGLE_CHAIN"
 
-if [ "\$REJECT_QUIC" = "0" ]; then
-  # QUIC allowed: deliver UDP FakeIP into sing-box tproxy-udp-in.
-  iptables -t mangle -N DIVERT 2>/dev/null || true
-  iptables -t mangle -C DIVERT -j MARK --set-mark "\$TPROXY_MARK" 2>/dev/null \\
-    || iptables -t mangle -A DIVERT -j MARK --set-mark "\$TPROXY_MARK"
-  iptables -t mangle -C DIVERT -j ACCEPT 2>/dev/null \\
-    || iptables -t mangle -A DIVERT -j ACCEPT
-  iptables -t mangle -C PREROUTING -p udp -m socket -j DIVERT 2>/dev/null \\
-    || iptables -t mangle -I PREROUTING 1 -p udp -m socket -j DIVERT
-
-  if ! ip rule show 2>/dev/null | grep -q "fwmark \$TPROXY_MARK lookup \$TPROXY_TABLE"; then
-    ip rule add fwmark "\$TPROXY_MARK" lookup "\$TPROXY_TABLE" 2>/dev/null || true
-  fi
-  ip route replace local default dev lo table "\$TPROXY_TABLE" 2>/dev/null || true
-
-  iptables -t mangle -A PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p udp -j TPROXY \\
-    --on-port "\$UDP_PORT" --on-ip "\$TPROXY_ON_IP" --tproxy-mark "\$TPROXY_MARK/\$TPROXY_MARK"
-  echo "[sing-box] redirect-tcp: \${IFACE} → :\${REDIR_PORT}; udp-fakeip TPROXY :\${UDP_PORT}"
-else
-  # Block QUIC: reject UDP to FakeIP fast so apps fall back to TCP (REDIRECT path).
-  iptables -I FORWARD 1 -i "\$IFACE" -d "\$FAKEIP" -p udp -j REJECT --reject-with icmp-port-unreachable
-  echo "[sing-box] redirect-tcp: \${IFACE} → :\${REDIR_PORT} (\${FAKEIP} + list CIDRs); udp-fakeip REJECT"
-fi
+echo "[sing-box] tproxy FakeIP tcp+udp + list-tcp: \${IFACE} → :\${TPROXY_PORT}"
 SH;
         $changed = $this->files->writeExecutable($mark, $markBody) || $changed;
 
@@ -127,7 +140,7 @@ NAT_CHAIN="RSNAT_\${IFACE}"
 MANGLE_CHAIN="RS_\${IFACE}"
 FAKEIP={$fakeip}
 TPROXY_PORT={$tproxyPort}
-UDP_PORT={$udpTproxyPort}
+LEGACY_UDP_PORT={$udpTproxyPort}
 TPROXY_MARK={$tproxyMark}
 TPROXY_ON_IP={$tproxyOnIp}
 
@@ -137,14 +150,23 @@ iptables -t nat -X "\$NAT_CHAIN" 2>/dev/null || true
 
 iptables -D FORWARD -i "\$IFACE" -d "\$FAKEIP" -p udp -j REJECT --reject-with icmp-port-unreachable 2>/dev/null || true
 
-iptables -t mangle -D PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p udp -j TPROXY --on-port "\$UDP_PORT" --on-ip "\$TPROXY_ON_IP" --tproxy-mark "\$TPROXY_MARK/\$TPROXY_MARK" 2>/dev/null || true
-iptables -t mangle -D PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p udp -j TPROXY --on-port "\$UDP_PORT" --on-ip 127.0.0.1 --tproxy-mark "\$TPROXY_MARK/\$TPROXY_MARK" 2>/dev/null || true
-
 iptables -t mangle -D PREROUTING -i "\$IFACE" -j "\$MANGLE_CHAIN" 2>/dev/null || true
 iptables -t mangle -F "\$MANGLE_CHAIN" 2>/dev/null || true
 iptables -t mangle -X "\$MANGLE_CHAIN" 2>/dev/null || true
 
-# Legacy FakeIP MARK→TUN / flat TPROXY rules
+iptables -t mangle -D PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p tcp -j TPROXY --on-port "\$TPROXY_PORT" --on-ip "\$TPROXY_ON_IP" --tproxy-mark "\$TPROXY_MARK/\$TPROXY_MARK" 2>/dev/null || true
+iptables -t mangle -D PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p udp -j TPROXY --on-port "\$TPROXY_PORT" --on-ip "\$TPROXY_ON_IP" --tproxy-mark "\$TPROXY_MARK/\$TPROXY_MARK" 2>/dev/null || true
+iptables -t mangle -D PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p udp -j TPROXY --on-port "\$LEGACY_UDP_PORT" --on-ip "\$TPROXY_ON_IP" --tproxy-mark "\$TPROXY_MARK/\$TPROXY_MARK" 2>/dev/null || true
+iptables -t mangle -D PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p udp -j TPROXY --on-port "\$LEGACY_UDP_PORT" --on-ip 127.0.0.1 --tproxy-mark "\$TPROXY_MARK/\$TPROXY_MARK" 2>/dev/null || true
+iptables -t mangle -D PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p tcp -m socket -j DIVERT 2>/dev/null || true
+iptables -t mangle -D PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p udp -m socket -j DIVERT 2>/dev/null || true
+# Legacy unscoped DIVERT that broke container DNS replies.
+iptables -t mangle -D PREROUTING -p udp -m socket -j DIVERT 2>/dev/null || true
+iptables -t mangle -D PREROUTING -p tcp -m socket -j DIVERT 2>/dev/null || true
+iptables -t mangle -D PREROUTING -p udp -m socket --transparent -j DIVERT 2>/dev/null || true
+iptables -t mangle -D PREROUTING -p tcp -m socket --transparent -j DIVERT 2>/dev/null || true
+
+# Legacy FakeIP MARK→TUN / flat TPROXY / REDIRECT rules
 iptables -t mangle -D PREROUTING -i "\$IFACE" -d "\$FAKEIP" -j MARK --set-mark 0x2 2>/dev/null || true
 iptables -t mangle -D PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p tcp -j TPROXY --on-port "\$TPROXY_PORT" --on-ip 127.0.0.1 --tproxy-mark 0x1/0x1 2>/dev/null || true
 iptables -t mangle -D PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p udp -j TPROXY --on-port "\$TPROXY_PORT" --on-ip 127.0.0.1 --tproxy-mark 0x1/0x1 2>/dev/null || true
@@ -174,7 +196,8 @@ prune_cache_if_huge() {
   fi
   local size
   size="$(wc -c < "${CACHE_FILE}" | tr -d '[:space:]')"
-  if [[ "${size}" =~ ^[0-9]+$ ]] && (( size > CACHE_MAX_BYTES )); then
+  # Prefer POSIX -gt: `(( size > … ))` breaks when script is invoked as `sh reload-singbox.sh` (ash/dash).
+  if [[ "${size}" =~ ^[0-9]+$ ]] && [ "${size}" -gt "${CACHE_MAX_BYTES}" ]; then
     echo "[sing-box] pruning oversized cache ${CACHE_FILE} (${size} bytes > ${CACHE_MAX_BYTES})"
     rm -f "${CACHE_FILE}"
   fi
@@ -407,22 +430,23 @@ SH;
     }
 
     /**
-     * Re-apply REDIRECT/UDP chains on live AWG ifaces after proxy_cidrs / reject_quic changes.
+     * Re-apply REDIRECT/UDP chains on live AWG ifaces after proxy_cidrs changes.
      * Single docker exec for all ifaces (avoids O(N) round-trips).
+     * UDP FakeIP TPROXY is always installed; Block QUIC is sing-box-only.
      *
-     * @param  array<string, bool>  $ifaceRejectQuic  iface => resolver_reject_quic
+     * @param  array<string, bool>  $ifaceRejectQuic  iface => resolver_reject_quic (flag ignored for iptables)
      */
     public function refreshResolverMarksOnIfaces(array $ifaceRejectQuic): void
     {
         $parts = [];
-        foreach ($ifaceRejectQuic as $iface => $rejectQuic) {
+        foreach ($ifaceRejectQuic as $iface => $_rejectQuic) {
             $iface = trim((string) $iface);
             if ($iface === '') {
                 continue;
             }
-            $flag = $rejectQuic ? '1' : '0';
             $parts[] = 'sh /config/resolver-unmark.sh '.escapeshellarg($iface).' 2>/dev/null || true';
-            $parts[] = 'sh /config/resolver-mark.sh '.escapeshellarg($iface).' '.escapeshellarg($flag).' 2>/dev/null || true';
+            // Arg2 kept for PostUp compatibility; mark script ignores it for iptables.
+            $parts[] = 'sh /config/resolver-mark.sh '.escapeshellarg($iface).' 0 2>/dev/null || true';
         }
         if ($parts === []) {
             return;

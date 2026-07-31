@@ -619,14 +619,19 @@ SH;
                 if (str_contains($rule, '-p udp') && str_contains($rule, '-m socket') && str_contains($rule, '-j DIVERT')) {
                     $out['divert_udp_hits'] += $packets;
                 }
-                // Current path: UDP FakeIP TPROXY when Block QUIC is off.
+                // Current path: FakeIP TCP+UDP TPROXY on :1602 (podkop/forkop unified).
                 if (str_contains($rule, '-j TPROXY')
-                    && str_contains($rule, '-p udp')
                     && str_contains($rule, '-d '.ResolverService::FAKEIP_CIDR)
-                    && (str_contains($rule, '--on-port '.(string) ResolverService::UDP_TPROXY_PORT)
+                    && (str_contains($rule, '--on-port '.(string) ResolverService::TPROXY_PORT)
+                        || str_contains($rule, '--on-port='.(string) ResolverService::TPROXY_PORT)
+                        || str_contains($rule, '--on-port '.(string) ResolverService::UDP_TPROXY_PORT)
                         || str_contains($rule, '--on-port='.(string) ResolverService::UDP_TPROXY_PORT))) {
                     $out['fakeip_rules_present'] = true;
-                    $out['tproxy_fakeip_udp_hits'] += $packets;
+                    if (str_contains($rule, '-p udp')) {
+                        $out['tproxy_fakeip_udp_hits'] += $packets;
+                    } elseif (str_contains($rule, '-p tcp')) {
+                        $out['tproxy_fakeip_tcp_hits'] += $packets;
+                    }
                 }
             }
 

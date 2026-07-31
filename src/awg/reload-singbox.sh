@@ -16,7 +16,7 @@ prune_cache_if_huge() {
   fi
   local size
   size="$(wc -c < "${CACHE_FILE}" | tr -d '[:space:]')"
-  if [[ "${size}" =~ ^[0-9]+$ ]] && (( size > CACHE_MAX_BYTES )); then
+  if [[ "${size}" =~ ^[0-9]+$ ]] && [ "${size}" -gt "${CACHE_MAX_BYTES}" ]; then
     echo "[sing-box] pruning oversized cache ${CACHE_FILE} (${size} bytes > ${CACHE_MAX_BYTES})"
     rm -f "${CACHE_FILE}"
   fi

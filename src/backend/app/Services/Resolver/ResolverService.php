@@ -15,14 +15,17 @@ class ResolverService
 {
     public const FAKEIP_CIDR = '198.18.0.0/15';
 
-    /** Client-facing FakeIP DNS TTL (seconds). Higher reduces ABR/seek DNS churn. */
-    public const FAKEIP_REWRITE_TTL = 300;
+    /** Client-facing FakeIP DNS TTL (seconds). Match podkop/forkop default (60). */
+    public const FAKEIP_REWRITE_TTL = 60;
 
     public const TPROXY_PORT = 1602;
 
     public const TPROXY_INBOUND_TAG = 'tproxy-in';
 
-    /** UDP FakeIP delivery when Block QUIC is off (QUIC/HTTP3 via Connection). */
+    /**
+     * Legacy UDP-only TPROXY port from split redirect/udp builds.
+     * Current path uses a single TPROXY :1602 for TCP+UDP (podkop/forkop).
+     */
     public const UDP_TPROXY_PORT = 1603;
 
     public const UDP_TPROXY_INBOUND_TAG = 'tproxy-udp-in';
@@ -764,8 +767,8 @@ class ResolverService
             }
 
             $this->ensureResolverMarkScripts();
-            // Refresh live iptables whenever resolver configs exist so reject_quic
-            // toggles apply without waiting for awg-quick re-up.
+            // Refresh live iptables whenever resolver configs exist so REDIRECT/UDP
+            // TPROXY stay in sync without waiting for awg-quick re-up.
             if ($configs !== []) {
                 $this->refreshResolverMarksOnIfaces($ifaceRejectQuic);
             }
@@ -844,24 +847,20 @@ class ResolverService
         ];
         $allProxyCidrs = [];
         $quicRejectRules = [];
-        $needUdpTproxy = false;
 
-        foreach ($configs as $config) {
-            if (! $config->resolver_reject_quic) {
-                $needUdpTproxy = true;
-                break;
-            }
-        }
-
+        // Single TPROXY inbound for TCP+UDP (podkop/forkop). Sniff before FakeIP reverse
+        // so QUIC/TLS can recover the domain when store_fakeip briefly misses.
         $sniffInbounds = [self::TPROXY_INBOUND_TAG, 'dns-in'];
-        if ($needUdpTproxy) {
-            $sniffInbounds[] = self::UDP_TPROXY_INBOUND_TAG;
-        }
 
         $routeRules = [
             [
                 'action' => 'sniff',
+                'timeout' => '1s',
                 'inbound' => $sniffInbounds,
+            ],
+            [
+                'port' => 53,
+                'action' => 'hijack-dns',
             ],
             [
                 'protocol' => 'dns',
@@ -895,12 +894,9 @@ class ResolverService
 
             if ($config->resolver_reject_quic) {
                 // Per-config only: never global quic reject (multi AWG isolation).
-                $quicInbounds = [self::TPROXY_INBOUND_TAG];
-                if ($needUdpTproxy) {
-                    $quicInbounds[] = self::UDP_TPROXY_INBOUND_TAG;
-                }
+                // UDP stays on the same TPROXY inbound; reject sniffed QUIC (podkop disable_quic).
                 $quicRejectRules[] = [
-                    'inbound' => $quicInbounds,
+                    'inbound' => [self::TPROXY_INBOUND_TAG],
                     'source_ip_cidr' => $source,
                     'protocol' => 'quic',
                     'action' => 'reject',
@@ -1059,7 +1055,8 @@ class ResolverService
                 'servers' => $dnsServers,
                 'rules' => $dnsRules,
                 'final' => 'remote',
-                // independent_cache is deprecated in 1.14+; omit it (cache is keyed by transport).
+                // Keep independent_cache like podkop/forkop on sing-box 1.12–1.13.
+                'independent_cache' => true,
                 'cache_capacity' => 4096,
                 'strategy' => 'ipv4_only',
             ],
@@ -1071,26 +1068,21 @@ class ResolverService
                     'listen_port' => self::DNS_LISTEN_PORT,
                 ],
                 [
-                    'type' => 'redirect',
+                    // Single TPROXY for TCP+UDP FakeIP/list (podkop/forkop).
+                    // --on-ip 0.0.0.0 (not 127.0.0.1) — Docker route_localnet-safe.
+                    'type' => 'tproxy',
                     'tag' => self::TPROXY_INBOUND_TAG,
                     'listen' => self::TPROXY_LISTEN,
                     'listen_port' => self::TPROXY_PORT,
                     'tcp_fast_open' => true,
-                ],
-                $needUdpTproxy ? [
-                    'type' => 'tproxy',
-                    'tag' => self::UDP_TPROXY_INBOUND_TAG,
-                    'listen' => self::TPROXY_LISTEN,
-                    'listen_port' => self::UDP_TPROXY_PORT,
-                    'network' => 'udp',
                     'udp_fragment' => true,
-                ] : null,
+                ],
             ])), $outbounds, $routeRules, $outboundTagsAdded),
             'outbounds' => $outbounds,
             // Routing ownership (anti-TUN-auto_route):
             // 1) Client full-tunnel is owned by AWG (AllowedIPs 0.0.0.0/0) — not by sing-box.
-            // 2) TCP FakeIP/list CIDRs are NAT-REDIRECT'd into sing-box; UDP FakeIP uses TPROXY :1603
-            //    when Block QUIC is off (else REJECT). Everything else stays on awg* → MASQUERADE.
+            // 2) FakeIP + list CIDRs are TPROXY'd into sing-box :1602 (TCP+UDP).
+            //    Block QUIC = route protocol=quic reject. Everything else → MASQUERADE.
             // 3) Pin egress to the resolved NIC (auto-detect or settings override).
             //    route.exclude_interface does not exist in sing-box (TUN-inbound only).
             'route' => [
@@ -1105,8 +1097,9 @@ class ResolverService
                 'cache_file' => [
                     'enabled' => true,
                     'path' => '/config/sing-box-cache.db',
-                    // Keep only selector/clash state; persist FakeIP/RDRC grows without bound.
-                    'store_fakeip' => false,
+                    // Required for UDP/QUIC FakeIP reverse lookup (podkop/forkop).
+                    // Growth is capped by reload-singbox.sh prune (>32 MiB).
+                    'store_fakeip' => true,
                     'store_rdrc' => false,
                 ],
                 'clash_api' => [
@@ -1129,7 +1122,6 @@ class ResolverService
         foreach ($routeRules as $i => $existing) {
             if (($existing['action'] ?? null) === 'hijack-dns') {
                 $idx = $i + 1;
-                break;
             }
         }
         array_splice($routeRules, $idx, 0, [$rule]);
