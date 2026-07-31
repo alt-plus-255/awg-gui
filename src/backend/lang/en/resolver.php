@@ -189,6 +189,7 @@ return [
     // Speed test
     'speed_test_busy' => 'Another speed test is already running — wait',
     'speed_test_connection_disabled' => 'Connection is disabled',
+    'speed_test_no_enabled' => 'No enabled connections to test',
     'speed_test_node_not_found' => 'Node not found in connection',
     'speed_test_no_outbound' => 'Connection has no usable outbound',
     'speed_test_serialize_failed' => 'Failed to serialize speed-test config',

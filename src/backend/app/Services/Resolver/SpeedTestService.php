@@ -6,6 +6,7 @@ use App\Models\ResolverConnection;
 use App\Services\AmneziaWg\AmneziaWgService;
 use App\Services\Docker\DockerRuntime;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Str;
 use RuntimeException;
 
 class SpeedTestService
@@ -13,6 +14,14 @@ class SpeedTestService
     public const LOCK_KEY = 'resolver:speed_test_lock';
 
     public const LOCK_SEC = 90;
+
+    public const JOB_KEY = 'resolver:speed_test:job';
+
+    public const RESULTS_KEY = 'resolver:speed_test:results';
+
+    public const RESULTS_TTL_SEC = 60 * 60 * 24 * 30;
+
+    public const JOB_TTL_SEC = 60 * 60 * 6;
 
     public const PIDFILE = '/run/sing-box-speed.pid';
 
@@ -27,6 +36,252 @@ class SpeedTestService
         private ConnectionOutboundBuilder $outboundBuilder,
         private SingBoxOutboundParser $parser,
     ) {}
+
+    /**
+     * @return array{ok: bool, async: bool, job: array<string, mixed>}
+     */
+    public function enqueueConnection(ResolverConnection $conn, ?string $nodeKey = null): array
+    {
+        if (! $conn->enabled) {
+            throw new RuntimeException(__('resolver.speed_test_connection_disabled'));
+        }
+
+        return $this->enqueue(fn () => $this->newJob([
+            'kind' => 'connection',
+            'connection_id' => (int) $conn->id,
+            'node_key' => $nodeKey,
+            'connection_ids' => [(int) $conn->id],
+        ]));
+    }
+
+    /**
+     * @param  list<ResolverConnection>|iterable<ResolverConnection>  $connections
+     * @return array{ok: bool, async: bool, job: array<string, mixed>}
+     */
+    public function enqueueBatch(iterable $connections): array
+    {
+        $ids = [];
+        foreach ($connections as $conn) {
+            if ($conn instanceof ResolverConnection && $conn->enabled) {
+                $ids[] = (int) $conn->id;
+            }
+        }
+        if ($ids === []) {
+            throw new RuntimeException(__('resolver.speed_test_no_enabled'));
+        }
+
+        return $this->enqueue(fn () => $this->newJob([
+            'kind' => 'batch',
+            'connection_id' => null,
+            'node_key' => null,
+            'connection_ids' => $ids,
+        ]));
+    }
+
+    /**
+     * @param  callable(): array<string, mixed>  $factory
+     * @return array{ok: bool, async: bool, job: array<string, mixed>}
+     */
+    private function enqueue(callable $factory): array
+    {
+        $gate = Cache::lock('resolver:speed_test:enqueue', 15);
+        if (! $gate->get()) {
+            throw new RuntimeException(__('resolver.speed_test_busy'));
+        }
+        try {
+            $this->assertNoActiveJob();
+            $job = $factory();
+            $this->putJob($job);
+            $this->spawnJob((string) $job['id']);
+
+            return ['ok' => true, 'async' => true, 'job' => $job];
+        } finally {
+            $gate->release();
+        }
+    }
+
+    /**
+     * @return array{running: bool, job: ?array<string, mixed>, results: array{updated_at: ?string, by_key: array<string, array<string, mixed>>}}
+     */
+    public function status(): array
+    {
+        $job = $this->getJob();
+        $running = $job !== null && in_array($job['status'] ?? '', ['queued', 'running'], true);
+
+        return [
+            'running' => $running,
+            'job' => $job,
+            'results' => $this->getStoredResults(),
+        ];
+    }
+
+    public function processQueuedJob(string $jobId): void
+    {
+        $job = $this->getJob();
+        if ($job === null || (string) ($job['id'] ?? '') !== $jobId) {
+            return;
+        }
+        if (($job['status'] ?? '') !== 'queued') {
+            return;
+        }
+
+        $job['status'] = 'running';
+        $job['started_at'] = now()->toIso8601String();
+        $this->putJob($job);
+
+        try {
+            if (($job['kind'] ?? '') === 'batch') {
+                $ids = is_array($job['connection_ids'] ?? null) ? $job['connection_ids'] : [];
+                foreach ($ids as $id) {
+                    $conn = ResolverConnection::query()->find((int) $id);
+                    if (! $conn instanceof ResolverConnection || ! $conn->enabled) {
+                        continue;
+                    }
+                    $job['current_connection_id'] = (int) $conn->id;
+                    $this->putJob($job);
+                    $result = $this->run($conn, null);
+                    $this->storeResult($result);
+                }
+            } else {
+                $conn = ResolverConnection::query()->find((int) ($job['connection_id'] ?? 0));
+                if (! $conn instanceof ResolverConnection) {
+                    throw new RuntimeException(__('resolver.speed_test_connection_disabled'));
+                }
+                $nodeKey = isset($job['node_key']) && is_string($job['node_key']) && $job['node_key'] !== ''
+                    ? $job['node_key']
+                    : null;
+                $job['current_connection_id'] = (int) $conn->id;
+                $this->putJob($job);
+                $result = $this->run($conn, $nodeKey);
+                $this->storeResult($result);
+            }
+
+            $job = $this->getJob() ?? $job;
+            $job['status'] = 'done';
+            $job['finished_at'] = now()->toIso8601String();
+            $job['current_connection_id'] = null;
+            $job['error'] = null;
+            $this->putJob($job);
+        } catch (\Throwable $e) {
+            $job = $this->getJob() ?? $job;
+            $job['status'] = 'failed';
+            $job['finished_at'] = now()->toIso8601String();
+            $job['current_connection_id'] = null;
+            $job['error'] = $e->getMessage();
+            $this->putJob($job);
+            throw $e;
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $result
+     */
+    public function storeResult(array $result): void
+    {
+        $key = $this->resultKey(
+            (int) ($result['connection_id'] ?? 0),
+            isset($result['node_key']) && is_string($result['node_key']) && $result['node_key'] !== ''
+                ? $result['node_key']
+                : null,
+        );
+        $stored = $this->getStoredResults();
+        $stored['by_key'][$key] = array_merge($result, [
+            'measured_at' => now()->toIso8601String(),
+        ]);
+        $stored['updated_at'] = now()->toIso8601String();
+        Cache::put(self::RESULTS_KEY, $stored, self::RESULTS_TTL_SEC);
+    }
+
+    public function resultKey(int $connectionId, ?string $nodeKey = null): string
+    {
+        return $nodeKey !== null && $nodeKey !== ''
+            ? $connectionId.'::'.$nodeKey
+            : (string) $connectionId;
+    }
+
+    /**
+     * @return array{updated_at: ?string, by_key: array<string, array<string, mixed>>}
+     */
+    public function getStoredResults(): array
+    {
+        $raw = Cache::get(self::RESULTS_KEY);
+        if (! is_array($raw)) {
+            return ['updated_at' => null, 'by_key' => []];
+        }
+        $byKey = is_array($raw['by_key'] ?? null) ? $raw['by_key'] : [];
+
+        return [
+            'updated_at' => isset($raw['updated_at']) && is_string($raw['updated_at']) ? $raw['updated_at'] : null,
+            'by_key' => $byKey,
+        ];
+    }
+
+    /** @return ?array<string, mixed> */
+    public function getJob(): ?array
+    {
+        $job = Cache::get(self::JOB_KEY);
+
+        return is_array($job) ? $job : null;
+    }
+
+    private function assertNoActiveJob(): void
+    {
+        $job = $this->getJob();
+        if ($job !== null && in_array($job['status'] ?? '', ['queued', 'running'], true)) {
+            throw new RuntimeException(__('resolver.speed_test_busy'));
+        }
+        $lock = Cache::lock(self::LOCK_KEY, 1);
+        if (! $lock->get()) {
+            throw new RuntimeException(__('resolver.speed_test_busy'));
+        }
+        $lock->release();
+    }
+
+    /**
+     * @param  array<string, mixed>  $extra
+     * @return array<string, mixed>
+     */
+    private function newJob(array $extra): array
+    {
+        return array_merge([
+            'id' => (string) Str::uuid(),
+            'status' => 'queued',
+            'kind' => 'connection',
+            'connection_id' => null,
+            'node_key' => null,
+            'connection_ids' => [],
+            'current_connection_id' => null,
+            'queued_at' => now()->toIso8601String(),
+            'started_at' => null,
+            'finished_at' => null,
+            'error' => null,
+        ], $extra);
+    }
+
+    /** @param  array<string, mixed>  $job */
+    private function putJob(array $job): void
+    {
+        Cache::put(self::JOB_KEY, $job, self::JOB_TTL_SEC);
+    }
+
+    private function spawnJob(string $jobId): void
+    {
+        if (app()->runningUnitTests()) {
+            return;
+        }
+
+        $php = PHP_BINARY !== '' ? PHP_BINARY : 'php';
+        $artisan = base_path('artisan');
+        $log = storage_path('logs/speed-test-job.log');
+        $cmd = sprintf(
+            'nohup %s %s resolver:speed-test-job %s >> %s 2>&1 < /dev/null &',
+            escapeshellarg($php),
+            escapeshellarg($artisan),
+            escapeshellarg($jobId),
+            escapeshellarg($log),
+        );
+        exec($cmd);
+    }
 
     /**
      * @return array{

@@ -189,6 +189,7 @@ return [
     // Speed test
     'speed_test_busy' => 'Другой замер скорости уже выполняется — подождите',
     'speed_test_connection_disabled' => 'Подключение выключено',
+    'speed_test_no_enabled' => 'Нет включённых подключений для замера',
     'speed_test_node_not_found' => 'Нода не найдена в подключении',
     'speed_test_no_outbound' => 'Нет usable outbound у подключения',
     'speed_test_serialize_failed' => 'Не удалось сериализовать speed-test конфиг',

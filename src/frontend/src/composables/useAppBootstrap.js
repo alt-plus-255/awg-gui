@@ -3,12 +3,14 @@ import { useAuthStore } from '@/stores/auth'
 import { useSystemStore } from '@/stores/system'
 import { useSettingsStore } from '@/stores/settings'
 import { useProjectUpdateStore } from '@/stores/projectUpdate'
+import { useSpeedTestStore } from '@/stores/speedTest'
 
 export function useAppBootstrap () {
   const auth = useAuthStore()
   const system = useSystemStore()
   const settings = useSettingsStore()
   const projectUpdate = useProjectUpdateStore()
+  const speedTest = useSpeedTestStore()
 
   async function bootstrap () {
     await Promise.all([
@@ -16,6 +18,7 @@ export function useAppBootstrap () {
       settings.fetch()
     ])
     void projectUpdate.checkForUpdates({ silent: true })
+    void speedTest.fetchStatus({ silent: true })
   }
 
   watch(

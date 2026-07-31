@@ -88,6 +88,59 @@ class SpeedTestServiceTest extends TestCase
         $this->assertSame('shadowsocks', $outbounds[1]['type']);
     }
 
+    public function test_store_result_and_status_persist_until_next_measurement(): void
+    {
+        $svc = $this->makeService();
+        $svc->storeResult([
+            'ok' => true,
+            'outbound_tag' => 'conn_1',
+            'connection_id' => 1,
+            'node_key' => null,
+            'ping_ms' => 42,
+            'download_mbps' => 80.5,
+            'upload_mbps' => 20.1,
+            'download_bytes' => 1,
+            'upload_bytes' => 1,
+            'download_ms' => 100,
+            'upload_ms' => 100,
+            'error' => null,
+        ]);
+
+        $status = $svc->status();
+        $this->assertFalse($status['running']);
+        $this->assertNull($status['job']);
+        $this->assertSame(42, $status['results']['by_key']['1']['ping_ms']);
+        $this->assertSame(80.5, $status['results']['by_key']['1']['download_mbps']);
+    }
+
+    public function test_enqueue_connection_creates_queued_job_without_blocking(): void
+    {
+        $conn = ResolverConnection::query()->create([
+            'name' => 'speed',
+            'kind' => ResolverConnection::KIND_PROXY,
+            'config_type' => 'json',
+            'enabled' => true,
+            'outbound' => [
+                'type' => 'vless',
+                'server' => 'x.example',
+                'server_port' => 443,
+                'uuid' => '00000000-0000-0000-0000-000000000001',
+            ],
+        ]);
+
+        $svc = $this->makeService();
+        $payload = $svc->enqueueConnection($conn, null);
+
+        $this->assertTrue($payload['ok']);
+        $this->assertTrue($payload['async']);
+        $this->assertSame('queued', $payload['job']['status']);
+        $this->assertSame((int) $conn->id, $payload['job']['connection_id']);
+
+        $status = $svc->status();
+        $this->assertTrue($status['running']);
+        $this->assertSame($payload['job']['id'], $status['job']['id']);
+    }
+
     private function makeService(): SpeedTestService
     {
         $awg = Mockery::mock(AmneziaWgService::class);

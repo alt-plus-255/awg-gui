@@ -121,7 +121,6 @@
 
   "speedTestTitle": "Замер скорости",
   "speedTestDesc": "Ping, download и upload с VDS через ваши подключения (outbound).",
-  "speedTestHint": "Замер идёт с сервера через прокси, не с телефона. Канал до VDS ~100 Мбит: если здесь ~80 Mbps, а YouTube на телефоне тормозит — проблема в AWG/FakeIP-пути, не в линке до VDS.",
   "speedTestConnections": "Подключения",
   "speedTestAll": "Прогнать все",
   "speedTestRun": "Замер",
@@ -139,5 +138,9 @@
   "speedTestManual": "manual",
   "speedTestLoadFailed": "Не удалось загрузить подключения",
   "speedTestFailed": "Замер не удался",
-  "speedTestBatchDone": "Пакетный замер завершён"
+  "speedTestBatchDone": "Пакетный замер завершён",
+  "speedTestStarted": "Замер запущен в фоне",
+  "speedTestNotifyDone": "Замер скорости завершён",
+  "speedTestNotifyFailed": "Замер скорости завершился с ошибкой",
+  "speedTestOpen": "Открыть"
 }

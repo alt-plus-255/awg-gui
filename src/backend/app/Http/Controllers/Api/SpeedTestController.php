@@ -11,6 +11,11 @@ class SpeedTestController extends Controller
 {
     public function __construct(private SpeedTestService $speedTest) {}
 
+    public function status()
+    {
+        return response()->json($this->speedTest->status());
+    }
+
     public function runConnection(ResolverConnection $connection, Request $request)
     {
         $data = $request->validate([
@@ -21,23 +26,15 @@ class SpeedTestController extends Controller
             : null;
 
         try {
-            $result = $this->speedTest->run($connection, $nodeKey);
+            $payload = $this->speedTest->enqueueConnection($connection, $nodeKey);
 
-            return response()->json($result);
+            return response()->json($payload, 202);
         } catch (\Throwable $e) {
             return response()->json([
                 'ok' => false,
-                'outbound_tag' => $connection->outboundTag(),
-                'connection_id' => (int) $connection->id,
-                'node_key' => $nodeKey,
-                'ping_ms' => null,
-                'download_mbps' => null,
-                'upload_mbps' => null,
-                'download_bytes' => null,
-                'upload_bytes' => null,
-                'download_ms' => null,
-                'upload_ms' => null,
+                'async' => false,
                 'error' => $e->getMessage(),
+                'job' => $this->speedTest->getJob(),
             ], 422);
         }
     }
@@ -50,16 +47,15 @@ class SpeedTestController extends Controller
             ->get();
 
         try {
-            $results = $this->speedTest->runBatch($connections);
+            $payload = $this->speedTest->enqueueBatch($connections);
 
-            return response()->json([
-                'ok' => true,
-                'results' => $results,
-            ]);
+            return response()->json($payload, 202);
         } catch (\Throwable $e) {
             return response()->json([
                 'ok' => false,
+                'async' => false,
                 'error' => $e->getMessage(),
+                'job' => $this->speedTest->getJob(),
                 'results' => [],
             ], 422);
         }
