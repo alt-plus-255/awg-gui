@@ -122,6 +122,12 @@
                         <td>
                           <div>{{ node.name || node.key }}</div>
                           <div class="text-caption text-grey-5 mono">{{ node.key }}</div>
+                          <div
+                            v-if="nodeResult(props.row.id, node.key)?.error"
+                            class="text-caption text-negative q-mt-xs"
+                          >
+                            {{ nodeResult(props.row.id, node.key).error }}
+                          </div>
                         </td>
                         <td class="mono">{{ formatPing(nodeResult(props.row.id, node.key)) }}</td>
                         <td class="mono">{{ formatMbps(nodeResult(props.row.id, node.key)?.download_mbps) }}</td>

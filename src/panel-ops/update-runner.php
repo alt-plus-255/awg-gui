@@ -66,6 +66,61 @@ function buildUpdateCommand(?string $version): array
     ];
 }
 
+/**
+ * Best-effort host /tmp + helper image cleanup after a successful update.
+ * Bundle install also drops unused awggui:* tags; this covers leftovers and alpine:3.20.
+ */
+function cleanupAfterUpdate(string $logPath): void
+{
+    $tmpClean = implode(' ', [
+        'find /host-tmp -maxdepth 1 -type d',
+        '\\( -name \'awg-gui-install.*\' -o -name \'awg-gui-extract.*\' \\)',
+        '-exec rm -rf {} + 2>/dev/null || true;',
+        'find /host-tmp -maxdepth 1 -type f',
+        '\\( -name \'awg-gui-install.sh\' -o -name \'awg-gui-ensure-docker.*\'',
+        '-o -name \'awg-gui*.log\' -o -name \'awg-gui-*.log\' \\)',
+        '-delete 2>/dev/null || true',
+    ]);
+
+    $command = [
+        'docker',
+        'run',
+        '--rm',
+        '-v',
+        '/tmp:/host-tmp',
+        'alpine:3.20',
+        'sh',
+        '-lc',
+        $tmpClean,
+    ];
+
+    $descriptors = [
+        0 => ['file', '/dev/null', 'r'],
+        1 => ['file', $logPath, 'a'],
+        2 => ['file', $logPath, 'a'],
+    ];
+
+    $process = @proc_open($command, $descriptors, $pipes);
+    if (is_resource($process)) {
+        proc_close($process);
+    }
+
+    // Drop unused previous project tags if an older bundle skipped that step.
+    $images = [];
+    @exec("docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null", $images);
+    foreach ($images as $image) {
+        $image = trim($image);
+        if ($image === '' || ! str_starts_with($image, 'awggui-') || str_contains($image, ':<none>')) {
+            continue;
+        }
+        // Without -f, in-use images are kept.
+        @exec('docker rmi '.escapeshellarg($image).' >/dev/null 2>&1');
+    }
+
+    @exec('docker image prune -f >/dev/null 2>&1');
+    @exec('docker rmi alpine:3.20 >/dev/null 2>&1');
+}
+
 $targetVersion = trim((string) getenv('AWG_GUI_UPDATE_VERSION'));
 $targetVersion = $targetVersion !== '' ? ltrim($targetVersion, 'v') : null;
 
@@ -107,6 +162,11 @@ try {
     $state['message'] = $e->getMessage();
     writeRunnerState($state);
     exit(1);
+}
+
+if ($exitCode === 0) {
+    @file_put_contents($logPath, '['.isoNow()."] cleaning temporary update artifacts\n", FILE_APPEND);
+    cleanupAfterUpdate($logPath);
 }
 
 $state['status'] = $exitCode === 0 ? 'success' : 'failed';

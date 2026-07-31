@@ -402,7 +402,21 @@ EOF
   if [[ -n "${pass_arg}" ]]; then
     artisan_args+=(--password="${pass_arg}")
   fi
-  compose "${artisan_args[@]}"
+
+  local out
+  if ! out="$(compose "${artisan_args[@]}" 2>&1)"; then
+    printf '%s\n' "${out}"
+    return 1
+  fi
+  printf '%s\n' "${out}"
+
+  # Keep .env in sync so future tooling stays aligned with the live password.
+  local new_pass=""
+  new_pass="$(printf '%s\n' "${out}" | sed -n 's/^New password: //p' | tail -n 1)"
+  if [[ -n "${new_pass}" && -f "${ENV_FILE}" ]]; then
+    env_set "ADMIN_PASSWORD" "${new_pass}" "${ENV_FILE}"
+    chmod 600 "${ENV_FILE}" 2>/dev/null || true
+  fi
 }
 
 cmd_endpoint() {

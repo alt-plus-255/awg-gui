@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import api from '@/boot/axios'
+import { useAuthStore } from '@/stores/auth'
 
 export const useProjectUpdateStore = defineStore('projectUpdate', () => {
   const loading = ref(false)
@@ -54,7 +55,11 @@ export const useProjectUpdateStore = defineStore('projectUpdate', () => {
 
   function schedulePoll () {
     if (pollTimer) clearTimeout(pollTimer)
-    if (!running.value) return
+    const auth = useAuthStore()
+    if (!auth.user || !running.value) {
+      pollTimer = null
+      return
+    }
     pollTimer = setTimeout(() => {
       void fetchStatus({ silent: true })
     }, 3000)

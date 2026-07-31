@@ -13,7 +13,10 @@ class SpeedTestService
 {
     public const LOCK_KEY = 'resolver:speed_test_lock';
 
-    public const LOCK_SEC = 90;
+    public const LOCK_SEC = 180;
+
+    /** Clash delay probe timeout (ms) — quick reachability check before speed. */
+    public const PING_TIMEOUT_MS = 3000;
 
     public const JOB_KEY = 'resolver:speed_test:job';
 
@@ -318,15 +321,31 @@ class SpeedTestService
             $this->waitForSpeedApi();
 
             $ping = $this->measurePing($targetTag);
+            $reachable = ($ping['ms'] !== null && $ping['ms'] > 0);
+            if (! $reachable) {
+                return [
+                    'ok' => false,
+                    'outbound_tag' => $targetTag,
+                    'connection_id' => (int) $conn->id,
+                    'node_key' => $nodeKey,
+                    'ping_ms' => $ping['ms'],
+                    'download_mbps' => null,
+                    'upload_mbps' => null,
+                    'download_bytes' => null,
+                    'upload_bytes' => null,
+                    'download_ms' => null,
+                    'upload_ms' => null,
+                    'error' => $ping['error'] ?: __('resolver.speed_test_unreachable'),
+                ];
+            }
+
             $down = $this->measureDownload();
             $up = $this->measureUpload();
 
             $ok = ($down['mbps'] !== null && $down['mbps'] > 0)
-                || ($up['mbps'] !== null && $up['mbps'] > 0)
-                || ($ping['ms'] !== null && $ping['ms'] > 0);
+                || ($up['mbps'] !== null && $up['mbps'] > 0);
 
             $errors = array_values(array_filter([
-                $ping['error'] ?? null,
                 $down['error'] ?? null,
                 $up['error'] ?? null,
             ]));
@@ -609,24 +628,25 @@ SH;
         $url = 'http://'.ResolverService::CLASH_SPEED_API_ADDR.$path
             .'?'.http_build_query([
                 'url' => ResolverService::DELAY_TEST_URL,
-                'timeout' => 6000,
+                'timeout' => self::PING_TIMEOUT_MS,
             ]);
+        $curlMax = max(5, (int) ceil(self::PING_TIMEOUT_MS / 1000) + 2);
         try {
             $r = $this->docker->exec(
                 $this->awg->containerName(),
-                ['curl', '-sS', '-m', '10', $url],
-                timeout: 15,
+                ['curl', '-sS', '-m', (string) $curlMax, $url],
+                timeout: $curlMax + 5,
             );
             $decoded = json_decode($r->output(), true);
-            if (is_array($decoded) && isset($decoded['delay'])) {
+            if (is_array($decoded) && isset($decoded['delay']) && (int) $decoded['delay'] > 0) {
                 return ['ms' => (int) $decoded['delay'], 'error' => null];
             }
 
             return [
                 'ms' => null,
                 'error' => is_array($decoded)
-                    ? (string) ($decoded['message'] ?? __('resolver.speed_test_ping_failed'))
-                    : __('resolver.speed_test_ping_failed'),
+                    ? (string) ($decoded['message'] ?? __('resolver.speed_test_unreachable'))
+                    : __('resolver.speed_test_unreachable'),
             ];
         } catch (\Throwable $e) {
             return ['ms' => null, 'error' => $e->getMessage()];
@@ -654,8 +674,9 @@ SH;
         $proxy = 'socks5h://'.ResolverService::SPEED_MIXED_LISTEN.':'.ResolverService::SPEED_MIXED_PORT;
         $bytes = ResolverService::SPEED_TEST_BYTES;
         $fmt = escapeshellarg('%{speed_upload} %{time_total} %{http_code} %{size_upload}');
+        // -o /dev/null is required: otherwise Cloudflare's response body mixes into -w metrics.
         $cmd = sprintf(
-            'dd if=/dev/zero bs=1000000 count=%d 2>/dev/null | curl -sS -m 40 -x %s -H %s --data-binary @- -w %s %s',
+            'dd if=/dev/zero bs=1000000 count=%d 2>/dev/null | curl -sS -o /dev/null -m 45 -x %s -H %s --data-binary @- -w %s %s',
             (int) ceil($bytes / 1_000_000),
             escapeshellarg($proxy),
             escapeshellarg('Content-Type: application/octet-stream'),
@@ -675,11 +696,12 @@ SH;
             $r = $this->docker->exec(
                 $this->awg->containerName(),
                 ['bash', '-lc', $shellCmd],
-                timeout: 50,
+                timeout: 55,
             );
             $out = trim($r->output());
             $err = trim($r->errorOutput());
-            if (! preg_match('/^([0-9.]+)\s+([0-9.]+)\s+(\d+)\s+(\d+)\s*$/', $out, $m)) {
+            // Prefer a trailing metrics line (in case anything else leaked to stdout).
+            if (! preg_match('/([0-9.]+)\s+([0-9.]+)\s+(\d+)\s+(\d+)\s*$/', $out, $m)) {
                 return [
                     'mbps' => null,
                     'bytes' => null,

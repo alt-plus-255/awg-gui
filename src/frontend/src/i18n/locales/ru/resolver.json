@@ -47,7 +47,7 @@
   "create": "создать",
   "fakeIpHint": "Для доменов вне списков FakeIP. В клиентском .conf при включённом резолвере остаётся gateway.",
   "blockQuic": "Блокировать QUIC (UDP/443) для доменов из списков",
-  "blockQuicHint": "Форсирует TCP для FakeIP-доменов этого конфига (аналог старого YouTube QUIC reject, но для всех выбранных списков).",
+  "blockQuicHint": "Включено — UDP/QUIC к FakeIP отклоняется, приложения идут по TCP (стабильный старт видео). Выключено — QUIC проходит через Подключение (TPROXY UDP; лучше для YouTube 4K, нужен UDP-capable outbound, напр. VLESS+XUDP). Замер скорости ≠ ABR-видео.",
   "listsCommunityCustom": "Списки (community + свои)",
   "customDomains": "Свои домены",
   "domainsHint": "Enter или «Добавить». Можно вставить список из буфера.",
@@ -120,7 +120,7 @@
   "deleteListConfirm": "«{label}» будет удалён с диска и из конфигов.",
 
   "speedTestTitle": "Замер скорости",
-  "speedTestDesc": "Ping, download и upload с VDS через ваши подключения (outbound).",
+  "speedTestDesc": "Сначала быстрый ping; если нода доступна — download и upload с VDS через outbound.",
   "speedTestConnections": "Подключения",
   "speedTestAll": "Прогнать все",
   "speedTestRun": "Замер",

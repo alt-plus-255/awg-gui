@@ -1,5 +1,6 @@
 import { reactive } from 'vue'
 import api from '@/boot/axios'
+import { useAuthStore } from '@/stores/auth'
 
 const LIVE_INTERVAL_KEY = 'awg-live-interval'
 const DEFAULT_INTERVAL_MS = 10000
@@ -61,6 +62,14 @@ function saveInterval (ms) {
 
 function notify () {
   listeners.forEach((fn) => fn())
+}
+
+function isAuthenticated () {
+  try {
+    return !!useAuthStore().user
+  } catch {
+    return false
+  }
 }
 
 function subscribedConfigIds () {
@@ -168,12 +177,20 @@ function applyWsHostMessage (data) {
 async function pollOnce () {
   const ids = subscribedConfigIds()
   if (!ids.length) return
+  if (!isAuthenticated()) {
+    stopLivePolling()
+    return
+  }
 
   state.polling = true
   try {
     const { data } = await api.post('/api/stats/refresh', null, { params: refreshParams(ids) })
     applyRefreshResult(data, ids)
-  } catch {
+  } catch (e) {
+    if (e?.isAuthSkipped || e?.response?.status === 401) {
+      stopLivePolling()
+      return
+    }
     failureCount += 1
     if (failureCount >= MAX_FAILURES) {
       state.failed = true
@@ -356,6 +373,10 @@ function handleWsFailure () {
 
 async function connectWebSocket () {
   if (!subscribedConfigIds().length) return
+  if (!isAuthenticated()) {
+    stopLivePolling()
+    return
+  }
   if (wsConnecting) return
   if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
     syncWsSubscriptions()

@@ -47,7 +47,7 @@
   "create": "create",
   "fakeIpHint": "FakeIP for domains outside the lists. With resolver enabled, the client .conf keeps the gateway.",
   "blockQuic": "Block QUIC (UDP/443) for listed domains",
-  "blockQuicHint": "Forces TCP for FakeIP domains on this config (like the old YouTube QUIC reject, but for all selected lists).",
+  "blockQuicHint": "On — UDP/QUIC to FakeIP is rejected so apps fall back to TCP (reliable video start). Off — QUIC goes via the Connection (UDP TPROXY; better for YouTube 4K; needs a UDP-capable outbound, e.g. VLESS+XUDP). Speed test ≠ ABR video.",
   "listsCommunityCustom": "Lists (community + custom)",
   "customDomains": "Custom domains",
   "domainsHint": "Enter or Add. You can paste a list from the clipboard.",
@@ -120,7 +120,7 @@
   "deleteListConfirm": "“{label}” will be removed from disk and from configs.",
 
   "speedTestTitle": "Speed test",
-  "speedTestDesc": "Ping, download and upload from the VDS through your connections (outbound).",
+  "speedTestDesc": "Quick ping first; if the node is reachable — download and upload from the VDS via outbound.",
   "speedTestConnections": "Connections",
   "speedTestAll": "Test all",
   "speedTestRun": "Run",

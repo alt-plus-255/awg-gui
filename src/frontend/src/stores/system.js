@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import api from '@/boot/axios'
 import { translate } from '@/stores/locale'
+import { useAuthStore } from '@/stores/auth'
 
 export const useSystemStore = defineStore('system', () => {
   const status = ref(null)
@@ -35,7 +36,12 @@ export const useSystemStore = defineStore('system', () => {
         }
         return data
       })
-      .catch(() => {
+      .catch((e) => {
+        // Do not keep polling after logout / expired session.
+        if (e?.response?.status === 401 || e?.isAuthSkipped) {
+          stopAllPolls()
+          return status.value
+        }
         status.value = {
           ok: false,
           awg_restarting: false,
@@ -54,6 +60,7 @@ export const useSystemStore = defineStore('system', () => {
 
   function startBlockedPoll () {
     if (pollTimer) return
+    if (!useAuthStore().user) return
     pollTimer = setInterval(() => {
       void checkStatus(true)
     }, 5000)
@@ -68,6 +75,7 @@ export const useSystemStore = defineStore('system', () => {
 
   function startRestartPoll () {
     if (restartPollTimer) return
+    if (!useAuthStore().user) return
     restartPollTimer = setInterval(() => {
       void checkStatus(true)
     }, 2000)
@@ -78,6 +86,11 @@ export const useSystemStore = defineStore('system', () => {
       clearInterval(restartPollTimer)
       restartPollTimer = null
     }
+  }
+
+  function stopAllPolls () {
+    stopBlockedPoll()
+    stopRestartPoll()
   }
 
   async function restartAwg () {
@@ -145,6 +158,8 @@ export const useSystemStore = defineStore('system', () => {
     restartAwg,
     restartAll,
     restartSingbox,
-    stopBlockedPoll
+    stopBlockedPoll,
+    stopRestartPoll,
+    stopAllPolls
   }
 })

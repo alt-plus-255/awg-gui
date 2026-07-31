@@ -17,7 +17,7 @@ The resolver is a “smart VPN via VDS”: all client traffic goes to the server
 
 ## How it works
 
-1. **sing-box** with FakeIP (`198.18.0.0/15`) and rulesets runs inside the AWG container on the VDS. FakeIP/list traffic is delivered via **TPROXY** (`127.0.0.1:1602`), not TUN.
+1. **sing-box** with FakeIP (`198.18.0.0/15`) and rulesets runs inside the AWG container on the VDS. Listed TCP traffic is delivered via **NAT REDIRECT** to sing-box `:1602` (not TUN). When **Block QUIC** is off, UDP/QUIC to FakeIP uses **TPROXY** `:1603`; when on, UDP FakeIP is **REJECT**’d so apps fall back to TCP.
 2. Community lists ([allow-domains](https://github.com/itdoginfo/allow-domains)) are downloaded to disk (`rulesets/*.srs`) — **List settings**.
 3. Each server config on **Resolver** picks a **Connection** — upstream for listed domains. Multiple AWG configs are isolated by client VPN subnet (`source_ip_cidr`): own lists, outbound, DNS, and Block QUIC flag.
 4. The client gets a `.conf` / QR with `DNS = gateway`, `AllowedIPs = 0.0.0.0/0, ::/0`, and **MTU = 1420** (re-import on the device after an MTU change).
@@ -26,7 +26,8 @@ The resolver is a “smart VPN via VDS”: all client traffic goes to the server
 flowchart LR
   Client[AmneziaWG client] -->|all traffic| VDS[VDS / AWG]
   VDS -->|DNS FakeIP| SB[sing-box]
-  VDS -->|TPROXY FakeIP| SB
+  VDS -->|TCP REDIRECT FakeIP| SB
+  VDS -->|UDP FakeIP REJECT or TPROXY| SB
   SB -->|listed domain| Conn[Config connection]
   SB -->|outside lists| VDSip[Exit via VDS IP]
   Conn --> Internet[Internet]
@@ -75,7 +76,7 @@ Without re-import, the client may keep old `DNS` / `AllowedIPs` — lists will n
 - **Community lists** — YouTube, Meta, Telegram, Discord, TikTok, etc. Sync in **List settings** (default interval 6 h). **Save** on the Resolver page does **not** download lists over HTTP.
 - **Custom domains and subnets** — on the config card on **Resolver**.
 - **Mutually exclusive lists** — `russia_inside`, `russia_outside`, `ukraine_inside`: only one from this group can be selected at a time.
-- **Block QUIC** — rejects QUIC only for that config’s VPN subnet (useful for YouTube). Does not affect other AWG configs on the same VDS.
+- **Block QUIC** — when enabled, rejects UDP/QUIC to FakeIP for that config’s VPN iface (apps use TCP; reliable video start). When disabled, QUIC is TPROXY’d into sing-box and exits via the Connection (better for YouTube 4K; needs a UDP-capable outbound such as VLESS with XUDP). Does not affect other AWG configs on the same VDS. Panel **speed test** measures bulk throughput through the outbound — it is not the same as ABR video / seek behaviour. For video, prefer Connection nodes without WebSocket/gRPC when the subscription allows (TCP/Reality).
 
 ## Connections
 

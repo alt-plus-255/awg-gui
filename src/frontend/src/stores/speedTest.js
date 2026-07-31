@@ -3,6 +3,7 @@ import { computed, reactive, ref } from 'vue'
 import { Notify } from 'quasar'
 import api from '@/boot/axios'
 import router from '@/router'
+import { useAuthStore } from '@/stores/auth'
 import { translate } from '@/stores/locale'
 
 export const useSpeedTestStore = defineStore('speedTest', () => {
@@ -87,7 +88,8 @@ export const useSpeedTestStore = defineStore('speedTest', () => {
 
   function schedulePoll () {
     if (pollTimer) clearTimeout(pollTimer)
-    if (!busy.value) {
+    const auth = useAuthStore()
+    if (!auth.user || !busy.value) {
       pollTimer = null
       return
     }

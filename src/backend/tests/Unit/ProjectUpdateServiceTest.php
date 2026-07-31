@@ -69,6 +69,12 @@ class ProjectUpdateServiceTest extends TestCase
             'message' => 'busy',
         ], JSON_PRETTY_PRINT));
 
+        \Illuminate\Support\Facades\Http::fake([
+            'api.github.com/repos/*' => \Illuminate\Support\Facades\Http::response([
+                'tag_name' => 'v2.0.0',
+            ], 200),
+        ]);
+
         $client = $this->createMock(PanelOpsClient::class);
         $client->expects($this->never())->method('startUpdate');
 
@@ -76,6 +82,36 @@ class ProjectUpdateServiceTest extends TestCase
 
         $this->expectException(RuntimeException::class);
         $this->expectExceptionMessage('update_already_running');
+
+        $service->start();
+    }
+
+    public function test_start_rejects_when_already_on_latest_version(): void
+    {
+        putenv('PANEL_OPS_TOKEN=test-token');
+        $_ENV['PANEL_OPS_TOKEN'] = 'test-token';
+
+        $hostDir = $this->makeTempDir();
+        $composeDir = $this->makeTempDir();
+
+        file_put_contents($hostDir.'/install.state', implode("\n", [
+            'completed_at=2026-07-27T09:00:00Z',
+            'bundle_version=2.0.0',
+        ]));
+
+        \Illuminate\Support\Facades\Http::fake([
+            'api.github.com/repos/*' => \Illuminate\Support\Facades\Http::response([
+                'tag_name' => 'v2.0.0',
+            ], 200),
+        ]);
+
+        $client = $this->createMock(PanelOpsClient::class);
+        $client->expects($this->never())->method('startUpdate');
+
+        $service = new ProjectUpdateService($client, $hostDir, $composeDir);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('update_not_available');
 
         $service->start();
     }
@@ -104,6 +140,64 @@ class ProjectUpdateServiceTest extends TestCase
         $this->assertSame('2.0.0', $status['latest_version']);
         $this->assertTrue($status['update_available']);
         $this->assertNotNull($status['release_checked_at']);
+    }
+
+    public function test_check_for_updates_marks_unavailable_when_versions_match(): void
+    {
+        putenv('PANEL_OPS_TOKEN=test-token');
+        $_ENV['PANEL_OPS_TOKEN'] = 'test-token';
+
+        $hostDir = $this->makeTempDir();
+        $composeDir = $this->makeTempDir();
+
+        file_put_contents($hostDir.'/install.state', implode("\n", [
+            'bundle_version=2.0.0',
+        ]));
+
+        \Illuminate\Support\Facades\Http::fake([
+            'api.github.com/repos/*' => \Illuminate\Support\Facades\Http::response([
+                'tag_name' => 'v2.0.0',
+            ], 200),
+        ]);
+
+        $service = new ProjectUpdateService(new PanelOpsClient, $hostDir, $composeDir);
+        $status = $service->checkForUpdates();
+
+        $this->assertSame('2.0.0', $status['latest_version']);
+        $this->assertFalse($status['update_available']);
+        $this->assertTrue($status['can_update']);
+    }
+
+    public function test_start_uses_latest_release_when_update_is_available(): void
+    {
+        putenv('PANEL_OPS_TOKEN=test-token');
+        $_ENV['PANEL_OPS_TOKEN'] = 'test-token';
+
+        $hostDir = $this->makeTempDir();
+        $composeDir = $this->makeTempDir();
+
+        file_put_contents($hostDir.'/install.state', implode("\n", [
+            'completed_at=2026-07-27T09:00:00Z',
+            'bundle_version=1.0.0',
+        ]));
+
+        \Illuminate\Support\Facades\Http::fake([
+            'api.github.com/repos/*' => \Illuminate\Support\Facades\Http::response([
+                'tag_name' => 'v2.0.0',
+            ], 200),
+        ]);
+
+        $client = $this->createMock(PanelOpsClient::class);
+        $client->expects($this->once())
+            ->method('startUpdate')
+            ->with('2.0.0')
+            ->willReturn(['ok' => true]);
+
+        $service = new ProjectUpdateService($client, $hostDir, $composeDir);
+        $status = $service->start();
+
+        $this->assertTrue($status['running']);
+        $this->assertSame('2.0.0', $status['target_version']);
     }
 
     public function test_read_log_tail_returns_last_lines(): void

@@ -4,6 +4,7 @@ import { useSystemStore } from '@/stores/system'
 import { useSettingsStore } from '@/stores/settings'
 import { useProjectUpdateStore } from '@/stores/projectUpdate'
 import { useSpeedTestStore } from '@/stores/speedTest'
+import { stopAuthenticatedBackgroundWork } from '@/utils/stopAuthenticatedBackground'
 
 export function useAppBootstrap () {
   const auth = useAuthStore()
@@ -24,7 +25,11 @@ export function useAppBootstrap () {
   watch(
     () => auth.checked && !!auth.user,
     (ready) => {
-      if (ready) void bootstrap()
+      if (ready) {
+        void bootstrap()
+      } else if (auth.checked) {
+        void stopAuthenticatedBackgroundWork()
+      }
     },
     { immediate: true }
   )

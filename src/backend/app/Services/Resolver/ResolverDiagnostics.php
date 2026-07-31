@@ -431,7 +431,8 @@ SH;
 
             $signals['listeners']['dns_udp'] = $this->hasListenerOnPort($udp, ResolverService::DNS_LISTEN_PORT);
             $signals['listeners']['dns_tcp'] = $this->hasListenerOnPort($tcp, ResolverService::DNS_LISTEN_PORT);
-            $signals['listeners']['tproxy_udp'] = $this->hasListenerOnPort($udp, ResolverService::TPROXY_PORT);
+            $signals['listeners']['tproxy_udp'] = $this->hasListenerOnPort($udp, ResolverService::UDP_TPROXY_PORT)
+                || $this->hasListenerOnPort($udp, ResolverService::TPROXY_PORT);
             $signals['listeners']['tproxy_tcp'] = $this->hasListenerOnPort($tcp, ResolverService::TPROXY_PORT);
 
             $signals['policy_routing']['ip_rule_lines'] = $ipRule;
@@ -617,6 +618,15 @@ SH;
                 }
                 if (str_contains($rule, '-p udp') && str_contains($rule, '-m socket') && str_contains($rule, '-j DIVERT')) {
                     $out['divert_udp_hits'] += $packets;
+                }
+                // Current path: UDP FakeIP TPROXY when Block QUIC is off.
+                if (str_contains($rule, '-j TPROXY')
+                    && str_contains($rule, '-p udp')
+                    && str_contains($rule, '-d '.ResolverService::FAKEIP_CIDR)
+                    && (str_contains($rule, '--on-port '.(string) ResolverService::UDP_TPROXY_PORT)
+                        || str_contains($rule, '--on-port='.(string) ResolverService::UDP_TPROXY_PORT))) {
+                    $out['fakeip_rules_present'] = true;
+                    $out['tproxy_fakeip_udp_hits'] += $packets;
                 }
             }
 

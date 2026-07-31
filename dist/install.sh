@@ -198,6 +198,40 @@ cleanup_stale_tmp_artifacts() {
   fi
 }
 
+# After the .run returns, drop leftover tmp paths and unused previous awggui:* tags.
+cleanup_after_bundle() {
+  local img removed=0 self="${BASH_SOURCE[0]:-}"
+  log "Cleaning temporary files and unused Docker images ..."
+
+  find /tmp -maxdepth 1 -type d \( -name 'awg-gui-install.*' -o -name 'awg-gui-extract.*' \) \
+    -exec rm -rf {} + 2>/dev/null || true
+  find /tmp -maxdepth 1 -type f \( \
+    -name 'awg-gui-ensure-docker.*' \
+    -o -name 'awg-gui*.log' -o -name 'awg-gui-*.log' \
+  \) -delete 2>/dev/null || true
+  # Do not delete the script we may still be executing (wget one-liner path).
+  if [[ -f /tmp/awg-gui-install.sh && "$(readlink -f /tmp/awg-gui-install.sh 2>/dev/null || true)" != "$(readlink -f "${self}" 2>/dev/null || true)" ]]; then
+    rm -f /tmp/awg-gui-install.sh
+  fi
+
+  while read -r img; do
+    [[ -n "${img}" ]] || continue
+    [[ "${img}" == *":<none>" ]] && continue
+    if docker rmi "${img}" >/dev/null 2>&1; then
+      removed=$((removed + 1))
+    fi
+  done < <(docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep -E '^awggui-' || true)
+
+  docker image prune -f >/dev/null 2>&1 || true
+  docker rmi alpine:3.20 >/dev/null 2>&1 || true
+
+  if [[ "${removed}" -gt 0 ]]; then
+    ok "Removed ${removed} unused awg-gui image(s) and cleaned /tmp"
+  else
+    ok "Cleaned /tmp and dangling Docker images"
+  fi
+}
+
 require_free_space() {
   local path="$1" required="$2" label="$3" avail
   avail="$(available_bytes "${path}")"
@@ -367,6 +401,9 @@ main() {
   [[ "${YES}" -eq 1 ]] && args+=(--yes)
   log "Running release installer ..."
   "${bundle}" "${args[@]}"
+  # Bundle finished: download/extract traps may still run on EXIT; clear leftovers + old images now.
+  DOWNLOAD_TMP_DIR=""
+  cleanup_after_bundle
 }
 
 main "$@"

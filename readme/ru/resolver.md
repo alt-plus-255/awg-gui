@@ -17,7 +17,7 @@
 
 ## Как это работает
 
-1. На VDS в контейнере AWG работает **sing-box** с FakeIP (`198.18.0.0/15`) и ruleset-списками. FakeIP/list-трафик доставляется через **TPROXY** (`127.0.0.1:1602`), не через TUN.
+1. На VDS в контейнере AWG работает **sing-box** с FakeIP (`198.18.0.0/15`) и ruleset-списками. TCP к FakeIP/list доставляется через **NAT REDIRECT** на sing-box `:1602` (не TUN). Если **Блокировать QUIC** выключен — UDP/QUIC к FakeIP идёт через **TPROXY** `:1603`; если включён — UDP FakeIP **REJECT**, приложения падают на TCP.
 2. Community-списки ([allow-domains](https://github.com/itdoginfo/allow-domains)) скачиваются на диск (`rulesets/*.srs`) — **Настройки списков**.
 3. Для каждого серверного конфига на **Резолвере** выбирается **Подключение** — upstream для доменов из списков. Несколько AWG-конфигов изолируются по VPN-подсети клиента (`source_ip_cidr`): свои списки, outbound, DNS и флаг Block QUIC.
 4. Клиент получает `.conf` / QR с `DNS = gateway`, `AllowedIPs = 0.0.0.0/0, ::/0` и **MTU = 1420** (после смены MTU нужен переимпорт на устройстве).
@@ -26,7 +26,8 @@
 flowchart LR
   Client[Клиент AmneziaWG] -->|весь трафик| VDS[VDS / AWG]
   VDS -->|DNS FakeIP| SB[sing-box]
-  VDS -->|TPROXY FakeIP| SB
+  VDS -->|TCP REDIRECT FakeIP| SB
+  VDS -->|UDP FakeIP REJECT или TPROXY| SB
   SB -->|домен в списке| Conn[Подключение конфига]
   SB -->|домен вне списка| VDSip[Выход с IP VDS]
   Conn --> Internet[Интернет]
@@ -75,7 +76,7 @@ AllowedIPs = 0.0.0.0/0, ::/0
 - **Community-списки** — YouTube, Meta, Telegram, Discord, TikTok и др. Синхронизация в **Настройки списков** (интервал по умолчанию 6 ч). Кнопка **Сохранить** на странице Резолвер **не** скачивает списки по HTTP.
 - **Свои домены и подсети** — на карточке конфига на странице **Резолвер**.
 - **Взаимоисключающие списки** — `russia_inside`, `russia_outside`, `ukraine_inside`: одновременно можно выбрать только один из этой группы.
-- **Блокировать QUIC** — reject QUIC только для VPN-подсети этого конфига (полезно для YouTube). Не влияет на другие AWG-конфиги на той же VDS.
+- **Блокировать QUIC** — включено: UDP/QUIC к FakeIP отклоняется (приложения на TCP; стабильный старт видео). Выключено: QUIC идёт в sing-box через TPROXY и выходит через Подключение (лучше для YouTube 4K; нужен UDP-capable outbound, например VLESS+XUDP). Не влияет на другие AWG-конфиги на той же VDS. **Замер скорости** в панели — bulk через outbound, это не то же самое, что ABR-видео / перемотка. Для видео по возможности выбирайте ноды без WebSocket/gRPC (TCP/Reality), если подписка позволяет.
 
 ## Подключения
 

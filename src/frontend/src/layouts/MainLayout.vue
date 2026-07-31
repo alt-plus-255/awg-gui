@@ -406,7 +406,6 @@ watch(() => route.fullPath, () => {
 
 async function onLogout () {
   drawerOpen.value = false
-  systemStore.stopBlockedPoll()
   await auth.logout()
   router.push({ name: 'login' })
 }

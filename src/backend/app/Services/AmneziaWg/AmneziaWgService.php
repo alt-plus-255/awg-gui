@@ -1072,15 +1072,16 @@ class AmneziaWgService
         ];
 
         if ($config->isResolverEnabled()) {
-            // Resolver ON: AWG still owns the tunnel; DNS + selective FakeIP/list TPROXY are side-cars.
+            // Resolver ON: AWG still owns the tunnel; DNS + selective FakeIP REDIRECT (+ optional UDP TPROXY) are side-cars.
             // Resolver OFF: PostUp is only FORWARD+MASQUERADE (all client traffic = direct / VDS IP).
             $parts[] = 'iptables -t nat -A PREROUTING -i %i -p udp --dport 53 -j REDIRECT --to-ports '.ResolverService::DNS_LISTEN_PORT;
             $parts[] = 'iptables -t nat -A PREROUTING -i %i -p tcp --dport 53 -j REDIRECT --to-ports '.ResolverService::DNS_LISTEN_PORT;
 
-            // Strip obsolete flat rules first, then install current selective TPROXY+DIVERT path.
+            // Strip obsolete flat rules first, then install current REDIRECT (+ UDP TPROXY or REJECT) path.
             $parts = array_merge($parts, $this->legacyResolverIptablesCleanup());
             app(ResolverService::class)->ensureResolverMarkScripts();
-            $parts[] = 'sh /config/resolver-mark.sh %i';
+            $rejectQuic = $config->resolver_reject_quic ? '1' : '0';
+            $parts[] = 'sh /config/resolver-mark.sh %i '.$rejectQuic;
         }
 
         return implode('; ', $parts);

@@ -77,6 +77,8 @@ export const useAuthStore = defineStore('auth', () => {
     user.value = null
     checked.value = true
     writeCachedUser(null)
+    void import('@/utils/stopAuthenticatedBackground')
+      .then(({ stopAuthenticatedBackgroundWork }) => stopAuthenticatedBackgroundWork())
   }
 
   async function logout () {

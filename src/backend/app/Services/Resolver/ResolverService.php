@@ -15,9 +15,17 @@ class ResolverService
 {
     public const FAKEIP_CIDR = '198.18.0.0/15';
 
+    /** Client-facing FakeIP DNS TTL (seconds). Higher reduces ABR/seek DNS churn. */
+    public const FAKEIP_REWRITE_TTL = 300;
+
     public const TPROXY_PORT = 1602;
 
     public const TPROXY_INBOUND_TAG = 'tproxy-in';
+
+    /** UDP FakeIP delivery when Block QUIC is off (QUIC/HTTP3 via Connection). */
+    public const UDP_TPROXY_PORT = 1603;
+
+    public const UDP_TPROXY_INBOUND_TAG = 'tproxy-udp-in';
 
     /**
      * Bind all interfaces. Do NOT use 127.0.0.1: Docker often leaves
@@ -748,11 +756,18 @@ class ResolverService
 
             $ifaces = array_map(fn (AwgConfig $c) => $c->iface, $configs);
             $ifacesContents = implode("\n", $ifaces)."\n";
-            $ifacesChanged = $this->writeFileIfChanged($this->resolverIfacesPath(), $ifacesContents);
+            $this->writeFileIfChanged($this->resolverIfacesPath(), $ifacesContents);
 
-            $markScriptsChanged = $this->ensureResolverMarkScripts();
-            if ($markScriptsChanged || $this->mergedRulesets->applyProxyCidrsChanged || $ifacesChanged) {
-                $this->refreshResolverMarksOnIfaces($ifaces);
+            $ifaceRejectQuic = [];
+            foreach ($configs as $config) {
+                $ifaceRejectQuic[(string) $config->iface] = (bool) $config->resolver_reject_quic;
+            }
+
+            $this->ensureResolverMarkScripts();
+            // Refresh live iptables whenever resolver configs exist so reject_quic
+            // toggles apply without waiting for awg-quick re-up.
+            if ($configs !== []) {
+                $this->refreshResolverMarksOnIfaces($ifaceRejectQuic);
             }
 
             $now = now();
@@ -827,10 +842,26 @@ class ResolverService
                 'action' => 'reject',
             ],
         ];
+        $allProxyCidrs = [];
+        $quicRejectRules = [];
+        $needUdpTproxy = false;
+
+        foreach ($configs as $config) {
+            if (! $config->resolver_reject_quic) {
+                $needUdpTproxy = true;
+                break;
+            }
+        }
+
+        $sniffInbounds = [self::TPROXY_INBOUND_TAG, 'dns-in'];
+        if ($needUdpTproxy) {
+            $sniffInbounds[] = self::UDP_TPROXY_INBOUND_TAG;
+        }
+
         $routeRules = [
             [
                 'action' => 'sniff',
-                'inbound' => [self::TPROXY_INBOUND_TAG, 'dns-in'],
+                'inbound' => $sniffInbounds,
             ],
             [
                 'protocol' => 'dns',
@@ -854,9 +885,6 @@ class ResolverService
         $outbounds = $built['outbounds'];
         $outboundTagsAdded = $built['tags_added'];
 
-        $allProxyCidrs = [];
-        $quicRejectRules = [];
-
         foreach ($configs as $config) {
             $config->loadMissing('resolverConnection');
             $routingTag = $this->routingTagForConfig($config);
@@ -867,8 +895,12 @@ class ResolverService
 
             if ($config->resolver_reject_quic) {
                 // Per-config only: never global quic reject (multi AWG isolation).
+                $quicInbounds = [self::TPROXY_INBOUND_TAG];
+                if ($needUdpTproxy) {
+                    $quicInbounds[] = self::UDP_TPROXY_INBOUND_TAG;
+                }
                 $quicRejectRules[] = [
-                    'inbound' => [self::TPROXY_INBOUND_TAG],
+                    'inbound' => $quicInbounds,
                     'source_ip_cidr' => $source,
                     'protocol' => 'quic',
                     'action' => 'reject',
@@ -909,7 +941,7 @@ class ResolverService
                     'rule_set' => [$mergedTag],
                     'action' => 'route',
                     'server' => 'fakeip',
-                    'rewrite_ttl' => 60,
+                    'rewrite_ttl' => self::FAKEIP_REWRITE_TTL,
                 ];
                 // FakeIP catch-all for this subnet BEFORE domain sniff rules so traffic
                 // still proxies if sniff+source_ip AND matching fails on TPROXY.
@@ -1031,7 +1063,7 @@ class ResolverService
                 'cache_capacity' => 4096,
                 'strategy' => 'ipv4_only',
             ],
-            'inbounds' => $this->withTelegramMixedInbound([
+            'inbounds' => $this->withTelegramMixedInbound(array_values(array_filter([
                 [
                     'type' => 'direct',
                     'tag' => 'dns-in',
@@ -1043,13 +1075,22 @@ class ResolverService
                     'tag' => self::TPROXY_INBOUND_TAG,
                     'listen' => self::TPROXY_LISTEN,
                     'listen_port' => self::TPROXY_PORT,
+                    'tcp_fast_open' => true,
                 ],
-            ], $outbounds, $routeRules, $outboundTagsAdded),
+                $needUdpTproxy ? [
+                    'type' => 'tproxy',
+                    'tag' => self::UDP_TPROXY_INBOUND_TAG,
+                    'listen' => self::TPROXY_LISTEN,
+                    'listen_port' => self::UDP_TPROXY_PORT,
+                    'network' => 'udp',
+                    'udp_fragment' => true,
+                ] : null,
+            ])), $outbounds, $routeRules, $outboundTagsAdded),
             'outbounds' => $outbounds,
             // Routing ownership (anti-TUN-auto_route):
             // 1) Client full-tunnel is owned by AWG (AllowedIPs 0.0.0.0/0) — not by sing-box.
-            // 2) TCP FakeIP/list CIDRs are NAT-REDIRECT'd into sing-box; everything else stays on awg*
-            //    and exits via MASQUERADE (direct / VDS IP). REDIRECT avoids Docker lo.route_localnet.
+            // 2) TCP FakeIP/list CIDRs are NAT-REDIRECT'd into sing-box; UDP FakeIP uses TPROXY :1603
+            //    when Block QUIC is off (else REJECT). Everything else stays on awg* → MASQUERADE.
             // 3) Pin egress to the resolved NIC (auto-detect or settings override).
             //    route.exclude_interface does not exist in sing-box (TUN-inbound only).
             'route' => [
@@ -1352,14 +1393,14 @@ class ResolverService
     }
 
     /**
-     * Re-apply MARK chains on live AWG ifaces after proxy_cidrs_all.lst changes.
+     * Re-apply MARK/REDIRECT/UDP chains on live AWG ifaces.
      * Single docker exec for all ifaces (avoids O(N) round-trips).
      *
-     * @param  list<string>  $ifaces
+     * @param  array<string, bool>  $ifaceRejectQuic  iface => resolver_reject_quic
      */
-    public function refreshResolverMarksOnIfaces(array $ifaces): void
+    public function refreshResolverMarksOnIfaces(array $ifaceRejectQuic): void
     {
-        $this->markScripts->refreshResolverMarksOnIfaces($ifaces);
+        $this->markScripts->refreshResolverMarksOnIfaces($ifaceRejectQuic);
     }
 
     /**

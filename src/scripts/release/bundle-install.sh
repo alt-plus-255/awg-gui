@@ -393,6 +393,33 @@ cleanup_loaded_image_archives() {
   fi
 }
 
+# Drop previous awggui:* tags left after upgrade. In-use images stay (docker rmi refuses without -f).
+cleanup_unused_project_images() {
+  local img removed=0
+  log "Removing unused awg-gui Docker images ..."
+  while read -r img; do
+    [[ -n "${img}" ]] || continue
+    [[ "${img}" == *":<none>" ]] && continue
+    if docker rmi "${img}" >/dev/null 2>&1; then
+      removed=$((removed + 1))
+      log "Removed unused image ${img}"
+    fi
+  done < <(docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep -E '^awggui-' || true)
+
+  docker image prune -f >/dev/null 2>&1 || true
+
+  if [[ "${removed}" -gt 0 ]]; then
+    ok "Removed ${removed} unused awg-gui image(s)"
+  else
+    ok "No unused awg-gui images to remove"
+  fi
+}
+
+cleanup_after_install() {
+  cleanup_loaded_image_archives
+  cleanup_unused_project_images
+}
+
 load_images() {
   local tar_file=""
   for tar_file in "${SCRIPT_DIR}"/images/awggui-all-*.tar.gz "${SCRIPT_DIR}"/images/awggui-all-*.tar; do
@@ -592,7 +619,19 @@ run_bootstrap() {
 
   run_migrations
 
-  if [[ -n "${admin_pass}" ]]; then
+  if [[ "${UPGRADE_MODE}" -eq 1 ]]; then
+    # Create admin only if missing; existing password is never overwritten.
+    log "Ensuring admin user exists (preserving password)..."
+    if [[ -n "${admin_pass}" ]]; then
+      compose exec -T \
+        -e ADMIN_PASSWORD="${admin_pass}" \
+        app php artisan admin:ensure --username=admin --password="${admin_pass}" --email=admin@localhost \
+        || warn "admin:ensure skipped (will rely on existing DB user)"
+    else
+      compose exec -T app php artisan admin:ensure --username=admin --email=admin@localhost \
+        || warn "admin:ensure skipped (will rely on existing DB user)"
+    fi
+  elif [[ -n "${admin_pass}" ]]; then
     log "Ensuring admin user..."
     compose exec -T \
       -e ADMIN_PASSWORD="${admin_pass}" \
@@ -692,6 +731,7 @@ EOF
 
   install_cli_and_systemd
   mark_install_complete
+  cleanup_after_install
 
   local url="http://${display_host}:${panel_port}"
   print_helper

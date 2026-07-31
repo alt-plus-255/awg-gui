@@ -109,14 +109,21 @@ class ResolverSingBoxTproxyConfigTest extends TestCase
             $inboundTypes = array_column($sb['inbounds'], 'type');
             $this->assertContains('redirect', $inboundTypes);
             $this->assertNotContains('tun', $inboundTypes);
-            $this->assertNotContains('tproxy', $inboundTypes);
+            // cfgB has reject_quic=false → UDP tproxy inbound present
+            $this->assertContains('tproxy', $inboundTypes);
 
             $redir = collect($sb['inbounds'])->firstWhere('type', 'redirect');
             $this->assertSame(ResolverService::TPROXY_INBOUND_TAG, $redir['tag']);
             $this->assertSame(ResolverService::TPROXY_LISTEN, $redir['listen']);
             $this->assertSame(ResolverService::TPROXY_PORT, $redir['listen_port']);
-            $this->assertArrayNotHasKey('tcp_fast_open', $redir);
-            $this->assertArrayNotHasKey('udp_fragment', $redir);
+            $this->assertTrue($redir['tcp_fast_open'] ?? false);
+
+            $udpIn = collect($sb['inbounds'])->firstWhere('tag', ResolverService::UDP_TPROXY_INBOUND_TAG);
+            $this->assertNotNull($udpIn);
+            $this->assertSame('tproxy', $udpIn['type']);
+            $this->assertSame(ResolverService::UDP_TPROXY_PORT, $udpIn['listen_port']);
+            $this->assertSame('udp', $udpIn['network'] ?? null);
+            $this->assertTrue($udpIn['udp_fragment'] ?? false);
 
             $dnsIn = collect($sb['inbounds'])->firstWhere('tag', 'dns-in');
             $this->assertSame('direct', $dnsIn['type']);
@@ -175,7 +182,8 @@ class ResolverSingBoxTproxyConfigTest extends TestCase
             ));
             $this->assertCount(1, $quicRules);
             $this->assertSame(['10.66.66.0/24'], $quicRules[0]['source_ip_cidr']);
-            $this->assertSame([ResolverService::TPROXY_INBOUND_TAG], $quicRules[0]['inbound']);
+            $this->assertContains(ResolverService::TPROXY_INBOUND_TAG, $quicRules[0]['inbound']);
+            $this->assertContains(ResolverService::UDP_TPROXY_INBOUND_TAG, $quicRules[0]['inbound']);
 
             $this->assertSame(['HTTPS'], $sb['dns']['rules'][0]['query_type'] ?? null);
             $this->assertSame('reject', $sb['dns']['rules'][0]['action'] ?? null);
@@ -187,7 +195,7 @@ class ResolverSingBoxTproxyConfigTest extends TestCase
             ));
             $this->assertNotEmpty($fakeipDns);
             foreach ($fakeipDns as $rule) {
-                $this->assertSame(60, $rule['rewrite_ttl'] ?? null);
+                $this->assertSame(ResolverService::FAKEIP_REWRITE_TTL, $rule['rewrite_ttl'] ?? null);
                 $this->assertArrayHasKey('source_ip_cidr', $rule);
             }
         } finally {
@@ -195,6 +203,62 @@ class ResolverSingBoxTproxyConfigTest extends TestCase
             $cfgB->delete();
             $connA->delete();
             $connB->delete();
+        }
+    }
+
+    public function test_all_reject_quic_omits_udp_tproxy_inbound(): void
+    {
+        $suffix = substr(str_replace('.', '', uniqid('', true)), -6);
+        $iface = 'tpq'.$suffix;
+        $port = 41000 + (hexdec(substr($suffix, 0, 4)) % 9000);
+
+        $conn = ResolverConnection::query()->create([
+            'name' => 'Exit Q '.$suffix,
+            'kind' => ResolverConnection::KIND_PROXY,
+            'config_type' => 'json',
+            'enabled' => true,
+            'outbound' => [
+                'type' => 'socks',
+                'server' => '127.0.0.1',
+                'server_port' => 1080,
+            ],
+        ]);
+
+        $cfg = AwgConfig::query()->create([
+            'name' => 'Server Q '.$suffix,
+            'type' => 'server',
+            'iface' => $iface,
+            'listen_port' => $port,
+            'internal_subnet' => '10.88.88.0/24',
+            'server_address' => '10.88.88.1',
+            'server_private_key' => 'privQ',
+            'server_public_key' => 'pubQ',
+            'enabled' => true,
+            'resolver_enabled' => true,
+            'resolver_reject_quic' => true,
+            'community_lists' => [],
+            'user_domains' => ['youtube.com'],
+            'user_subnets' => [],
+            'connection_id' => $conn->id,
+        ]);
+
+        try {
+            $cfg->load('resolverConnection');
+            $sb = app(ResolverService::class)->buildSingBoxConfig([$cfg], forceSyncLists: false);
+
+            $this->assertContains('redirect', array_column($sb['inbounds'], 'type'));
+            $this->assertNotContains('tproxy', array_column($sb['inbounds'], 'type'));
+            $this->assertNull(collect($sb['inbounds'])->firstWhere('tag', ResolverService::UDP_TPROXY_INBOUND_TAG));
+
+            $quicRules = array_values(array_filter(
+                $sb['route']['rules'],
+                fn (array $r) => ($r['protocol'] ?? null) === 'quic' && ($r['action'] ?? null) === 'reject'
+            ));
+            $this->assertCount(1, $quicRules);
+            $this->assertSame([ResolverService::TPROXY_INBOUND_TAG], $quicRules[0]['inbound']);
+        } finally {
+            $cfg->delete();
+            $conn->delete();
         }
     }
 

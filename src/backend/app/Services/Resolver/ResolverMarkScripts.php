@@ -29,9 +29,11 @@ class ResolverMarkScripts
         }
 
         $tproxyPort = ResolverService::TPROXY_PORT;
+        $udpTproxyPort = ResolverService::UDP_TPROXY_PORT;
         $fakeip = ResolverService::FAKEIP_CIDR;
         $tproxyMark = ResolverService::TPROXY_MARK;
         $tproxyTable = ResolverService::TPROXY_TABLE;
+        $tproxyOnIp = ResolverService::TPROXY_ON_IP;
         $tunMark = '0x2';
         $tunTable = ResolverService::TUN_TABLE;
         $tunIface = ResolverService::TUN_IFACE;
@@ -41,12 +43,16 @@ class ResolverMarkScripts
 # Selective FakeIP/list delivery into sing-box (NOT TUN/auto_route):
 # - AWG iface owns the client full-tunnel.
 # - TCP FakeIP + list CIDRs → NAT REDIRECT → sing-box :{$tproxyPort} (Docker-safe).
-# - Avoid TPROXY→127.0.0.1: Docker often leaves lo.route_localnet=0 and denies sysctl,
-#   so iptables TPROXY counters rise while Clash stays empty.
+# - UDP FakeIP: arg2 reject_quic=1 → REJECT (force TCP); reject_quic=0 → TPROXY :{$udpTproxyPort}.
 # - Everything else stays on \${1} and exits via POSTROUTING MASQUERADE (direct / VDS IP).
 IFACE="\${1:?iface}"
+REJECT_QUIC="\${2:-1}"
 REDIR_PORT={$tproxyPort}
+UDP_PORT={$udpTproxyPort}
 FAKEIP={$fakeip}
+TPROXY_MARK={$tproxyMark}
+TPROXY_TABLE={$tproxyTable}
+TPROXY_ON_IP={$tproxyOnIp}
 CIDR_FILE=/config/rulesets/proxy_cidrs_all.lst
 NAT_CHAIN="RSNAT_\${IFACE}"
 MANGLE_CHAIN="RS_\${IFACE}"
@@ -58,18 +64,15 @@ done
 ip route flush table {$tunTable} 2>/dev/null || true
 ip link delete {$tunIface} 2>/dev/null || true
 
-# Drop legacy mangle TPROXY path.
+# Drop legacy per-iface mangle TCP TPROXY chain (pre-REDIRECT builds).
 iptables -t mangle -D PREROUTING -i "\$IFACE" -j "\$MANGLE_CHAIN" 2>/dev/null || true
 iptables -t mangle -F "\$MANGLE_CHAIN" 2>/dev/null || true
 iptables -t mangle -X "\$MANGLE_CHAIN" 2>/dev/null || true
-iptables -t mangle -D PREROUTING -p tcp -m socket --transparent -j DIVERT 2>/dev/null || true
-iptables -t mangle -D PREROUTING -p udp -m socket --transparent -j DIVERT 2>/dev/null || true
-iptables -t mangle -D PREROUTING -p tcp -m socket -j DIVERT 2>/dev/null || true
-iptables -t mangle -D PREROUTING -p udp -m socket -j DIVERT 2>/dev/null || true
-while ip rule show 2>/dev/null | grep -q "fwmark {$tproxyMark} lookup {$tproxyTable}"; do
-  ip rule del fwmark {$tproxyMark} table {$tproxyTable} 2>/dev/null || break
-done
-ip route flush table {$tproxyTable} 2>/dev/null || true
+
+# Clear previous UDP FakeIP REJECT / TPROXY for this iface (re-install below).
+iptables -D FORWARD -i "\$IFACE" -d "\$FAKEIP" -p udp -j REJECT --reject-with icmp-port-unreachable 2>/dev/null || true
+iptables -t mangle -D PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p udp -j TPROXY --on-port "\$UDP_PORT" --on-ip "\$TPROXY_ON_IP" --tproxy-mark "\$TPROXY_MARK/\$TPROXY_MARK" 2>/dev/null || true
+iptables -t mangle -D PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p udp -j TPROXY --on-port "\$UDP_PORT" --on-ip 127.0.0.1 --tproxy-mark "\$TPROXY_MARK/\$TPROXY_MARK" 2>/dev/null || true
 
 iptables -t nat -N "\$NAT_CHAIN" 2>/dev/null || iptables -t nat -F "\$NAT_CHAIN"
 
@@ -91,12 +94,29 @@ fi
 iptables -t nat -C PREROUTING -i "\$IFACE" -j "\$NAT_CHAIN" 2>/dev/null \\
   || iptables -t nat -A PREROUTING -i "\$IFACE" -j "\$NAT_CHAIN"
 
-# TCP-only REDIRECT: UDP/QUIC to FakeIP would otherwise forward out eth0 and blackhole
-# until the app times out (YouTube "4K on speedtest, video never starts"). Reject fast.
-iptables -D FORWARD -i "\$IFACE" -d "\$FAKEIP" -p udp -j REJECT --reject-with icmp-port-unreachable 2>/dev/null || true
-iptables -I FORWARD 1 -i "\$IFACE" -d "\$FAKEIP" -p udp -j REJECT --reject-with icmp-port-unreachable
+if [ "\$REJECT_QUIC" = "0" ]; then
+  # QUIC allowed: deliver UDP FakeIP into sing-box tproxy-udp-in.
+  iptables -t mangle -N DIVERT 2>/dev/null || true
+  iptables -t mangle -C DIVERT -j MARK --set-mark "\$TPROXY_MARK" 2>/dev/null \\
+    || iptables -t mangle -A DIVERT -j MARK --set-mark "\$TPROXY_MARK"
+  iptables -t mangle -C DIVERT -j ACCEPT 2>/dev/null \\
+    || iptables -t mangle -A DIVERT -j ACCEPT
+  iptables -t mangle -C PREROUTING -p udp -m socket -j DIVERT 2>/dev/null \\
+    || iptables -t mangle -I PREROUTING 1 -p udp -m socket -j DIVERT
 
-echo "[sing-box] redirect-tcp: \${IFACE} → :\${REDIR_PORT} (\${FAKEIP} + list CIDRs); udp-fakeip REJECT"
+  if ! ip rule show 2>/dev/null | grep -q "fwmark \$TPROXY_MARK lookup \$TPROXY_TABLE"; then
+    ip rule add fwmark "\$TPROXY_MARK" lookup "\$TPROXY_TABLE" 2>/dev/null || true
+  fi
+  ip route replace local default dev lo table "\$TPROXY_TABLE" 2>/dev/null || true
+
+  iptables -t mangle -A PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p udp -j TPROXY \\
+    --on-port "\$UDP_PORT" --on-ip "\$TPROXY_ON_IP" --tproxy-mark "\$TPROXY_MARK/\$TPROXY_MARK"
+  echo "[sing-box] redirect-tcp: \${IFACE} → :\${REDIR_PORT}; udp-fakeip TPROXY :\${UDP_PORT}"
+else
+  # Block QUIC: reject UDP to FakeIP fast so apps fall back to TCP (REDIRECT path).
+  iptables -I FORWARD 1 -i "\$IFACE" -d "\$FAKEIP" -p udp -j REJECT --reject-with icmp-port-unreachable
+  echo "[sing-box] redirect-tcp: \${IFACE} → :\${REDIR_PORT} (\${FAKEIP} + list CIDRs); udp-fakeip REJECT"
+fi
 SH;
         $changed = $this->files->writeExecutable($mark, $markBody) || $changed;
 
@@ -107,12 +127,18 @@ NAT_CHAIN="RSNAT_\${IFACE}"
 MANGLE_CHAIN="RS_\${IFACE}"
 FAKEIP={$fakeip}
 TPROXY_PORT={$tproxyPort}
+UDP_PORT={$udpTproxyPort}
+TPROXY_MARK={$tproxyMark}
+TPROXY_ON_IP={$tproxyOnIp}
 
 iptables -t nat -D PREROUTING -i "\$IFACE" -j "\$NAT_CHAIN" 2>/dev/null || true
 iptables -t nat -F "\$NAT_CHAIN" 2>/dev/null || true
 iptables -t nat -X "\$NAT_CHAIN" 2>/dev/null || true
 
 iptables -D FORWARD -i "\$IFACE" -d "\$FAKEIP" -p udp -j REJECT --reject-with icmp-port-unreachable 2>/dev/null || true
+
+iptables -t mangle -D PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p udp -j TPROXY --on-port "\$UDP_PORT" --on-ip "\$TPROXY_ON_IP" --tproxy-mark "\$TPROXY_MARK/\$TPROXY_MARK" 2>/dev/null || true
+iptables -t mangle -D PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p udp -j TPROXY --on-port "\$UDP_PORT" --on-ip 127.0.0.1 --tproxy-mark "\$TPROXY_MARK/\$TPROXY_MARK" 2>/dev/null || true
 
 iptables -t mangle -D PREROUTING -i "\$IFACE" -j "\$MANGLE_CHAIN" 2>/dev/null || true
 iptables -t mangle -F "\$MANGLE_CHAIN" 2>/dev/null || true
@@ -381,35 +407,32 @@ SH;
     }
 
     /**
-     * Re-apply TPROXY chains on live AWG ifaces after proxy_cidrs_all.lst changes.
+     * Re-apply REDIRECT/UDP chains on live AWG ifaces after proxy_cidrs / reject_quic changes.
      * Single docker exec for all ifaces (avoids O(N) round-trips).
      *
-     * @param  list<string>  $ifaces
+     * @param  array<string, bool>  $ifaceRejectQuic  iface => resolver_reject_quic
      */
-    public function refreshResolverMarksOnIfaces(array $ifaces): void
+    public function refreshResolverMarksOnIfaces(array $ifaceRejectQuic): void
     {
-        $clean = [];
-        foreach ($ifaces as $iface) {
+        $parts = [];
+        foreach ($ifaceRejectQuic as $iface => $rejectQuic) {
             $iface = trim((string) $iface);
-            if ($iface !== '') {
-                $clean[] = $iface;
+            if ($iface === '') {
+                continue;
             }
+            $flag = $rejectQuic ? '1' : '0';
+            $parts[] = 'sh /config/resolver-unmark.sh '.escapeshellarg($iface).' 2>/dev/null || true';
+            $parts[] = 'sh /config/resolver-mark.sh '.escapeshellarg($iface).' '.escapeshellarg($flag).' 2>/dev/null || true';
         }
-        if ($clean === []) {
+        if ($parts === []) {
             return;
         }
 
         $container = $this->awg->containerName();
-        $quoted = implode(' ', array_map('escapeshellarg', $clean));
         try {
             $this->docker->exec(
                 $container,
-                ['sh', '-c',
-                    'for iface in '.$quoted.'; do '
-                    .'sh /config/resolver-unmark.sh "$iface" 2>/dev/null || true; '
-                    .'sh /config/resolver-mark.sh "$iface" 2>/dev/null || true; '
-                    .'done',
-                ],
+                ['sh', '-c', implode('; ', $parts)],
                 timeout: 60,
             );
         } catch (\Throwable $e) {

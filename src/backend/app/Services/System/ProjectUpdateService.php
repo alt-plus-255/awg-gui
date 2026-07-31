@@ -69,7 +69,7 @@ class ProjectUpdateService
      */
     public function start(?string $targetVersion = null): array
     {
-        $status = $this->status();
+        $status = $this->status(checkRelease: true);
         if (! ($status['can_update'] ?? false)) {
             throw new RuntimeException('update_not_available');
         }
@@ -78,12 +78,20 @@ class ProjectUpdateService
             throw new RuntimeException('update_already_running');
         }
 
-        $this->panelOps->startUpdate($targetVersion);
+        $resolvedTarget = $targetVersion !== null && trim($targetVersion) !== ''
+            ? ltrim(trim($targetVersion), 'v')
+            : ($status['latest_version'] ?? null);
+
+        if (! $this->isNewerVersion($resolvedTarget, $status['current_version'] ?? null)) {
+            throw new RuntimeException('update_not_available');
+        }
+
+        $this->panelOps->startUpdate($resolvedTarget);
 
         return array_merge($this->status(), [
             'status' => 'running',
             'running' => true,
-            'target_version' => $targetVersion ? ltrim($targetVersion, 'v') : null,
+            'target_version' => $resolvedTarget,
             'message' => __('settings.update_message_started'),
             'log_tail' => $this->readLogTail(),
         ]);

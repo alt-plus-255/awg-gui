@@ -35,9 +35,18 @@ tail -n +"${ARCHIVE_LINE}" "$0" | tar xzf - -C "${TMP}"
 
 mkdir -p "${INSTALL_DIR}"
 if command -v rsync >/dev/null 2>&1; then
-  rsync -a "${TMP}/" "${INSTALL_DIR}/"
+  # Never overwrite live install secrets with bundle defaults.
+  rsync -a --exclude 'runtime/.env' "${TMP}/" "${INSTALL_DIR}/"
 else
+  # Fallback without rsync: copy tree but keep an existing .env.
+  if [[ -f "${INSTALL_DIR}/runtime/.env" ]]; then
+    cp -a "${INSTALL_DIR}/runtime/.env" "${TMP}/.env.preserve"
+  fi
   cp -a "${TMP}/." "${INSTALL_DIR}/"
+  if [[ -f "${TMP}/.env.preserve" ]]; then
+    mkdir -p "${INSTALL_DIR}/runtime"
+    mv -f "${TMP}/.env.preserve" "${INSTALL_DIR}/runtime/.env"
+  fi
 fi
 
 ARGS=()

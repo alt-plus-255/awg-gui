@@ -197,6 +197,7 @@ return [
     'speed_test_start_failed' => 'Failed to start speed-test probe',
     'speed_test_api_not_ready' => 'Speed-test Clash API probe is not ready',
     'speed_test_ping_failed' => 'Ping via outbound failed',
+    'speed_test_unreachable' => 'Node unreachable (ping) — speed measurement skipped',
     'speed_test_download_failed' => 'Download speed test failed',
     'speed_test_upload_failed' => 'Upload speed test failed',
     'speed_test_http_failed' => 'Speed-test HTTP :code',

@@ -508,7 +508,7 @@
                   color="primary"
                   :label="t('settings.updateNow')"
                   :loading="projectUpdate.starting"
-                  :disable="!projectUpdate.can_update || projectUpdate.running"
+                  :disable="!projectUpdate.can_update || !projectUpdate.update_available || projectUpdate.running"
                   @click="confirmProjectUpdate"
                 />
                 <q-btn
