@@ -577,13 +577,35 @@
                   :loading="projectUpdate.checking"
                   @click="checkForUpdatesFromSettings"
                 />
+                <q-btn
+                  v-if="projectUpdate.can_retry_stuck"
+                  color="warning"
+                  :label="t('settings.updateRetryStuck')"
+                  :loading="projectUpdate.retryingStuck"
+                  @click="confirmRetryStuckUpdate"
+                />
+              </div>
+
+              <div v-if="projectUpdate.stuck" class="text-warning text-caption q-mb-md">
+                {{ t('settings.updateStuckHint') }}
               </div>
 
               <div v-if="!projectUpdate.can_update" class="text-warning text-caption q-mb-md">
                 {{ t('settings.updateUnavailable') }}
               </div>
 
-              <div class="text-subtitle2 q-mb-sm">{{ t('settings.updateLogTitle') }}</div>
+              <div class="row items-center justify-between q-mb-sm">
+                <div class="text-subtitle2">{{ t('settings.updateLogTitle') }}</div>
+                <q-btn
+                  flat
+                  dense
+                  color="grey-5"
+                  :label="t('settings.updateClearLog')"
+                  :loading="projectUpdate.clearingLog"
+                  :disable="!projectUpdate.can_clear_log"
+                  @click="confirmClearUpdateLog"
+                />
+              </div>
               <pre class="mono update-log-pre">{{ projectUpdate.log_tail || t('settings.updateLogEmpty') }}</pre>
             </q-tab-panel>
 
@@ -966,6 +988,7 @@ const endpointHostPreview = computed(() => {
 const updateStatusBusy = computed(() => projectUpdate.busy)
 
 const updateStatusLabel = computed(() => {
+  if (projectUpdate.stuck) return t('settings.updateStuck')
   if (projectUpdate.running) return t('settings.updateRunning')
   const map = {
     idle: t('settings.updateIdle'),
@@ -976,6 +999,7 @@ const updateStatusLabel = computed(() => {
 })
 
 const updateStatusClass = computed(() => {
+  if (projectUpdate.stuck) return 'text-warning'
   if (projectUpdate.running) return 'text-primary'
   if (projectUpdate.status === 'success') return 'text-positive'
   if (projectUpdate.status === 'failed') return 'text-negative'
@@ -1690,6 +1714,52 @@ function confirmProjectUpdate () {
     ok: { label: t('settings.updateNow'), color: 'primary' },
     persistent: true
   }).onOk(startProjectUpdate)
+}
+
+function confirmClearUpdateLog () {
+  $q.dialog({
+    title: t('settings.updateClearLogConfirmTitle'),
+    message: t('settings.updateClearLogConfirmText'),
+    cancel: { label: t('common.cancel'), flat: true },
+    ok: { label: t('settings.updateClearLog'), color: 'primary' },
+    persistent: true
+  }).onOk(clearUpdateLog)
+}
+
+async function clearUpdateLog () {
+  try {
+    await projectUpdate.clearLog()
+    $q.notify({ type: 'positive', message: t('settings.updateClearLogDone') })
+  } catch (e) {
+    $q.notify({
+      type: 'negative',
+      message: e?.response?.data?.message || t('settings.updateClearLogError')
+    })
+  }
+}
+
+function confirmRetryStuckUpdate () {
+  $q.dialog({
+    title: t('settings.updateRetryStuckConfirmTitle'),
+    message: t('settings.updateRetryStuckConfirmText'),
+    cancel: { label: t('common.cancel'), flat: true },
+    ok: { label: t('settings.updateRetryStuck'), color: 'warning' },
+    persistent: true
+  }).onOk(retryStuckUpdate)
+}
+
+async function retryStuckUpdate () {
+  try {
+    await projectUpdate.retryStuck()
+    $q.notify({ type: 'info', message: t('settings.updateRetryStuckDone') })
+    await projectUpdate.fetchStatus({ silent: true })
+  } catch (e) {
+    $q.notify({
+      type: 'negative',
+      message: e?.response?.data?.message || t('settings.updateRetryStuckError')
+    })
+    await projectUpdate.fetchStatus({ silent: true })
+  }
 }
 
 async function startProjectUpdate () {

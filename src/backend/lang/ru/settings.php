@@ -69,6 +69,10 @@ return [
 
     'update_not_available' => 'Автообновление недоступно в этой установке.',
     'update_already_running' => 'Обновление уже выполняется.',
+    'update_not_stuck' => 'Обновление не зависло (должно длиться больше 1 часа).',
+    'update_log_clear_blocked' => 'Нельзя очистить журнал, пока идёт обновление.',
+    'update_log_clear_failed' => 'Не удалось очистить журнал обновления.',
+    'update_log_cleared' => 'Журнал обновления очищен.',
     'awg_kernel_already_running' => 'Установка или удаление kernel-модуля уже выполняется.',
     'update_message_idle' => 'Обновление не запущено.',
     'update_message_running' => 'Идёт обновление…',

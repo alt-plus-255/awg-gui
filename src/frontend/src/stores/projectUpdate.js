@@ -7,6 +7,8 @@ export const useProjectUpdateStore = defineStore('projectUpdate', () => {
   const loading = ref(false)
   const checking = ref(false)
   const starting = ref(false)
+  const clearingLog = ref(false)
+  const retryingStuck = ref(false)
 
   const current_version = ref(null)
   const latest_version = ref(null)
@@ -17,6 +19,9 @@ export const useProjectUpdateStore = defineStore('projectUpdate', () => {
   const can_update = ref(false)
   const status = ref('idle')
   const running = ref(false)
+  const stuck = ref(false)
+  const can_retry_stuck = ref(false)
+  const can_clear_log = ref(true)
   const started_at = ref(null)
   const finished_at = ref(null)
   const message = ref('')
@@ -24,7 +29,9 @@ export const useProjectUpdateStore = defineStore('projectUpdate', () => {
 
   let pollTimer = null
 
-  const busy = computed(() => loading.value || checking.value || starting.value || running.value)
+  const busy = computed(() =>
+    loading.value || checking.value || starting.value || clearingLog.value || retryingStuck.value || running.value
+  )
 
   function applyPayload (data, opts = {}) {
     if (!data || typeof data !== 'object') return
@@ -47,6 +54,9 @@ export const useProjectUpdateStore = defineStore('projectUpdate', () => {
     can_update.value = !!data.can_update
     status.value = data.status || 'idle'
     running.value = !!data.running
+    stuck.value = !!data.stuck
+    can_retry_stuck.value = !!data.can_retry_stuck
+    can_clear_log.value = data.can_clear_log !== false
     started_at.value = data.started_at ?? null
     finished_at.value = data.finished_at ?? null
     message.value = data.message || ''
@@ -110,10 +120,36 @@ export const useProjectUpdateStore = defineStore('projectUpdate', () => {
     }
   }
 
+  async function clearLog () {
+    clearingLog.value = true
+    try {
+      const { data } = await api.post('/api/settings/update/clear-log')
+      applyPayload(data, { preserveRelease: true })
+      return data
+    } finally {
+      clearingLog.value = false
+      schedulePoll()
+    }
+  }
+
+  async function retryStuck () {
+    retryingStuck.value = true
+    try {
+      const { data } = await api.post('/api/settings/update/retry-stuck')
+      applyPayload(data)
+      return data
+    } finally {
+      retryingStuck.value = false
+      schedulePoll()
+    }
+  }
+
   return {
     loading,
     checking,
     starting,
+    clearingLog,
+    retryingStuck,
     busy,
     current_version,
     latest_version,
@@ -124,6 +160,9 @@ export const useProjectUpdateStore = defineStore('projectUpdate', () => {
     can_update,
     status,
     running,
+    stuck,
+    can_retry_stuck,
+    can_clear_log,
     started_at,
     finished_at,
     message,
@@ -131,6 +170,8 @@ export const useProjectUpdateStore = defineStore('projectUpdate', () => {
     fetchStatus,
     checkForUpdates,
     startUpdate,
+    clearLog,
+    retryStuck,
     stopPoll
   }
 })

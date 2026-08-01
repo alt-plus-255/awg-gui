@@ -362,6 +362,52 @@ class SettingsController extends Controller
         return response()->json($state, 202);
     }
 
+    public function clearProjectUpdateLog()
+    {
+        try {
+            $state = $this->projectUpdate->clearLog();
+        } catch (\RuntimeException $e) {
+            $message = match ($e->getMessage()) {
+                'update_log_clear_blocked' => __('settings.update_log_clear_blocked'),
+                'update_log_clear_failed' => __('settings.update_log_clear_failed'),
+                default => $e->getMessage(),
+            };
+            $code = $e->getMessage() === 'update_log_clear_blocked' ? 409 : 500;
+
+            return response()->json(['message' => $message], $code);
+        }
+
+        return response()->json($state);
+    }
+
+    public function retryStuckProjectUpdate(Request $request)
+    {
+        $data = $request->validate([
+            'version' => ['nullable', 'string', 'max:64', 'regex:/^v?[A-Za-z0-9._-]+$/'],
+        ]);
+
+        try {
+            $state = $this->projectUpdate->retryStuck($data['version'] ?? null);
+        } catch (\RuntimeException $e) {
+            $message = match ($e->getMessage()) {
+                'update_not_stuck' => __('settings.update_not_stuck'),
+                'update_not_available' => __('settings.update_not_available'),
+                'update_already_running' => __('settings.update_already_running'),
+                default => $e->getMessage(),
+            };
+            $code = match ($e->getMessage()) {
+                'update_not_stuck' => 409,
+                'update_not_available' => 422,
+                'update_already_running' => 409,
+                default => 500,
+            };
+
+            return response()->json(['message' => $message], $code);
+        }
+
+        return response()->json($state, 202);
+    }
+
     public function awgKernelStatus()
     {
         try {

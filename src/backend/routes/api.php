@@ -118,6 +118,8 @@ Route::post('/settings/restart-awg', [SettingsController::class, 'restartAwg']);
 Route::get('/settings/update-status', [SettingsController::class, 'updateStatus']);
 Route::post('/settings/check-updates', [SettingsController::class, 'checkProjectUpdates']);
 Route::post('/settings/update', [SettingsController::class, 'startProjectUpdate']);
+Route::post('/settings/update/clear-log', [SettingsController::class, 'clearProjectUpdateLog']);
+Route::post('/settings/update/retry-stuck', [SettingsController::class, 'retryStuckProjectUpdate']);
 Route::get('/settings/awg-kernel', [SettingsController::class, 'awgKernelStatus']);
 Route::post('/settings/awg-kernel/install', [SettingsController::class, 'awgKernelInstall']);
 Route::post('/settings/awg-kernel/uninstall', [SettingsController::class, 'awgKernelUninstall']);

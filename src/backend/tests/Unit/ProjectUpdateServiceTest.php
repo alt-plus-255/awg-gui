@@ -67,7 +67,7 @@ class ProjectUpdateServiceTest extends TestCase
             'pid' => getmypid(),
             'status' => 'running',
             'target_version' => '2.0.0',
-            'started_at' => '2026-07-31T07:00:00Z',
+            'started_at' => gmdate('Y-m-d\TH:i:s\Z', time() - 60),
             'message' => 'busy',
         ], JSON_PRETTY_PRINT));
 
@@ -276,6 +276,137 @@ class ProjectUpdateServiceTest extends TestCase
         $status = $service->status();
 
         $this->assertStringContainsString('line3', $status['log_tail']);
+    }
+
+    public function test_status_marks_update_stuck_after_one_hour(): void
+    {
+        putenv('PANEL_OPS_TOKEN=test-token');
+        $_ENV['PANEL_OPS_TOKEN'] = 'test-token';
+
+        $hostDir = $this->makeTempDir();
+        $composeDir = $this->makeTempDir();
+
+        file_put_contents($hostDir.'/install.state', implode("\n", [
+            'completed_at=2026-07-01T00:00:00Z',
+            'bundle_version=1.0.0',
+        ]));
+
+        file_put_contents($hostDir.'/update.state', json_encode([
+            'pid' => 1,
+            'status' => 'running',
+            'target_version' => '1.0.1',
+            'started_at' => gmdate('Y-m-d\TH:i:s\Z', time() - 3700),
+            'finished_at' => null,
+            'message' => 'Updating...',
+        ], JSON_PRETTY_PRINT));
+
+        $service = new ProjectUpdateService(new PanelOpsClient, $hostDir, $composeDir);
+        $status = $service->status();
+
+        $this->assertTrue($status['running']);
+        $this->assertTrue($status['stuck']);
+        $this->assertTrue($status['can_retry_stuck']);
+        $this->assertTrue($status['can_clear_log']);
+    }
+
+    public function test_clear_log_truncates_file(): void
+    {
+        putenv('PANEL_OPS_TOKEN=test-token');
+        $_ENV['PANEL_OPS_TOKEN'] = 'test-token';
+
+        $hostDir = $this->makeTempDir();
+        $composeDir = $this->makeTempDir();
+        file_put_contents($hostDir.'/install.state', "bundle_version=1.0.0\n");
+        file_put_contents($hostDir.'/update.log', "old line\n");
+
+        $service = new ProjectUpdateService(new PanelOpsClient, $hostDir, $composeDir);
+        $status = $service->clearLog();
+
+        $this->assertSame('', $status['log_tail']);
+        $this->assertSame('', (string) file_get_contents($hostDir.'/update.log'));
+    }
+
+    public function test_clear_log_blocked_while_update_running(): void
+    {
+        putenv('PANEL_OPS_TOKEN=test-token');
+        $_ENV['PANEL_OPS_TOKEN'] = 'test-token';
+
+        $hostDir = $this->makeTempDir();
+        $composeDir = $this->makeTempDir();
+        file_put_contents($hostDir.'/install.state', "bundle_version=1.0.0\n");
+        file_put_contents($hostDir.'/update.state', json_encode([
+            'status' => 'running',
+            'target_version' => '1.0.1',
+            'started_at' => gmdate('Y-m-d\TH:i:s\Z', time() - 60),
+        ]));
+
+        $service = new ProjectUpdateService(new PanelOpsClient, $hostDir, $composeDir);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('update_log_clear_blocked');
+        $service->clearLog();
+    }
+
+    public function test_retry_stuck_resets_and_starts_update(): void
+    {
+        putenv('PANEL_OPS_TOKEN=test-token');
+        $_ENV['PANEL_OPS_TOKEN'] = 'test-token';
+
+        $hostDir = $this->makeTempDir();
+        $composeDir = $this->makeTempDir();
+
+        file_put_contents($hostDir.'/install.state', implode("\n", [
+            'completed_at=2026-07-27T09:00:00Z',
+            'bundle_version=1.0.0',
+        ]));
+
+        file_put_contents($hostDir.'/update.state', json_encode([
+            'pid' => 1,
+            'status' => 'running',
+            'target_version' => '2.0.0',
+            'started_at' => gmdate('Y-m-d\TH:i:s\Z', time() - 3700),
+            'finished_at' => null,
+            'message' => 'Updating to 2.0.0...',
+        ], JSON_PRETTY_PRINT));
+
+        \Illuminate\Support\Facades\Http::fake([
+            'api.github.com/repos/*' => \Illuminate\Support\Facades\Http::response([
+                'tag_name' => 'v2.0.0',
+            ], 200),
+        ]);
+
+        $client = $this->createMock(PanelOpsClient::class);
+        $client->expects($this->once())
+            ->method('startUpdate')
+            ->with('2.0.0')
+            ->willReturn(['ok' => true]);
+
+        $service = new ProjectUpdateService($client, $hostDir, $composeDir);
+        $status = $service->retryStuck();
+
+        $this->assertTrue($status['running']);
+        $this->assertSame('2.0.0', $status['target_version']);
+    }
+
+    public function test_retry_stuck_rejects_when_not_stuck(): void
+    {
+        putenv('PANEL_OPS_TOKEN=test-token');
+        $_ENV['PANEL_OPS_TOKEN'] = 'test-token';
+
+        $hostDir = $this->makeTempDir();
+        $composeDir = $this->makeTempDir();
+        file_put_contents($hostDir.'/install.state', "bundle_version=1.0.0\n");
+        file_put_contents($hostDir.'/update.state', json_encode([
+            'status' => 'running',
+            'target_version' => '1.0.1',
+            'started_at' => gmdate('Y-m-d\TH:i:s\Z', time() - 60),
+        ]));
+
+        $service = new ProjectUpdateService(new PanelOpsClient, $hostDir, $composeDir);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('update_not_stuck');
+        $service->retryStuck();
     }
 
     private function makeTempDir(): string

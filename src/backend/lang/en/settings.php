@@ -69,6 +69,10 @@ return [
 
     'update_not_available' => 'Automatic update is not available for this installation.',
     'update_already_running' => 'An update is already running.',
+    'update_not_stuck' => 'Update is not stuck (must be running for more than 1 hour).',
+    'update_log_clear_blocked' => 'Cannot clear the log while an update is in progress.',
+    'update_log_clear_failed' => 'Failed to clear the update log.',
+    'update_log_cleared' => 'Update log cleared.',
     'awg_kernel_already_running' => 'A kernel module install/uninstall is already running.',
     'update_message_idle' => 'No update running.',
     'update_message_running' => 'Update in progress…',

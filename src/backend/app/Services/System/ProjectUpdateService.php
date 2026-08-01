@@ -10,6 +10,12 @@ class ProjectUpdateService
 {
     private const LOG_TAIL_LINES = 80;
 
+    /** Manual retry is allowed after this many seconds stuck in "running". */
+    private const STUCK_AFTER_SECONDS = 3600;
+
+    /** Auto-mark failed after this many seconds (safety net). */
+    private const TIMEOUT_AFTER_SECONDS = 7200;
+
     private const GITHUB_REPO_DEFAULT = 'alt-plus-255/awg-gui';
     public function __construct(
         private PanelOpsClient $panelOps,
@@ -33,6 +39,7 @@ class ProjectUpdateService
 
         $currentVersion = $this->detectCurrentVersion($install);
         $running = $this->isRunningState($update);
+        $stuck = $this->isStuckRunning($update);
 
         $payload = [
             'current_version' => $currentVersion['version'],
@@ -41,6 +48,9 @@ class ProjectUpdateService
             'can_update' => $this->canUpdate($install),
             'status' => $running ? 'running' : $this->normalizeStatus($update['status'] ?? null),
             'running' => $running,
+            'stuck' => $stuck,
+            'can_retry_stuck' => $stuck && $this->canUpdate($install),
+            'can_clear_log' => ! $running || $stuck,
             'target_version' => $update['target_version'] ?? null,
             'started_at' => $update['started_at'] ?? null,
             'finished_at' => $update['finished_at'] ?? null,
@@ -94,10 +104,69 @@ class ProjectUpdateService
         return array_merge($this->status(), [
             'status' => 'running',
             'running' => true,
+            'stuck' => false,
+            'can_retry_stuck' => false,
+            'can_clear_log' => false,
             'target_version' => $resolvedTarget,
             'message' => __('settings.update_message_started'),
             'log_tail' => $this->readLogTail(),
         ]);
+    }
+
+    /**
+     * Truncate the host update log. Blocked while a non-stuck update is running.
+     *
+     * @return array<string, mixed>
+     */
+    public function clearLog(): array
+    {
+        $status = $this->status();
+        if (! ($status['can_clear_log'] ?? false)) {
+            throw new RuntimeException('update_log_clear_blocked');
+        }
+
+        $path = $this->hostGuiDir.'/update.log';
+        if (is_dir($this->hostGuiDir)) {
+            if (@file_put_contents($path, '') === false && file_exists($path)) {
+                throw new RuntimeException('update_log_clear_failed');
+            }
+        }
+
+        return array_merge($this->status(), [
+            'message' => __('settings.update_log_cleared'),
+            'log_tail' => '',
+        ]);
+    }
+
+    /**
+     * Reset a stuck "running" update (>1h) and start a fresh attempt.
+     *
+     * @return array<string, mixed>
+     */
+    public function retryStuck(?string $targetVersion = null): array
+    {
+        $update = $this->readJsonFile($this->hostGuiDir.'/update.state');
+        if (! $this->isStuckRunning($update)) {
+            throw new RuntimeException('update_not_stuck');
+        }
+
+        $previousTarget = trim((string) ($update['target_version'] ?? ''));
+        $previousTarget = $previousTarget !== '' ? ltrim($previousTarget, 'v') : null;
+
+        $this->persistUpdateState([
+            'pid' => 0,
+            'status' => 'failed',
+            'target_version' => $previousTarget,
+            'started_at' => $update['started_at'] ?? null,
+            'finished_at' => gmdate('Y-m-d\TH:i:s\Z'),
+            'message' => 'Update marked stuck and reset for retry.',
+        ]);
+
+        $resolved = $targetVersion !== null && trim($targetVersion) !== ''
+            ? ltrim(trim($targetVersion), 'v')
+            : $previousTarget;
+
+        return $this->start($resolved);
     }
 
     /**
@@ -184,6 +253,21 @@ class ProjectUpdateService
     }
 
     /**
+     * @param  array<string, mixed>  $update
+     */
+    private function isStuckRunning(array $update): bool
+    {
+        if (! $this->isRunningState($update)) {
+            return false;
+        }
+
+        $startedAt = trim((string) ($update['started_at'] ?? ''));
+        $startedTs = $startedAt !== '' ? strtotime($startedAt) : false;
+
+        return $startedTs !== false && (time() - $startedTs) >= self::STUCK_AFTER_SECONDS;
+    }
+
+    /**
      * Heal stuck "running" after panel-ops was recreated mid-upgrade (runner never wrote success).
      *
      * @param  array<string, mixed>  $update
@@ -223,7 +307,7 @@ class ProjectUpdateService
         }
 
         $startedTs = $startedAt !== '' ? strtotime($startedAt) : false;
-        if ($startedTs !== false && (time() - $startedTs) > 7200) {
+        if ($startedTs !== false && (time() - $startedTs) > self::TIMEOUT_AFTER_SECONDS) {
             $update['status'] = 'failed';
             $update['finished_at'] = gmdate('Y-m-d\TH:i:s\Z');
             $update['message'] = 'Update timed out or was interrupted.';
