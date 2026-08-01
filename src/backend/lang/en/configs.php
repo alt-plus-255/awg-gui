@@ -20,4 +20,7 @@ return [
     'config_limit_reached' => 'Config limit reached (:count)',
     'qr_too_large' => 'Data is too large for a QR code. Copy the config or download the .conf file.',
     'protocol_version_immutable' => 'Protocol version cannot be changed after the config is created',
+    'handshake_logs_cleared' => 'Handshake logs cleared',
+    'peer_traffic_reset' => 'Peer traffic counters reset',
+    'config_traffic_reset' => 'Traffic counters reset for all peers in this config',
 ];

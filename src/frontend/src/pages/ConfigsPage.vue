@@ -85,6 +85,8 @@
               </q-badge>
             </q-td>
             <q-td key="actions" :props="props">
+              <q-btn flat dense icon="history" :title="t('configs.handshakeLogs')" @click="openHandshakeLogs(props.row)" />
+              <q-btn flat dense icon="restart_alt" :title="t('configs.resetTraffic')" @click="resetConfigTraffic(props.row)" />
               <q-btn flat dense icon="description" :title="t('configs.showConf')" @click="showServerConf(props.row)" />
               <q-btn flat dense icon="edit" :title="t('common.edit')" @click="openEdit(props.row)" />
               <q-btn flat dense color="negative" icon="delete" :title="t('common.delete')" @click="remove(props.row)" />
@@ -159,6 +161,12 @@
                   <template #body-cell-transfer_tx="peerProps">
                     <q-td :props="peerProps">{{ peerProps.row.transfer_tx != null ? formatBytes(peerProps.row.transfer_tx) : '—' }}</q-td>
                   </template>
+                  <template #body-cell-traffic_rx_total="peerProps">
+                    <q-td :props="peerProps">{{ formatBytes(peerProps.row.traffic_rx_total) }}</q-td>
+                  </template>
+                  <template #body-cell-traffic_tx_total="peerProps">
+                    <q-td :props="peerProps">{{ formatBytes(peerProps.row.traffic_tx_total) }}</q-td>
+                  </template>
                   <template #body-cell-enabled="peerProps">
                     <q-td :props="peerProps">
                       <div class="row items-center no-wrap q-gutter-xs">
@@ -179,6 +187,8 @@
                   </template>
                   <template #body-cell-actions="peerProps">
                     <q-td :props="peerProps">
+                      <q-btn flat dense icon="history" :title="t('configs.handshakeLogs')" @click="openHandshakeLogs(props.row, peerProps.row)" />
+                      <q-btn flat dense icon="restart_alt" :title="t('configs.resetTraffic')" @click="resetPeerTraffic(props.row, peerProps.row)" />
                       <q-btn flat dense icon="edit" :title="t('common.edit')" @click="openEditPeer(props.row, peerProps.row)" />
                       <q-btn flat dense icon="qr_code_2" title="QR" @click="openShare(props.row, peerProps.row)" />
                       <q-btn flat dense icon="download" :title="t('dashboard.configTooltip')" @click="downloadConf(props.row, peerProps.row)" />
@@ -377,6 +387,15 @@
                 </div>
               </div>
             </div>
+          </div>
+
+          <div v-if="editingId" class="q-mb-md">
+            <q-toggle
+              v-model="form.handshake_logging_enabled"
+              :label="t('configs.handshakeLoggingToggle')"
+              color="primary"
+            />
+            <div class="text-caption text-grey-5 q-mt-xs">{{ t('configs.handshakeLoggingHint') }}</div>
           </div>
 
           <q-select
@@ -685,6 +704,67 @@
         </q-card-actions>
       </q-card>
     </q-dialog>
+
+    <q-dialog v-model="handshakeLogsOpen">
+      <q-card
+        flat
+        style="width: min(720px, 95vw); max-width: 95vw; max-height: 90vh;"
+        class="surface-panel dialog-card column no-wrap"
+      >
+        <DialogHeader :title="handshakeLogsTitle" />
+        <q-card-section class="q-pt-none">
+          <div class="row items-center q-gutter-sm">
+            <div class="text-caption text-grey-5 col">
+              {{ t('configs.handshakeLogsSize', {
+                used: formatBytes(handshakeLogsMeta.log_bytes),
+                limit: formatBytes(handshakeLogsMeta.log_bytes_limit)
+              }) }}
+            </div>
+            <q-btn
+              v-if="!handshakeLogsPeer"
+              flat
+              dense
+              color="warning"
+              icon="delete_sweep"
+              :label="t('configs.handshakeLogsClear')"
+              :loading="handshakeLogsClearing"
+              @click="clearHandshakeLogs"
+            />
+            <q-btn flat dense icon="refresh" :loading="handshakeLogsLoading" @click="loadHandshakeLogs(true)" />
+          </div>
+        </q-card-section>
+        <q-card-section class="col dialog-scroll-body q-pt-none">
+          <q-table
+            :rows="handshakeLogsRows"
+            :columns="handshakeLogColumns"
+            row-key="id"
+            flat
+            dense
+            :loading="handshakeLogsLoading"
+            class="bg-transparent"
+            :rows-per-page-options="[0]"
+            hide-pagination
+            :no-data-label="t('configs.handshakeLogsEmpty')"
+          >
+            <template #body-cell-handshake_at_human="props">
+              <q-td :props="props">
+                <template v-if="formatHandshake(props.row.handshake_at_human)">
+                  <div class="text-no-wrap">{{ formatHandshake(props.row.handshake_at_human).date }}</div>
+                  <div class="text-no-wrap">{{ formatHandshake(props.row.handshake_at_human).time }}</div>
+                </template>
+                <template v-else>—</template>
+              </q-td>
+            </template>
+          </q-table>
+          <div v-if="handshakeLogsMeta.has_more" class="q-mt-sm text-center">
+            <q-btn flat dense color="primary" :label="t('configs.handshakeLogsLoadMore')" :loading="handshakeLogsLoading" @click="loadHandshakeLogs(false)" />
+          </div>
+        </q-card-section>
+        <q-card-actions align="right">
+          <q-btn flat :label="t('common.close')" v-close-popup />
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
   </q-page>
 </template>
 
@@ -759,6 +839,7 @@ const form = reactive({
   client_allowed_ips: '0.0.0.0/0, ::/0',
   persistent_keepalive: 25,
   enabled: true,
+  handshake_logging_enabled: false,
   jc: '', jmin: '', jmax: '',
   s1: '', s2: '', s3: '', s4: '',
   h1: '', h2: '', h3: '', h4: '',
@@ -811,8 +892,16 @@ const peerColumns = computed(() => [
   { name: 'latest_handshake_human', label: 'Handshake', field: (row) => row.latest_handshake_human || '—', align: 'left' },
   { name: 'transfer_rx', label: 'RX', field: 'transfer_rx', align: 'right' },
   { name: 'transfer_tx', label: 'TX', field: 'transfer_tx', align: 'right' },
+  { name: 'traffic_rx_total', label: t('configs.colTotalRx'), field: 'traffic_rx_total', align: 'right' },
+  { name: 'traffic_tx_total', label: t('configs.colTotalTx'), field: 'traffic_tx_total', align: 'right' },
   { name: 'enabled', label: t('configs.colEnabled'), field: 'enabled', align: 'left' },
   { name: 'actions', label: t('configs.colActions'), field: 'actions', align: 'right' }
+])
+
+const handshakeLogColumns = computed(() => [
+  { name: 'peer_name', label: 'Peer', field: (row) => row.peer_name || '—', align: 'left' },
+  { name: 'handshake_at_human', label: t('configs.colHandshakeAt'), field: 'handshake_at_human', align: 'left' },
+  { name: 'endpoint', label: t('configs.colEndpoint'), field: (row) => row.endpoint || '—', align: 'left' }
 ])
 
 const unattachedColumns = computed(() => [
@@ -861,6 +950,32 @@ const serverConfTitle = ref('')
 const serverConfText = ref('')
 const serverConfFilename = ref('awg.conf')
 const serverConfLoading = ref(false)
+
+const handshakeLogsOpen = ref(false)
+const handshakeLogsLoading = ref(false)
+const handshakeLogsClearing = ref(false)
+const handshakeLogsConfig = ref(null)
+const handshakeLogsPeer = ref(null)
+const handshakeLogsRows = ref([])
+const handshakeLogsMeta = reactive({
+  log_bytes: 0,
+  log_bytes_limit: 10 * 1024 * 1024,
+  has_more: false,
+  logging_enabled: false
+})
+
+const handshakeLogsTitle = computed(() => {
+  const config = handshakeLogsConfig.value
+  const peer = handshakeLogsPeer.value
+  if (!config) return t('configs.handshakeLogs')
+  if (peer) {
+    return t('configs.handshakeLogsPeerTitle', {
+      peer: peer.name || `peer #${peer.client_id}`,
+      config: config.name
+    })
+  }
+  return t('configs.handshakeLogsTitle', { name: config.name })
+})
 
 const availableClients = computed(() => {
   if (!activeConfig.value) return []
@@ -952,6 +1067,116 @@ function formatHandshake (iso) {
   const m = String(iso).match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}:\d{2}:\d{2})(.*)$/)
   if (!m) return { date: String(iso), time: '' }
   return { date: `${m[3]}.${m[2]}.${m[1]}`, time: `${m[4]} ${m[5]}`.trim() }
+}
+
+function openHandshakeLogs (config, peer = null) {
+  handshakeLogsConfig.value = config
+  handshakeLogsPeer.value = peer
+  handshakeLogsRows.value = []
+  handshakeLogsMeta.log_bytes = Number(config.handshake_log_bytes) || 0
+  handshakeLogsMeta.log_bytes_limit = Number(config.handshake_log_bytes_limit) || (10 * 1024 * 1024)
+  handshakeLogsMeta.has_more = false
+  handshakeLogsMeta.logging_enabled = !!config.handshake_logging_enabled
+  handshakeLogsOpen.value = true
+  loadHandshakeLogs(true)
+}
+
+async function loadHandshakeLogs (reset) {
+  const config = handshakeLogsConfig.value
+  if (!config) return
+  handshakeLogsLoading.value = true
+  try {
+    const params = { per_page: 50 }
+    if (!reset && handshakeLogsRows.value.length) {
+      params.before_id = handshakeLogsRows.value[handshakeLogsRows.value.length - 1].id
+    }
+    const peer = handshakeLogsPeer.value
+    const url = peer
+      ? `/api/configs/${config.id}/peers/${peer.client_id}/handshake-logs`
+      : `/api/configs/${config.id}/handshake-logs`
+    const { data } = await api.get(url, { params })
+    const rows = data.logs || []
+    handshakeLogsRows.value = reset ? rows : [...handshakeLogsRows.value, ...rows]
+    handshakeLogsMeta.log_bytes = Number(data.log_bytes) || 0
+    handshakeLogsMeta.log_bytes_limit = Number(data.log_bytes_limit) || (10 * 1024 * 1024)
+    handshakeLogsMeta.has_more = !!data.has_more
+    handshakeLogsMeta.logging_enabled = !!data.logging_enabled
+  } catch (e) {
+    $q.notify({ type: 'negative', message: e?.response?.data?.message || t('configs.handshakeLogsLoadError') })
+  } finally {
+    handshakeLogsLoading.value = false
+  }
+}
+
+function clearHandshakeLogs () {
+  const config = handshakeLogsConfig.value
+  if (!config) return
+  $q.dialog({
+    title: t('configs.handshakeLogsClear'),
+    message: t('configs.handshakeLogsClearConfirm'),
+    cancel: true,
+    persistent: true
+  }).onOk(async () => {
+    handshakeLogsClearing.value = true
+    try {
+      await api.delete(`/api/configs/${config.id}/handshake-logs`)
+      handshakeLogsRows.value = []
+      handshakeLogsMeta.log_bytes = 0
+      handshakeLogsMeta.has_more = false
+      config.handshake_log_bytes = 0
+      $q.notify({ type: 'positive', message: t('configs.handshakeLogsCleared') })
+    } catch (e) {
+      $q.notify({ type: 'negative', message: e?.response?.data?.message || t('configs.handshakeLogsClearError') })
+    } finally {
+      handshakeLogsClearing.value = false
+    }
+  })
+}
+
+function resetPeerTraffic (config, peer) {
+  $q.dialog({
+    title: t('configs.resetTraffic'),
+    message: t('configs.resetTrafficConfirm', { name: peer.name || `peer #${peer.client_id}` }),
+    cancel: true,
+    persistent: true
+  }).onOk(async () => {
+    try {
+      const { data } = await api.post(`/api/configs/${config.id}/peers/${peer.client_id}/reset-traffic`)
+      const membership = data.membership
+      const list = peersState[config.id]?.peers || []
+      const idx = list.findIndex((p) => p.client_id === peer.client_id)
+      if (idx >= 0 && membership) {
+        list[idx] = { ...list[idx], ...membership }
+      }
+      $q.notify({ type: 'positive', message: data.message || t('configs.resetTrafficDone') })
+    } catch (e) {
+      $q.notify({ type: 'negative', message: e?.response?.data?.message || t('configs.resetTrafficError') })
+    }
+  })
+}
+
+function resetConfigTraffic (config) {
+  $q.dialog({
+    title: t('configs.resetTraffic'),
+    message: t('configs.resetTrafficConfirmConfig', { name: config.name }),
+    cancel: true,
+    persistent: true
+  }).onOk(async () => {
+    try {
+      const { data } = await api.post(`/api/configs/${config.id}/reset-traffic`)
+      if (peersState[config.id]?.peers) {
+        peersState[config.id].peers = peersState[config.id].peers.map((p) => ({
+          ...p,
+          traffic_rx_total: 0,
+          traffic_tx_total: 0,
+          traffic_reset_at: new Date().toISOString()
+        }))
+      }
+      $q.notify({ type: 'positive', message: data.message || t('configs.resetTrafficDone') })
+    } catch (e) {
+      $q.notify({ type: 'negative', message: e?.response?.data?.message || t('configs.resetTrafficError') })
+    }
+  })
 }
 
 async function load () {
@@ -1317,6 +1542,7 @@ function resetForm () {
   form.client_allowed_ips = '0.0.0.0/0, ::/0'
   form.persistent_keepalive = 25
   form.enabled = true
+  form.handshake_logging_enabled = false
   generateJunk()
 }
 

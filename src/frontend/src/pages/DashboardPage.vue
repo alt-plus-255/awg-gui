@@ -188,8 +188,15 @@
         <template #body-cell-transfer_tx="props">
           <q-td :props="props">{{ props.row.transfer_tx != null ? formatBytes(props.row.transfer_tx) : '—' }}</q-td>
         </template>
+        <template #body-cell-traffic_rx_total="props">
+          <q-td :props="props">{{ formatBytes(props.row.traffic_rx_total) }}</q-td>
+        </template>
+        <template #body-cell-traffic_tx_total="props">
+          <q-td :props="props">{{ formatBytes(props.row.traffic_tx_total) }}</q-td>
+        </template>
         <template #body-cell-actions="props">
           <q-td :props="props">
+            <q-btn flat dense icon="restart_alt" :title="t('dashboard.resetTraffic')" @click="resetPeerTraffic(props.row)" />
             <q-btn flat dense icon="qr_code_2" title="QR" @click="openShare(props.row)" />
             <q-btn flat dense icon="download" :title="t('dashboard.configTooltip')" @click="downloadConf(props.row)" />
           </q-td>
@@ -486,6 +493,8 @@ const columns = computed(() => [
   { name: 'latest_handshake_human', label: 'Handshake', field: 'latest_handshake_human', align: 'left' },
   { name: 'transfer_rx', label: 'RX', field: 'transfer_rx', align: 'right' },
   { name: 'transfer_tx', label: 'TX', field: 'transfer_tx', align: 'right' },
+  { name: 'traffic_rx_total', label: t('dashboard.colTotalRx'), field: 'traffic_rx_total', align: 'right' },
+  { name: 'traffic_tx_total', label: t('dashboard.colTotalTx'), field: 'traffic_tx_total', align: 'right' },
   { name: 'enabled', label: t('dashboard.colEnabled'), field: 'enabled', align: 'left' },
   { name: 'actions', label: t('dashboard.colActions'), field: 'actions', align: 'right' }
 ])
@@ -600,6 +609,29 @@ async function downloadConf (row) {
   a.download = peerConfFilename(text, `${row.name}.conf`)
   a.click()
   URL.revokeObjectURL(url)
+}
+
+function resetPeerTraffic (row) {
+  $q.dialog({
+    title: t('dashboard.resetTraffic'),
+    message: t('dashboard.resetTrafficConfirm', { name: row.name || `peer #${row.client_id}` }),
+    cancel: true,
+    persistent: true
+  }).onOk(async () => {
+    try {
+      const { data } = await api.post(`/api/configs/${row.config_id}/peers/${row.client_id}/reset-traffic`)
+      const membership = data.membership
+      const peer = peers.value.find((p) => p.config_id === row.config_id && p.client_id === row.client_id)
+      if (peer && membership) {
+        peer.traffic_rx_total = membership.traffic_rx_total ?? 0
+        peer.traffic_tx_total = membership.traffic_tx_total ?? 0
+        peer.traffic_reset_at = membership.traffic_reset_at || null
+      }
+      $q.notify({ type: 'positive', message: data.message || t('dashboard.resetTrafficDone') })
+    } catch (e) {
+      $q.notify({ type: 'negative', message: e?.response?.data?.message || t('dashboard.resetTrafficError') })
+    }
+  })
 }
 
 function openShare (row) {

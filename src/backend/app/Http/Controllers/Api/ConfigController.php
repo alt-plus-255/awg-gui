@@ -7,6 +7,7 @@ use App\Models\AwgConfig;
 use App\Models\AwgConfigPeer;
 use App\Models\VpnClient;
 use App\Services\AmneziaWg\AmneziaWgService;
+use App\Services\AmneziaWg\HandshakeLogService;
 use App\Services\AmneziaWg\PeerStatsSyncService;
 use App\Services\AmneziaWg\QrCodeService;
 use App\Services\AmneziaWg\VpnUriService;
@@ -21,6 +22,7 @@ class ConfigController extends Controller
     public function __construct(
         private AmneziaWgService $awg,
         private PeerStatsSyncService $statsSync,
+        private HandshakeLogService $handshakeLogs,
         private QrCodeService $qr,
         private VpnUriService $vpnUri,
         private AwgVersionRegistry $versions,
@@ -136,6 +138,7 @@ class ConfigController extends Controller
             'client_allowed_ips' => ['sometimes', 'string', 'max:255'],
             'persistent_keepalive' => ['sometimes', 'integer', 'min:0', 'max:65535'],
             'enabled' => ['sometimes', 'boolean'],
+            'handshake_logging_enabled' => ['sometimes', 'boolean'],
             'jc' => ['sometimes', 'string', 'max:10'],
             'jmin' => ['sometimes', 'string', 'max:10'],
             'jmax' => ['sometimes', 'string', 'max:10'],
@@ -526,6 +529,81 @@ class ConfigController extends Controller
         ]);
     }
 
+    public function handshakeLogs(Request $request, AwgConfig $config)
+    {
+        $data = $request->validate([
+            'per_page' => ['sometimes', 'integer', 'min:1', 'max:200'],
+            'before_id' => ['sometimes', 'integer', 'min:1'],
+        ]);
+
+        return response()->json($this->handshakeLogs->list(
+            $config,
+            null,
+            isset($data['before_id']) ? (int) $data['before_id'] : null,
+            (int) ($data['per_page'] ?? 50),
+        ));
+    }
+
+    public function peerHandshakeLogs(Request $request, AwgConfig $config, VpnClient $client)
+    {
+        AwgConfigPeer::query()
+            ->where('awg_config_id', $config->id)
+            ->where('vpn_client_id', $client->id)
+            ->firstOrFail();
+
+        $data = $request->validate([
+            'per_page' => ['sometimes', 'integer', 'min:1', 'max:200'],
+            'before_id' => ['sometimes', 'integer', 'min:1'],
+        ]);
+
+        return response()->json($this->handshakeLogs->list(
+            $config,
+            $client->id,
+            isset($data['before_id']) ? (int) $data['before_id'] : null,
+            (int) ($data['per_page'] ?? 50),
+        ));
+    }
+
+    public function clearHandshakeLogs(AwgConfig $config)
+    {
+        $this->handshakeLogs->clear($config);
+
+        return response()->json([
+            'ok' => true,
+            'log_bytes' => 0,
+            'log_bytes_limit' => HandshakeLogService::BYTE_LIMIT,
+            'message' => __('configs.handshake_logs_cleared'),
+        ]);
+    }
+
+    public function resetPeerTraffic(AwgConfig $config, VpnClient $client)
+    {
+        $membership = AwgConfigPeer::query()
+            ->where('awg_config_id', $config->id)
+            ->where('vpn_client_id', $client->id)
+            ->firstOrFail();
+
+        $this->statsSync->resetPeerTraffic($membership);
+        $membership->refresh()->load('client');
+
+        return response()->json([
+            'ok' => true,
+            'membership' => $this->serializeMembership($config, $membership),
+            'message' => __('configs.peer_traffic_reset'),
+        ]);
+    }
+
+    public function resetConfigTraffic(AwgConfig $config)
+    {
+        $count = $this->statsSync->resetConfigTraffic($config);
+
+        return response()->json([
+            'ok' => true,
+            'reset_count' => $count,
+            'message' => __('configs.config_traffic_reset'),
+        ]);
+    }
+
     public function regenerateServerKeys(AwgConfig $config)
     {
         $result = $this->awg->regenerateConfigKeys($config);
@@ -870,6 +948,9 @@ class ConfigController extends Controller
             'client_allowed_ips' => $config->client_allowed_ips,
             'persistent_keepalive' => $config->persistent_keepalive,
             'enabled' => $config->enabled,
+            'handshake_logging_enabled' => (bool) $config->handshake_logging_enabled,
+            'handshake_log_bytes' => (int) ($config->handshake_log_bytes ?? 0),
+            'handshake_log_bytes_limit' => HandshakeLogService::BYTE_LIMIT,
             'resolver_enabled' => (bool) $config->resolver_enabled,
             'connection_id' => $config->connection_id,
             'community_lists' => array_values($config->community_lists ?? []),

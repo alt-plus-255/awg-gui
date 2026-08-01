@@ -76,6 +76,11 @@ Route::get('/configs/{config}/peers/{client}/qr', [ConfigController::class, 'pee
 Route::post('/configs/{config}/peers/{client}/regenerate-keys', [ConfigController::class, 'regeneratePeerKeys']);
 Route::post('/configs/{config}/peers/{client}/regenerate-psk', [ConfigController::class, 'regeneratePeerPsk']);
 Route::post('/configs/{config}/peers/{client}/reveal-keys', [ConfigController::class, 'revealPeerKeys']);
+Route::post('/configs/{config}/peers/{client}/reset-traffic', [ConfigController::class, 'resetPeerTraffic']);
+Route::get('/configs/{config}/peers/{client}/handshake-logs', [ConfigController::class, 'peerHandshakeLogs']);
+Route::get('/configs/{config}/handshake-logs', [ConfigController::class, 'handshakeLogs']);
+Route::delete('/configs/{config}/handshake-logs', [ConfigController::class, 'clearHandshakeLogs']);
+Route::post('/configs/{config}/reset-traffic', [ConfigController::class, 'resetConfigTraffic']);
 
 Route::get('/resolver', [ResolverController::class, 'show']);
 Route::put('/resolver/configs/{config}', [ResolverController::class, 'updateConfig']);
