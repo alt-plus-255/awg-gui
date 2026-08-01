@@ -6,6 +6,7 @@ GITHUB_REPO="${AWG_GUI_GITHUB_REPO:-alt-plus-255/awg-gui}"
 VERSION="${AWG_GUI_VERSION:-}"
 INSTALL_DIR="${AWG_GUI_INSTALL_DIR:-/opt/awg-gui}"
 YES=0
+SKIP_KERNEL=0
 BUNDLE_LOCAL=""
 DOWNLOAD_TMP_DIR=""
 MIN_TMP_FREE_BYTES=$((1024 * 1024 * 1024))
@@ -40,7 +41,8 @@ Usage:
   wget --no-config -O /tmp/awg-gui-install.sh .../dist/install.sh && sudo bash /tmp/awg-gui-install.sh --yes
 
 Options:
-  --yes              Non-interactive install (auto-install Docker if missing)
+  --yes              Non-interactive install (auto-install Docker if missing; installs kernel module unless skipped)
+  --no-awg-kernel    Skip AmneziaWG kernel module install
   --bundle=PATH      Use local .run bundle (skip download)
   --dir=/opt/awg-gui Install directory
 
@@ -48,18 +50,24 @@ Environment:
   AWG_GUI_GITHUB_REPO   GitHub owner/repo (default: ${GITHUB_REPO})
   AWG_GUI_VERSION       Release tag without v (default: latest release)
   AWG_GUI_INSTALL_DIR   Target install dir (default: ${INSTALL_DIR})
+  AWG_GUI_SKIP_KERNEL=1 Same as --no-awg-kernel
 EOF
 }
 
 for arg in "$@"; do
   case "$arg" in
     --yes|-y) YES=1 ;;
+    --no-awg-kernel) SKIP_KERNEL=1 ;;
     --bundle=*) BUNDLE_LOCAL="${arg#*=}" ;;
     --dir=*) INSTALL_DIR="${arg#*=}" ;;
     --help|-h) usage; exit 0 ;;
     *) die "Unknown argument: $arg (try --help)" ;;
   esac
 done
+
+if [[ "${AWG_GUI_SKIP_KERNEL:-0}" == "1" ]]; then
+  SKIP_KERNEL=1
+fi
 
 [[ "$(id -u)" -eq 0 ]] || die "Run as root: curl -fsSL .../dist/install.sh | sudo bash"
 
@@ -399,6 +407,7 @@ main() {
   bundle="$(download_bundle)"
   args=(--dir="${INSTALL_DIR}")
   [[ "${YES}" -eq 1 ]] && args+=(--yes)
+  [[ "${SKIP_KERNEL}" -eq 1 ]] && args+=(--no-awg-kernel)
   log "Running release installer ..."
   "${bundle}" "${args[@]}"
   # Bundle finished: download/extract traps may still run on EXIT; clear leftovers + old images now.

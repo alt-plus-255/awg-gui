@@ -1033,7 +1033,7 @@ class AmneziaWgService
 
     /**
      * Drop obsolete pre-chain FakeIP rules from older resolver builds.
-     * Do NOT touch DIVERT here — current TPROXY path needs it (created by resolver-mark.sh).
+     * Do NOT touch DIVERT here — UDP FakeIP TPROXY needs FakeIP-scoped DIVERT from resolver-mark.sh.
      *
      * @return list<string>
      */

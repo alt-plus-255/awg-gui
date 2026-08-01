@@ -19,10 +19,17 @@
 curl -fsSL https://raw.githubusercontent.com/alt-plus-255/awg-gui/refs/heads/main/dist/install.sh | sudo bash
 ```
 
-Без интерактива (порт панели **8877**, при существующей установке — режим обновления):
+Без интерактива (порт панели **8877**, при существующей установке — режим обновления; kernel-модуль ставится по умолчанию):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/alt-plus-255/awg-gui/refs/heads/main/dist/install.sh | sudo bash -s -- --yes
+```
+
+Пропустить kernel-модуль AmneziaWG (останется userspace `amneziawg-go`):
+
+```bash
+curl -fsSL .../dist/install.sh | sudo bash -s -- --yes --no-awg-kernel
+# или: AWG_GUI_SKIP_KERNEL=1
 ```
 
 Конкретная версия:
@@ -64,7 +71,10 @@ Dev-скрипт установки:
   - внутренняя подсеть / `INTERNAL_SUBNET` (по умолчанию **10.66.66.0/24**);
   - DNS для клиентов / `PEER_DNS` (по умолчанию **1.1.1.1**);
   - AllowedIPs / `ALLOWED_IPS` (по умолчанию **0.0.0.0/0, ::/0**);
+  - **kernel-модуль AmneziaWG** (по умолчанию **Y**) — рекомендуется для YouTube/Instagram при полном туннеле; при ошибке установка продолжается на userspace. См. [amneziawg-linux-kernel-module](https://github.com/amnezia-vpn/amneziawg-linux-kernel-module). Только официальные пакеты Amnezia; панель не принимает произвольные команды с хоста.
 - копирует `src/.env.example` → `src/.env` и заполняет значения, включая случайные **`DB_PASSWORD`**, **`APP_KEY`** и пароль admin.
+
+Позже модуль можно установить или удалить в панели: **Настройки → Панель → Kernel-модуль AmneziaWG**.
 
 ### Повторная установка / обновление
 

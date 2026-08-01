@@ -107,19 +107,23 @@ class ResolverSingBoxTproxyConfigTest extends TestCase
             $sb = app(ResolverService::class)->buildSingBoxConfig([$cfgA, $cfgB], forceSyncLists: false);
 
             $inboundTypes = array_column($sb['inbounds'], 'type');
+            $this->assertContains('redirect', $inboundTypes);
             $this->assertContains('tproxy', $inboundTypes);
-            $this->assertNotContains('redirect', $inboundTypes);
             $this->assertNotContains('tun', $inboundTypes);
-            $this->assertNull(collect($sb['inbounds'])->firstWhere('tag', ResolverService::UDP_TPROXY_INBOUND_TAG));
 
-            $tp = collect($sb['inbounds'])->firstWhere('tag', ResolverService::TPROXY_INBOUND_TAG);
-            $this->assertNotNull($tp);
-            $this->assertSame('tproxy', $tp['type']);
-            $this->assertSame(ResolverService::TPROXY_LISTEN, $tp['listen']);
-            $this->assertSame(ResolverService::TPROXY_PORT, $tp['listen_port']);
-            $this->assertTrue($tp['tcp_fast_open'] ?? false);
-            $this->assertTrue($tp['udp_fragment'] ?? false);
-            $this->assertArrayNotHasKey('network', $tp);
+            $redir = collect($sb['inbounds'])->firstWhere('tag', ResolverService::TPROXY_INBOUND_TAG);
+            $this->assertNotNull($redir);
+            $this->assertSame('redirect', $redir['type']);
+            $this->assertSame(ResolverService::TPROXY_LISTEN, $redir['listen']);
+            $this->assertSame(ResolverService::TPROXY_PORT, $redir['listen_port']);
+            $this->assertTrue($redir['tcp_fast_open'] ?? false);
+
+            $udp = collect($sb['inbounds'])->firstWhere('tag', ResolverService::UDP_TPROXY_INBOUND_TAG);
+            $this->assertNotNull($udp);
+            $this->assertSame('tproxy', $udp['type']);
+            $this->assertSame(ResolverService::UDP_TPROXY_PORT, $udp['listen_port']);
+            $this->assertSame('udp', $udp['network'] ?? null);
+            $this->assertTrue($udp['udp_fragment'] ?? false);
 
             $dnsIn = collect($sb['inbounds'])->firstWhere('tag', 'dns-in');
             $this->assertSame('direct', $dnsIn['type']);
@@ -137,6 +141,7 @@ class ResolverSingBoxTproxyConfigTest extends TestCase
             $this->assertSame('sniff', $sniff['action'] ?? null);
             $this->assertSame('1s', $sniff['timeout'] ?? null);
             $this->assertContains(ResolverService::TPROXY_INBOUND_TAG, $sniff['inbound'] ?? []);
+            $this->assertContains(ResolverService::UDP_TPROXY_INBOUND_TAG, $sniff['inbound'] ?? []);
 
             foreach ($sb['inbounds'] as $inbound) {
                 $this->assertArrayNotHasKey('sniff', $inbound);
@@ -164,7 +169,8 @@ class ResolverSingBoxTproxyConfigTest extends TestCase
             $domainRoutes = array_values(array_filter(
                 $sb['route']['rules'],
                 fn (array $r) => isset($r['rule_set'], $r['outbound'], $r['source_ip_cidr'], $r['inbound'])
-                    && ($r['inbound'] === [ResolverService::TPROXY_INBOUND_TAG])
+                    && in_array(ResolverService::TPROXY_INBOUND_TAG, $r['inbound'], true)
+                    && in_array(ResolverService::UDP_TPROXY_INBOUND_TAG, $r['inbound'], true)
                     && ! str_ends_with($r['rule_set'][0] ?? '', '_ip')
             ));
             $this->assertCount(2, $domainRoutes);
@@ -182,7 +188,7 @@ class ResolverSingBoxTproxyConfigTest extends TestCase
             ));
             $this->assertCount(1, $quicRules);
             $this->assertSame(['10.66.66.0/24'], $quicRules[0]['source_ip_cidr']);
-            $this->assertSame([ResolverService::TPROXY_INBOUND_TAG], $quicRules[0]['inbound']);
+            $this->assertSame([ResolverService::UDP_TPROXY_INBOUND_TAG], $quicRules[0]['inbound']);
 
             $this->assertSame(['HTTPS'], $sb['dns']['rules'][0]['query_type'] ?? null);
             $this->assertSame('reject', $sb['dns']['rules'][0]['action'] ?? null);
@@ -208,7 +214,7 @@ class ResolverSingBoxTproxyConfigTest extends TestCase
         }
     }
 
-    public function test_reject_quic_keeps_unified_tproxy_and_adds_protocol_reject(): void
+    public function test_reject_quic_keeps_udp_tproxy_and_adds_protocol_reject(): void
     {
         $suffix = substr(str_replace('.', '', uniqid('', true)), -6);
         $iface = 'tpq'.$suffix;
@@ -248,9 +254,9 @@ class ResolverSingBoxTproxyConfigTest extends TestCase
             $cfg->load('resolverConnection');
             $sb = app(ResolverService::class)->buildSingBoxConfig([$cfg], forceSyncLists: false);
 
+            $this->assertContains('redirect', array_column($sb['inbounds'], 'type'));
             $this->assertContains('tproxy', array_column($sb['inbounds'], 'type'));
-            $this->assertNotContains('redirect', array_column($sb['inbounds'], 'type'));
-            $this->assertNotNull(collect($sb['inbounds'])->firstWhere('tag', ResolverService::TPROXY_INBOUND_TAG));
+            $this->assertNotNull(collect($sb['inbounds'])->firstWhere('tag', ResolverService::UDP_TPROXY_INBOUND_TAG));
 
             $quicRules = array_values(array_filter(
                 $sb['route']['rules'],
@@ -258,7 +264,7 @@ class ResolverSingBoxTproxyConfigTest extends TestCase
             ));
             $this->assertCount(1, $quicRules);
             $this->assertSame(['10.88.88.0/24'], $quicRules[0]['source_ip_cidr']);
-            $this->assertSame([ResolverService::TPROXY_INBOUND_TAG], $quicRules[0]['inbound']);
+            $this->assertSame([ResolverService::UDP_TPROXY_INBOUND_TAG], $quicRules[0]['inbound']);
         } finally {
             $cfg->delete();
             $conn->delete();

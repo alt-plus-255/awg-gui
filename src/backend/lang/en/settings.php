@@ -69,6 +69,7 @@ return [
 
     'update_not_available' => 'Automatic update is not available for this installation.',
     'update_already_running' => 'An update is already running.',
+    'awg_kernel_already_running' => 'A kernel module install/uninstall is already running.',
     'update_message_idle' => 'No update running.',
     'update_message_running' => 'Update in progress…',
     'update_message_success' => 'Update completed successfully.',

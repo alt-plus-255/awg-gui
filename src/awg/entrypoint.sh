@@ -7,13 +7,31 @@ mkdir -p /run
 
 declare -A LAST_MTIMES
 LAST_SB_MTIME=0
+# Re-check userspace→kernel migration periodically (seconds since epoch of last check).
+LAST_KERNEL_MIGRATE_CHECK=0
+
+kernel_module_loaded() {
+  # Host kernel module is visible in the container via sysfs/lsmod.
+  [[ -d /sys/module/amneziawg ]] && return 0
+  lsmod 2>/dev/null | awk '{print $1}' | grep -qx amneziawg
+}
+
+iface_userspace_running() {
+  local IFACE="$1"
+  pgrep -f "amneziawg-go ${IFACE}" >/dev/null 2>&1
+}
 
 apply_config() {
   local IFACE="$1"
   local CONF="${CONFIG_DIR}/${IFACE}.conf"
+  local want_kernel=0
 
   if [[ ! -f "${CONF}" ]]; then
     return 1
+  fi
+
+  if kernel_module_loaded; then
+    want_kernel=1
   fi
 
   if ip link show "${IFACE}" &>/dev/null; then
@@ -23,11 +41,22 @@ apply_config() {
   fi
 
   if awg-quick up "${CONF}"; then
-    echo "[awg] ${IFACE} is up via awg-quick"
+    echo "[awg] ${IFACE} is up via awg-quick (kernel)"
     return 0
   fi
 
-  echo "[awg] awg-quick failed for ${IFACE}, trying userspace amneziawg-go"
+  if [[ "${want_kernel}" -eq 1 ]]; then
+    echo "[awg] WARN: amneziawg module is loaded but awg-quick failed for ${IFACE}; retrying once..."
+    sleep 2
+    if awg-quick up "${CONF}"; then
+      echo "[awg] ${IFACE} is up via awg-quick (kernel, retry)"
+      return 0
+    fi
+    echo "[awg] ERROR: kernel module present but awg-quick still failed for ${IFACE} — falling back to userspace (streaming will be slower)"
+  else
+    echo "[awg] awg-quick failed for ${IFACE} (no kernel module) — userspace amneziawg-go"
+  fi
+
   amneziawg-go "${IFACE}" &
   sleep 1
   local addr
@@ -50,6 +79,33 @@ apply_config() {
   echo "[awg] ${IFACE} userspace path active"
 }
 
+maybe_migrate_userspace_to_kernel() {
+  # When the host installs amneziawg after AWG already started on userspace,
+  # migrate without waiting for a config file mtime change.
+  local now
+  now="$(date +%s)"
+  if (( now - LAST_KERNEL_MIGRATE_CHECK < 15 )); then
+    return 0
+  fi
+  LAST_KERNEL_MIGRATE_CHECK="${now}"
+
+  if ! kernel_module_loaded; then
+    return 0
+  fi
+
+  shopt -s nullglob
+  local conf
+  for conf in "${CONFIG_DIR}"/awg*.conf; do
+    local IFACE
+    IFACE="$(basename "${conf}" .conf)"
+    if iface_userspace_running "${IFACE}"; then
+      echo "[awg] Kernel module detected — migrating ${IFACE} from userspace to awg-quick"
+      apply_config "${IFACE}" || true
+      LAST_MTIMES[$IFACE]="$(stat -c %Y "${conf}" 2>/dev/null || echo 0)"
+    fi
+  done
+}
+
 sync_configs() {
   shopt -s nullglob
   local conf
@@ -70,6 +126,7 @@ sync_configs() {
       LAST_MTIMES[$IFACE]="${MT}"
     fi
   done
+  maybe_migrate_userspace_to_kernel
 }
 
 # gcompat may show process comm as ld-musl-*/ld-linux-* — never rely on pgrep -x sing-box.
@@ -104,6 +161,12 @@ sync_singbox() {
     LAST_SB_MTIME=0
   fi
 }
+
+if kernel_module_loaded; then
+  echo "[awg] Host kernel module amneziawg is loaded — preferring awg-quick"
+else
+  echo "[awg] No amneziawg kernel module — userspace fallback available"
+fi
 
 echo "[awg] Waiting for at least one awg*.conf in ${CONFIG_DIR}..."
 while true; do

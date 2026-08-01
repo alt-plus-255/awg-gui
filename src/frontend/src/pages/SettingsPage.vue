@@ -214,6 +214,61 @@
               <div class="text-caption text-grey-5 q-mt-xs">
                 {{ t('settings.awgConfigsHint') }}
               </div>
+
+              <q-separator class="q-my-lg" />
+              <div class="text-subtitle2 q-mb-sm">{{ t('settings.awgKernelTitle') }}</div>
+              <div class="text-caption text-grey-5 q-mb-md">{{ t('settings.awgKernelHint') }}</div>
+              <div v-if="!awgKernel.script_present" class="text-warning text-caption q-mb-md">
+                {{ t('settings.awgKernelMissingScript') }}
+              </div>
+              <div class="row q-col-gutter-md q-mb-md">
+                <div class="col-12 col-sm-6 col-md-3">
+                  <div class="text-caption text-grey-5">{{ t('settings.awgKernelModule') }}</div>
+                  <div class="text-body2">{{ awgKernel.module_loaded ? 'yes' : 'no' }}</div>
+                </div>
+                <div class="col-12 col-sm-6 col-md-3">
+                  <div class="text-caption text-grey-5">{{ t('settings.awgKernelPackage') }}</div>
+                  <div class="text-body2">{{ awgKernel.package_installed ? 'yes' : 'no' }}</div>
+                </div>
+                <div class="col-12 col-sm-6 col-md-3">
+                  <div class="text-caption text-grey-5">{{ t('settings.awgKernelDatapath') }}</div>
+                  <div class="text-body2 mono">{{ awgKernel.awg_datapath }}</div>
+                </div>
+                <div class="col-12 col-sm-6 col-md-3">
+                  <div class="text-caption text-grey-5">{{ t('settings.awgKernelOs') }}</div>
+                  <div class="text-body2 mono">{{ awgKernel.os_family }}</div>
+                </div>
+              </div>
+              <div class="text-caption text-grey-5 q-mb-xs">{{ t('settings.awgKernelStatus') }}</div>
+              <div class="q-mb-md" :class="awgKernelStatusClass">
+                <q-spinner v-if="awgKernel.running" size="16px" color="primary" class="q-mr-sm" />
+                {{ awgKernelStatusLabel }}
+                <span v-if="awgKernel.op_message" class="text-grey-5"> — {{ awgKernel.op_message }}</span>
+              </div>
+              <div class="row q-gutter-sm">
+                <q-btn
+                  color="primary"
+                  :label="t('settings.awgKernelInstall')"
+                  :loading="awgKernel.starting || awgKernel.running"
+                  :disable="!awgKernel.script_present || awgKernel.running"
+                  @click="onAwgKernelInstall"
+                />
+                <q-btn
+                  outline
+                  color="negative"
+                  :label="t('settings.awgKernelUninstall')"
+                  :loading="awgKernel.starting || awgKernel.running"
+                  :disable="!awgKernel.script_present || awgKernel.running"
+                  @click="onAwgKernelUninstall"
+                />
+                <q-btn
+                  flat
+                  color="grey-5"
+                  :label="t('common.refresh')"
+                  :loading="awgKernel.loading"
+                  @click="() => awgKernel.fetchStatus()"
+                />
+              </div>
             </q-tab-panel>
 
             <q-tab-panel v-if="hasDomain" name="https" class="q-pa-md">
@@ -714,6 +769,7 @@ import { useThemeStore } from '@/stores/theme'
 import { useLocaleStore } from '@/stores/locale'
 import { useSettingsStore } from '@/stores/settings'
 import { useProjectUpdateStore } from '@/stores/projectUpdate'
+import { useAwgKernelStore } from '@/stores/awgKernel'
 import { useSoundStore } from '@/sounds/store'
 import { useMobileDialog } from '@/composables/useMobileDialog'
 import DialogHeader from '@/components/DialogHeader.vue'
@@ -741,6 +797,7 @@ function onAutoTo (value) {
 }
 const settingsStore = useSettingsStore()
 const projectUpdate = useProjectUpdateStore()
+const awgKernel = useAwgKernelStore()
 const activeTab = ref('general')
 const saving = ref(false)
 const testing = ref(false)
@@ -1554,7 +1611,62 @@ function formatUpdateTs (value) {
 
 watch(activeTab, (tab) => {
   if (tab === 'update') void projectUpdate.fetchStatus({ silent: true })
+  if (tab === 'panel') void awgKernel.fetchStatus({ silent: true })
 })
+
+const awgKernelStatusLabel = computed(() => {
+  if (awgKernel.running) return t('settings.awgKernelRunning')
+  const map = {
+    ok: t('settings.awgKernelOk'),
+    error: t('settings.awgKernelError'),
+    idle: t('settings.awgKernelIdle'),
+    running: t('settings.awgKernelRunning')
+  }
+  return map[awgKernel.op_status] || t('settings.awgKernelIdle')
+})
+
+const awgKernelStatusClass = computed(() => {
+  if (awgKernel.running) return 'text-primary'
+  if (awgKernel.op_status === 'ok') return 'text-positive'
+  if (awgKernel.op_status === 'error') return 'text-negative'
+  return 'text-grey-5'
+})
+
+async function onAwgKernelInstall () {
+  try {
+    await awgKernel.startInstall()
+    $q.notify({ type: 'positive', position: 'top-right', message: t('settings.awgKernelStarted') })
+  } catch (e) {
+    const code = e?.response?.status
+    $q.notify({
+      type: code === 409 ? 'warning' : 'negative',
+      position: 'top-right',
+      message: e?.response?.data?.message || t(code === 409 ? 'settings.awgKernelAlreadyRunning' : 'settings.awgKernelStartError')
+    })
+  }
+}
+
+function onAwgKernelUninstall () {
+  $q.dialog({
+    title: t('settings.awgKernelUninstallConfirmTitle'),
+    message: t('settings.awgKernelUninstallConfirmText'),
+    cancel: true,
+    persistent: true,
+    ok: { label: t('settings.awgKernelUninstall'), color: 'negative' }
+  }).onOk(async () => {
+    try {
+      await awgKernel.startUninstall()
+      $q.notify({ type: 'positive', position: 'top-right', message: t('settings.awgKernelStarted') })
+    } catch (e) {
+      const code = e?.response?.status
+      $q.notify({
+        type: code === 409 ? 'warning' : 'negative',
+        position: 'top-right',
+        message: e?.response?.data?.message || t(code === 409 ? 'settings.awgKernelAlreadyRunning' : 'settings.awgKernelStartError')
+      })
+    }
+  })
+}
 
 async function checkForUpdatesFromSettings () {
   try {

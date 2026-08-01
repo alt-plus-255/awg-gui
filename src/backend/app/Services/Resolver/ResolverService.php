@@ -23,8 +23,8 @@ class ResolverService
     public const TPROXY_INBOUND_TAG = 'tproxy-in';
 
     /**
-     * Legacy UDP-only TPROXY port from split redirect/udp builds.
-     * Current path uses a single TPROXY :1602 for TCP+UDP (podkop/forkop).
+     * UDP-only TPROXY for FakeIP (QUIC/HTTP3). TCP uses NAT REDIRECT :1602 —
+     * Docker blackholes TCP TPROXY (iptables hits, Clash empty).
      */
     public const UDP_TPROXY_PORT = 1603;
 
@@ -848,9 +848,9 @@ class ResolverService
         $allProxyCidrs = [];
         $quicRejectRules = [];
 
-        // Single TPROXY inbound for TCP+UDP (podkop/forkop). Sniff before FakeIP reverse
-        // so QUIC/TLS can recover the domain when store_fakeip briefly misses.
-        $sniffInbounds = [self::TPROXY_INBOUND_TAG, 'dns-in'];
+        // TCP redirect + UDP tproxy. Sniff before FakeIP reverse so QUIC/TLS
+        // can recover the domain when store_fakeip briefly misses.
+        $sniffInbounds = [self::TPROXY_INBOUND_TAG, self::UDP_TPROXY_INBOUND_TAG, 'dns-in'];
 
         $routeRules = [
             [
@@ -894,9 +894,9 @@ class ResolverService
 
             if ($config->resolver_reject_quic) {
                 // Per-config only: never global quic reject (multi AWG isolation).
-                // UDP stays on the same TPROXY inbound; reject sniffed QUIC (podkop disable_quic).
+                // UDP FakeIP still arrives on tproxy-udp-in; reject sniffed QUIC.
                 $quicRejectRules[] = [
-                    'inbound' => [self::TPROXY_INBOUND_TAG],
+                    'inbound' => [self::UDP_TPROXY_INBOUND_TAG],
                     'source_ip_cidr' => $source,
                     'protocol' => 'quic',
                     'action' => 'reject',
@@ -949,7 +949,7 @@ class ResolverService
                 ];
                 // Domain sniff rules also carry source_ip for multi-config isolation.
                 $routeRules[] = [
-                    'inbound' => [self::TPROXY_INBOUND_TAG],
+                    'inbound' => [self::TPROXY_INBOUND_TAG, self::UDP_TPROXY_INBOUND_TAG],
                     'source_ip_cidr' => $source,
                     'rule_set' => [$mergedTag],
                     'action' => 'route',
@@ -965,7 +965,7 @@ class ResolverService
                     'path' => '/config/rulesets/merged_cfg_'.$config->id.'_ip.json',
                 ];
                 $routeRules[] = [
-                    'inbound' => [self::TPROXY_INBOUND_TAG],
+                    'inbound' => [self::TPROXY_INBOUND_TAG, self::UDP_TPROXY_INBOUND_TAG],
                     'source_ip_cidr' => $source,
                     'rule_set' => [$merged['ip_tag']],
                     'action' => 'route',
@@ -1068,20 +1068,27 @@ class ResolverService
                     'listen_port' => self::DNS_LISTEN_PORT,
                 ],
                 [
-                    // Single TPROXY for TCP+UDP FakeIP/list (podkop/forkop).
-                    // --on-ip 0.0.0.0 (not 127.0.0.1) — Docker route_localnet-safe.
-                    'type' => 'tproxy',
+                    // TCP FakeIP/list via NAT REDIRECT (Docker-safe; TCP TPROXY blackholes).
+                    'type' => 'redirect',
                     'tag' => self::TPROXY_INBOUND_TAG,
                     'listen' => self::TPROXY_LISTEN,
                     'listen_port' => self::TPROXY_PORT,
                     'tcp_fast_open' => true,
+                ],
+                [
+                    // UDP FakeIP (QUIC/HTTP3) via TPROXY :1603.
+                    'type' => 'tproxy',
+                    'tag' => self::UDP_TPROXY_INBOUND_TAG,
+                    'listen' => self::TPROXY_LISTEN,
+                    'listen_port' => self::UDP_TPROXY_PORT,
+                    'network' => 'udp',
                     'udp_fragment' => true,
                 ],
             ])), $outbounds, $routeRules, $outboundTagsAdded),
             'outbounds' => $outbounds,
             // Routing ownership (anti-TUN-auto_route):
             // 1) Client full-tunnel is owned by AWG (AllowedIPs 0.0.0.0/0) — not by sing-box.
-            // 2) FakeIP + list CIDRs are TPROXY'd into sing-box :1602 (TCP+UDP).
+            // 2) FakeIP/list TCP → NAT REDIRECT :1602; FakeIP UDP → TPROXY :1603.
             //    Block QUIC = route protocol=quic reject. Everything else → MASQUERADE.
             // 3) Pin egress to the resolved NIC (auto-detect or settings override).
             //    route.exclude_interface does not exist in sing-box (TUN-inbound only).

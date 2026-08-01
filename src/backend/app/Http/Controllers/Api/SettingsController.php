@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Setting;
 use App\Services\AmneziaWg\AmneziaWgService;
 use App\Services\AmneziaWg\SslCertificateService;
+use App\Services\Docker\PanelOpsClient;
 use App\Services\Resolver\EgressInterfaceResolver;
 use App\Services\System\ProjectUpdateService;
 use App\Services\Telegram\TelegramSettings;
@@ -24,6 +25,7 @@ class SettingsController extends Controller
         private TelegramSettings $telegram,
         private TelegramWebhookSync $telegramSync,
         private EgressInterfaceResolver $egress,
+        private PanelOpsClient $panelOps,
     ) {}
 
     public function show()
@@ -358,6 +360,56 @@ class SettingsController extends Controller
         }
 
         return response()->json($state, 202);
+    }
+
+    public function awgKernelStatus()
+    {
+        try {
+            $data = $this->panelOps->awgKernelStatus();
+        } catch (\RuntimeException $e) {
+            return response()->json([
+                'ok' => false,
+                'message' => $e->getMessage(),
+                'module_loaded' => false,
+                'package_installed' => false,
+                'awg_datapath' => 'unknown',
+                'os_family' => 'unknown',
+                'script_present' => false,
+                'op' => ['status' => 'error', 'message' => $e->getMessage(), 'running' => false],
+            ], 503);
+        }
+
+        return response()->json($data);
+    }
+
+    public function awgKernelInstall()
+    {
+        try {
+            $result = $this->panelOps->startAwgKernelOp('install');
+        } catch (\RuntimeException $e) {
+            if ($e->getMessage() === 'kernel_op_already_running') {
+                return response()->json(['message' => __('settings.awg_kernel_already_running')], 409);
+            }
+
+            return response()->json(['message' => $e->getMessage()], 500);
+        }
+
+        return response()->json($result, 202);
+    }
+
+    public function awgKernelUninstall()
+    {
+        try {
+            $result = $this->panelOps->startAwgKernelOp('uninstall');
+        } catch (\RuntimeException $e) {
+            if ($e->getMessage() === 'kernel_op_already_running') {
+                return response()->json(['message' => __('settings.awg_kernel_already_running')], 409);
+            }
+
+            return response()->json(['message' => $e->getMessage()], 500);
+        }
+
+        return response()->json($result, 202);
     }
 
     /**

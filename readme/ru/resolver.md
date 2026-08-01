@@ -17,17 +17,18 @@
 
 ## Как это работает
 
-1. На VDS в контейнере AWG работает **sing-box** с FakeIP (`198.18.0.0/15`) и ruleset-списками. TCP и UDP к FakeIP (и TCP к list CIDR) доставляются через **TPROXY** на sing-box `:1602` (как podkop/forkop; не TUN). В Docker TCP DIVERT (`-m socket`) не ставится — иначе FakeIP TCP уходит в blackhole; для UDP DIVERT остаётся scoped на FakeIP. Если **Блокировать QUIC** включён — sing-box отклоняет `protocol=quic` (клиент падает на TCP); выключен — QUIC/HTTP3 идёт через Подключение.
+1. На VDS в контейнере AWG работает **sing-box** с FakeIP (`198.18.0.0/15`) и ruleset-списками. TCP к FakeIP/list доставляется через **NAT REDIRECT** на `:1602` (Docker-safe); UDP к FakeIP — через **TPROXY** `:1603`. Если **Блокировать QUIC** включён — sing-box отклоняет `protocol=quic` (клиент падает на TCP); выключен — QUIC/HTTP3 идёт через Подключение.
 2. Community-списки ([allow-domains](https://github.com/itdoginfo/allow-domains)) скачиваются на диск (`rulesets/*.srs`) — **Настройки списков**.
 3. Для каждого серверного конфига на **Резолвере** выбирается **Подключение** — upstream для доменов из списков. Несколько AWG-конфигов изолируются по VPN-подсети клиента (`source_ip_cidr`): свои списки, outbound, DNS и флаг Block QUIC.
 4. Клиент получает `.conf` / QR с `DNS = gateway`, `AllowedIPs = 0.0.0.0/0, ::/0` и **MTU = 1420** (после смены MTU нужен переимпорт на устройстве).
+5. Для ABR-видео (YouTube/Instagram) на полном туннеле предпочтителен **kernel AmneziaWG** на хосте VDS (инсталлер или **Настройки → Панель**); без модуля используется userspace `amneziawg-go`.
 
 ```mermaid
 flowchart LR
   Client[Клиент AmneziaWG] -->|весь трафик| VDS[VDS / AWG]
   VDS -->|DNS FakeIP| SB[sing-box]
-  VDS -->|TPROXY FakeIP TCP+UDP| SB
-  VDS -->|TPROXY list TCP| SB
+  VDS -->|REDIRECT FakeIP/list TCP| SB
+  VDS -->|TPROXY FakeIP UDP| SB
   SB -->|домен в списке| Conn[Подключение конфига]
   SB -->|домен вне списка| VDSip[Выход с IP VDS]
   Conn --> Internet[Интернет]

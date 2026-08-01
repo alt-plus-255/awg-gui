@@ -71,6 +71,22 @@ class ResolverDiagnostics
         }
 
         $runtime = $this->collectRuntimeSignals($container, $enabledIfaces);
+        $datapathMode = (string) ($runtime['awg_datapath']['mode'] ?? 'unknown');
+        // Userspace is functional but too slow for ABR streaming — treat as warning check.
+        $checks[] = [
+            'id' => 'awg_datapath',
+            'ok' => $datapathMode !== 'userspace',
+            'label' => __('resolver.diag_awg_datapath'),
+            'detail' => match ($datapathMode) {
+                'kernel' => __('resolver.diag_awg_datapath_kernel'),
+                'userspace' => __('resolver.diag_awg_datapath_userspace'),
+                default => __('resolver.diag_awg_datapath_unknown'),
+            },
+        ];
+        if ($datapathMode === 'userspace' && $enabled !== []) {
+            $hints[] = __('resolver.diag_awg_datapath_userspace_hint');
+        }
+
         $dnsListening = $runtime['listeners']['dns_udp'] || $runtime['listeners']['dns_tcp'];
         $tproxyListening = $runtime['listeners']['tproxy_udp'] || $runtime['listeners']['tproxy_tcp'];
         $fakeipTproxy = $runtime['iptables']['fakeip_rules_present'];
@@ -362,6 +378,7 @@ class ResolverDiagnostics
      *     fakeip_rules_present: bool,
      *     nat_dns_redirect_hits: int
      *   },
+     *   awg_datapath: array{module_loaded: bool, userspace: bool, mode: string},
      *   clash?: array{api_ok: bool,connections_current: int,connection_chains: list<string>}
      * }
      */
@@ -398,6 +415,11 @@ class ResolverDiagnostics
                 'fakeip_rules_present' => false,
                 'nat_dns_redirect_hits' => 0,
             ],
+            'awg_datapath' => [
+                'module_loaded' => false,
+                'userspace' => false,
+                'mode' => 'unknown',
+            ],
         ];
 
         $config = $this->readSingBoxRuntimeConfig();
@@ -419,6 +441,9 @@ echo "__MANGLE_SAVE__"
 iptables-save -t mangle -c 2>/dev/null || true
 echo "__NAT_SAVE__"
 iptables-save -t nat -c 2>/dev/null || true
+echo "__AWG_DATAPATH__"
+if [ -d /sys/module/amneziawg ]; then echo module=yes; else echo module=no; fi
+if ps aux 2>/dev/null | grep -q '[a]mneziawg-go '; then echo userspace=yes; else echo userspace=no; fi
 SH;
             $r = $this->docker->exec($container, ['sh', '-c', $script], timeout: 10);
             $sections = $this->splitSections($r->output());
@@ -428,6 +453,7 @@ SH;
             $route100 = $sections['__IP_ROUTE_100__'] ?? [];
             $mangleSave = $sections['__MANGLE_SAVE__'] ?? [];
             $natSave = $sections['__NAT_SAVE__'] ?? [];
+            $datapathLines = $sections['__AWG_DATAPATH__'] ?? [];
 
             $signals['listeners']['dns_udp'] = $this->hasListenerOnPort($udp, ResolverService::DNS_LISTEN_PORT);
             $signals['listeners']['dns_tcp'] = $this->hasListenerOnPort($tcp, ResolverService::DNS_LISTEN_PORT);
@@ -444,6 +470,29 @@ SH;
                 $signals['iptables'],
                 $this->parseIptablesCounters($mangleSave, $natSave, $enabledIfaces)
             );
+
+            $moduleLoaded = false;
+            $userspace = false;
+            foreach ($datapathLines as $line) {
+                $line = trim($line);
+                if ($line === 'module=yes') {
+                    $moduleLoaded = true;
+                }
+                if ($line === 'userspace=yes') {
+                    $userspace = true;
+                }
+            }
+            $mode = 'unknown';
+            if ($userspace) {
+                $mode = 'userspace';
+            } elseif ($moduleLoaded) {
+                $mode = 'kernel';
+            }
+            $signals['awg_datapath'] = [
+                'module_loaded' => $moduleLoaded,
+                'userspace' => $userspace,
+                'mode' => $mode,
+            ];
         } catch (\Throwable) {
             // ignore and return best-effort static config fields
         }
@@ -635,13 +684,16 @@ SH;
                 }
             }
 
-            // Legacy mangle TPROXY counters (pre-REDIRECT builds).
             if (str_starts_with($chain, 'RS_') && str_contains($rule, '-j TPROXY')) {
                 $isFakeIp = str_contains($rule, '-d '.ResolverService::FAKEIP_CIDR);
                 if ($isFakeIp) {
                     $out['fakeip_rules_present'] = true;
                 }
-                if (str_contains($rule, '--on-port '.(string) ResolverService::TPROXY_PORT)) {
+                $onDeliveryPort = str_contains($rule, '--on-port '.(string) ResolverService::TPROXY_PORT)
+                    || str_contains($rule, '--on-port='.(string) ResolverService::TPROXY_PORT)
+                    || str_contains($rule, '--on-port '.(string) ResolverService::UDP_TPROXY_PORT)
+                    || str_contains($rule, '--on-port='.(string) ResolverService::UDP_TPROXY_PORT);
+                if ($onDeliveryPort) {
                     if ($isFakeIp && str_contains($rule, '-p tcp')) {
                         $out['tproxy_fakeip_tcp_hits'] += $packets;
                     } elseif ($isFakeIp && str_contains($rule, '-p udp')) {

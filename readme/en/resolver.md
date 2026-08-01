@@ -17,17 +17,18 @@ The resolver is a “smart VPN via VDS”: all client traffic goes to the server
 
 ## How it works
 
-1. **sing-box** with FakeIP (`198.18.0.0/15`) and rulesets runs inside the AWG container on the VDS. FakeIP TCP+UDP (and list CIDR TCP) are delivered via **TPROXY** to sing-box `:1602` (podkop/forkop-style; not TUN). In Docker, TCP DIVERT (`-m socket`) is omitted — it blackholes FakeIP TCP; UDP DIVERT stays FakeIP-scoped. When **Block QUIC** is on, sing-box rejects `protocol=quic` (apps fall back to TCP); when off, QUIC/HTTP3 exits via the Connection.
+1. **sing-box** with FakeIP (`198.18.0.0/15`) and rulesets runs inside the AWG container on the VDS. FakeIP/list TCP is delivered via **NAT REDIRECT** to `:1602` (Docker-safe); FakeIP UDP via **TPROXY** `:1603`. When **Block QUIC** is on, sing-box rejects `protocol=quic` (apps fall back to TCP); when off, QUIC/HTTP3 exits via the Connection.
 2. Community lists ([allow-domains](https://github.com/itdoginfo/allow-domains)) are downloaded to disk (`rulesets/*.srs`) — **List settings**.
 3. Each server config on **Resolver** picks a **Connection** — upstream for listed domains. Multiple AWG configs are isolated by client VPN subnet (`source_ip_cidr`): own lists, outbound, DNS, and Block QUIC flag.
 4. The client gets a `.conf` / QR with `DNS = gateway`, `AllowedIPs = 0.0.0.0/0, ::/0`, and **MTU = 1420** (re-import on the device after an MTU change).
+5. For ABR video (YouTube/Instagram) over full-tunnel, prefer **kernel AmneziaWG** on the VDS host (installer or **Settings → Panel**); without it the stack uses userspace `amneziawg-go`.
 
 ```mermaid
 flowchart LR
   Client[AmneziaWG client] -->|all traffic| VDS[VDS / AWG]
   VDS -->|DNS FakeIP| SB[sing-box]
-  VDS -->|TPROXY FakeIP TCP+UDP| SB
-  VDS -->|TPROXY list TCP| SB
+  VDS -->|REDIRECT FakeIP/list TCP| SB
+  VDS -->|TPROXY FakeIP UDP| SB
   SB -->|listed domain| Conn[Config connection]
   SB -->|outside lists| VDSip[Exit via VDS IP]
   Conn --> Internet[Internet]

@@ -31,7 +31,7 @@ class ResolverMarkScriptsTest extends TestCase
         parent::tearDown();
     }
 
-    public function test_mark_script_uses_unified_tproxy_for_fakeip_tcp_udp(): void
+    public function test_mark_script_uses_redirect_tcp_and_udp_tproxy(): void
     {
         $awg = Mockery::mock(AmneziaWgService::class);
         $awg->shouldReceive('configDir')->andReturn($this->awgDir);
@@ -47,29 +47,30 @@ class ResolverMarkScriptsTest extends TestCase
         $mark = (string) file_get_contents($this->awgDir.'/resolver-mark.sh');
         $this->assertStringContainsString('REJECT_QUIC="${2:-0}"', $mark);
         $this->assertStringNotContainsString('if [ "$REJECT_QUIC" = "0" ]; then', $mark);
-        $this->assertStringContainsString('TPROXY_PORT='.ResolverService::TPROXY_PORT, $mark);
-        $this->assertStringContainsString('-j TPROXY', $mark);
-        $this->assertStringContainsString('tproxy_add "$FAKEIP" tcp', $mark);
-        $this->assertStringContainsString('tproxy_add "$FAKEIP" udp', $mark);
-        $this->assertStringContainsString('tproxy_add "$cidr" tcp', $mark);
-        // TCP DIVERT blackholes FakeIP TCP in Docker — only UDP DIVERT.
+        $this->assertStringContainsString('REDIR_PORT='.ResolverService::TPROXY_PORT, $mark);
+        $this->assertStringContainsString('UDP_PORT='.ResolverService::UDP_TPROXY_PORT, $mark);
+        $this->assertStringContainsString('REDIRECT --to-ports "$REDIR_PORT"', $mark);
+        $this->assertStringContainsString('redir_add "$FAKEIP"', $mark);
+        $this->assertStringContainsString('redir_add "$cidr"', $mark);
+        $this->assertStringContainsString(
+            '-d "$FAKEIP" -p udp -j TPROXY',
+            $mark
+        );
+        $this->assertStringContainsString('--on-port "$UDP_PORT"', $mark);
         $this->assertStringContainsString('-d "$FAKEIP" -p udp -m socket -j DIVERT', $mark);
         $this->assertStringNotContainsString(
             'iptables -t mangle -I PREROUTING 1 -i "$IFACE" -d "$FAKEIP" -p tcp -m socket -j DIVERT',
             $mark
         );
-        $this->assertStringContainsString('ip -4 -o addr show dev "$IFACE"', $mark);
-        $this->assertStringContainsString('ip route replace local "$FAKEIP" dev lo table', $mark);
-        // No NAT REDIRECT install for FakeIP/list (legacy cleanup only).
-        $this->assertStringNotContainsString('REDIRECT --to-ports', $mark);
         $this->assertStringNotContainsString(
             'iptables -I FORWARD 1 -i "$IFACE" -d "$FAKEIP" -p udp -j REJECT',
             $mark
         );
+        $this->assertStringNotContainsString('tproxy_add "$FAKEIP" tcp', $mark);
 
         $unmark = (string) file_get_contents($this->awgDir.'/resolver-unmark.sh');
-        $this->assertStringContainsString('TPROXY_PORT='.ResolverService::TPROXY_PORT, $unmark);
-        $this->assertStringContainsString('-j TPROXY', $unmark);
+        $this->assertStringContainsString('UDP_PORT='.ResolverService::UDP_TPROXY_PORT, $unmark);
+        $this->assertStringContainsString('RSNAT_', $unmark);
     }
 
     private function rmTree(string $dir): void

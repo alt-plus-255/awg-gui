@@ -69,6 +69,7 @@ return [
 
     'update_not_available' => 'Автообновление недоступно в этой установке.',
     'update_already_running' => 'Обновление уже выполняется.',
+    'awg_kernel_already_running' => 'Установка или удаление kernel-модуля уже выполняется.',
     'update_message_idle' => 'Обновление не запущено.',
     'update_message_running' => 'Идёт обновление…',
     'update_message_success' => 'Обновление успешно завершено.',

@@ -97,10 +97,17 @@ class ResolverDiagnosticsTest extends TestCase
                     'listen_port' => 53,
                 ],
                 [
-                    'type' => 'tproxy',
+                    'type' => 'redirect',
                     'tag' => ResolverService::TPROXY_INBOUND_TAG,
                     'listen' => ResolverService::TPROXY_LISTEN,
                     'listen_port' => ResolverService::TPROXY_PORT,
+                ],
+                [
+                    'type' => 'tproxy',
+                    'tag' => ResolverService::UDP_TPROXY_INBOUND_TAG,
+                    'listen' => ResolverService::TPROXY_LISTEN,
+                    'listen_port' => ResolverService::UDP_TPROXY_PORT,
+                    'network' => 'udp',
                 ],
             ],
         ], JSON_UNESCAPED_SLASHES)."\n");
@@ -116,7 +123,7 @@ class ResolverDiagnosticsTest extends TestCase
             ->andReturn($this->processResult(<<<'OUT'
 __SS_UDP__
 UNCONN 0 0 0.0.0.0:53 0.0.0.0:* users:(("sing-box",pid=1,fd=3))
-UNCONN 0 0 0.0.0.0:1602 0.0.0.0:* users:(("sing-box",pid=1,fd=4))
+UNCONN 0 0 0.0.0.0:1603 0.0.0.0:* users:(("sing-box",pid=1,fd=4))
 __SS_TCP__
 LISTEN 0 4096 0.0.0.0:1602 0.0.0.0:* users:(("sing-box",pid=1,fd=5))
 __IP_RULE__
@@ -127,15 +134,18 @@ local default dev lo scope host
 __MANGLE_SAVE__
 *mangle
 [0:0] -A PREROUTING -i awg0 -d 198.18.0.0/15 -p udp -m socket -j DIVERT
-[42:2048] -A PREROUTING -i awg0 -j RS_awg0
-[0:0] -A RS_awg0 -d 198.18.0.0/15 -p tcp -j TPROXY --on-port 1602 --on-ip 10.66.66.1 --tproxy-mark 0x1/0x1
-[0:0] -A RS_awg0 -d 198.18.0.0/15 -p udp -j TPROXY --on-port 1602 --on-ip 10.66.66.1 --tproxy-mark 0x1/0x1
-[5:300] -A RS_awg0 -d 104.16.0.0/12 -p tcp -j TPROXY --on-port 1602 --on-ip 10.66.66.1 --tproxy-mark 0x1/0x1
+[19:900] -A PREROUTING -i awg0 -d 198.18.0.0/15 -p udp -j TPROXY --on-port 1603 --on-ip 10.66.66.1 --tproxy-mark 0x1/0x1
 COMMIT
 __NAT_SAVE__
 *nat
+[42:2048] -A PREROUTING -i awg0 -j RSNAT_awg0
+[25:1500] -A RSNAT_awg0 -d 198.18.0.0/15 -p tcp -j REDIRECT --to-ports 1602
+[5:300] -A RSNAT_awg0 -d 104.16.0.0/12 -p tcp -j REDIRECT --to-ports 1602
 [7:420] -A PREROUTING -i awg0 -p udp -m udp --dport 53 -j REDIRECT --to-ports 53
 COMMIT
+__AWG_DATAPATH__
+module=no
+userspace=yes
 OUT
             ));
 
@@ -162,23 +172,29 @@ OUT
         $result = $diag->diagnose($resolver);
 
         $this->assertSame(42, $result['details']['iptables']['prerouting_rs_hits_by_iface']['awg0']);
-        $this->assertSame(0, $result['details']['iptables']['tproxy_fakeip_tcp_hits']);
-        $this->assertSame(0, $result['details']['iptables']['tproxy_fakeip_udp_hits']);
+        $this->assertSame(25, $result['details']['iptables']['tproxy_fakeip_tcp_hits']);
+        $this->assertSame(19, $result['details']['iptables']['tproxy_fakeip_udp_hits']);
         $this->assertSame(5, $result['details']['iptables']['tproxy_list_tcp_hits']);
         $this->assertSame(7, $result['details']['iptables']['nat_dns_redirect_hits']);
         $this->assertSame(0, $result['details']['clash']['connections_current']);
         $this->assertSame(ResolverService::TPROXY_LISTEN, $result['details']['config']['tproxy_listen_addr']);
-        $this->assertSame('tproxy', $result['details']['config']['delivery_inbound_type']);
+        $this->assertSame('redirect', $result['details']['config']['delivery_inbound_type']);
 
         $policy = collect($result['checks'])->firstWhere('id', 'tproxy_policy');
         $this->assertNotNull($policy);
         $this->assertTrue($policy['ok']);
 
+        $datapath = collect($result['checks'])->firstWhere('id', 'awg_datapath');
+        $this->assertNotNull($datapath);
+        $this->assertFalse($datapath['ok']);
+        $this->assertSame('userspace', $result['details']['awg_datapath']['mode']);
+        $this->assertContains(__('resolver.diag_awg_datapath_userspace_hint'), $result['hints']);
+
         $delivery = collect($result['checks'])->firstWhere('id', 'tproxy_delivery');
         $this->assertNotNull($delivery);
         $this->assertFalse($delivery['ok']);
         $this->assertStringContainsString('rs_hits=42', $delivery['detail']);
-        $this->assertStringContainsString('fakeip_hits=0', $delivery['detail']);
+        $this->assertStringContainsString('fakeip_hits=44', $delivery['detail']);
     }
 
     private function processResult(string $output): ProcessResult

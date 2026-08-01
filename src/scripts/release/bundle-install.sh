@@ -9,6 +9,7 @@ ENV_FILE="${RUNTIME_DIR}/.env"
 ENV_EXAMPLE="${RUNTIME_DIR}/.env.example"
 PROJECT_NAME=awggui
 YES=0
+SKIP_KERNEL=0
 UPGRADE_MODE=0
 REPAIR_MODE=0
 BUNDLE_VERSION=""
@@ -17,6 +18,7 @@ AWG_PORT_DEFAULT=51820
 INTERNAL_SUBNET_DEFAULT="10.66.66.0/24"
 PEER_DNS_DEFAULT="1.1.1.1"
 ALLOWED_IPS_DEFAULT="0.0.0.0/0, ::/0"
+KERNEL_HOST_SCRIPT_SRC="${SCRIPT_DIR}/host/awg-kernel-host.sh"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -32,19 +34,28 @@ die() { echo -e "${RED}[error]${NC} $*" >&2; exit 1; }
 
 usage() {
   cat <<EOF
-Usage: $0 [--yes] [--help]
+Usage: $0 [--yes] [--no-awg-kernel] [--help]
 
 Production install: loads pre-built Docker images and starts awggui stack.
+Asks about AmneziaWG kernel module (recommended for YouTube/Instagram; default Y).
+
+  --yes              Non-interactive (defaults; installs kernel module unless skipped)
+  --no-awg-kernel    Skip AmneziaWG kernel module install
 EOF
 }
 
 for arg in "$@"; do
   case "$arg" in
     --yes|-y) YES=1 ;;
+    --no-awg-kernel) SKIP_KERNEL=1 ;;
     --help|-h) usage; exit 0 ;;
     *) die "Unknown argument: $arg" ;;
   esac
 done
+
+if [[ "${AWG_GUI_SKIP_KERNEL:-0}" == "1" ]]; then
+  SKIP_KERNEL=1
+fi
 
 [[ "$(id -u)" -eq 0 ]] || die "Run as root (sudo)"
 
@@ -116,6 +127,36 @@ prompt() {
     printf -v "${var}" '%s' "${def}"
   else
     printf -v "${var}" '%s' "${val}"
+  fi
+}
+
+install_awg_kernel_module() {
+  mkdir -p /etc/awg-gui
+  if [[ -f "${KERNEL_HOST_SCRIPT_SRC}" ]]; then
+    install -m 0755 "${KERNEL_HOST_SCRIPT_SRC}" /etc/awg-gui/awg-kernel-host.sh
+  else
+    warn "Kernel helper missing at ${KERNEL_HOST_SCRIPT_SRC}; skip kernel install"
+    env_set "AWG_KERNEL_WANTED" "0" "${ENV_FILE}" 2>/dev/null || true
+    return 0
+  fi
+
+  if [[ "${SKIP_KERNEL}" -eq 1 ]]; then
+    log "Skipping AmneziaWG kernel module (--no-awg-kernel / AWG_GUI_SKIP_KERNEL)"
+    env_set "AWG_KERNEL_WANTED" "0" "${ENV_FILE}" 2>/dev/null || true
+    return 0
+  fi
+
+  if confirm "Install AmneziaWG kernel module? Recommended for YouTube/Instagram streaming (https://github.com/amnezia-vpn/amneziawg-linux-kernel-module)" "y"; then
+    env_set "AWG_KERNEL_WANTED" "1" "${ENV_FILE}" 2>/dev/null || true
+    log "Installing AmneziaWG kernel module on host (may take several minutes)..."
+    if /etc/awg-gui/awg-kernel-host.sh install; then
+      ok "AmneziaWG kernel module installed (or already present)"
+    else
+      warn "Kernel module install failed — continuing with userspace amneziawg-go"
+    fi
+  else
+    env_set "AWG_KERNEL_WANTED" "0" "${ENV_FILE}" 2>/dev/null || true
+    log "Kernel module skipped by user"
   fi
 }
 
@@ -770,6 +811,7 @@ main() {
   seed_host_ssl_files
   env_merge_missing_keys
   ensure_panel_ops_token
+  install_awg_kernel_module
   remove_legacy_certbot_container
   load_images
 
