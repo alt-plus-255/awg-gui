@@ -183,6 +183,30 @@
 
         <LanguageSwitcher class="q-mr-sm" :compact="$q.screen.lt.md" />
         <ThemeSwitcher class="q-mr-sm" :compact="$q.screen.lt.md" />
+        <q-btn
+          v-if="canInstallPwa"
+          flat
+          dense
+          no-caps
+          icon="install_mobile"
+          :label="t('nav.installApp')"
+          class="q-mr-sm gt-xs"
+          @click="installPwa"
+        >
+          <q-tooltip>{{ t('nav.installAppTooltip') }}</q-tooltip>
+        </q-btn>
+        <q-btn
+          v-if="canInstallPwa"
+          flat
+          dense
+          round
+          icon="install_mobile"
+          class="q-mr-sm lt-sm"
+          :aria-label="t('nav.installApp')"
+          @click="installPwa"
+        >
+          <q-tooltip>{{ t('nav.installAppTooltip') }}</q-tooltip>
+        </q-btn>
         <div class="q-mr-md text-caption text-grey-5 gt-sm">{{ auth.user?.username }}</div>
         <q-btn flat dense icon="logout" :label="t('nav.logout')" class="gt-sm" @click="onLogout" />
       </q-toolbar>
@@ -237,6 +261,21 @@
 
         <q-separator class="q-my-sm" />
 
+        <q-item
+          v-if="canInstallPwa"
+          clickable
+          v-ripple
+          @click="onInstallPwaFromDrawer"
+        >
+          <q-item-section avatar>
+            <q-icon name="install_mobile" />
+          </q-item-section>
+          <q-item-section>
+            <q-item-label>{{ t('nav.installApp') }}</q-item-label>
+            <q-item-label caption class="text-grey-5">{{ t('nav.installAppTooltip') }}</q-item-label>
+          </q-item-section>
+        </q-item>
+
         <q-item clickable v-ripple @click="onLogout">
           <q-item-section avatar>
             <q-icon name="logout" />
@@ -271,6 +310,7 @@ import { useSettingsStore } from '@/stores/settings'
 import { useProjectUpdateStore } from '@/stores/projectUpdate'
 import { useSystemStore } from '@/stores/system'
 import { useAppBootstrap } from '@/composables/useAppBootstrap'
+import { usePwaInstall } from '@/composables/usePwaInstall'
 import {
   getLiveIntervalOptions,
   setLiveInterval,
@@ -288,6 +328,7 @@ const systemStore = useSystemStore()
 const liveState = useLiveStatsState()
 const router = useRouter()
 const route = useRoute()
+const { canInstall: canInstallPwa, install: installPwa } = usePwaInstall()
 
 useAppBootstrap()
 
@@ -403,6 +444,11 @@ function go (to) {
 watch(() => route.fullPath, () => {
   drawerOpen.value = false
 })
+
+async function onInstallPwaFromDrawer () {
+  drawerOpen.value = false
+  await installPwa()
+}
 
 async function onLogout () {
   drawerOpen.value = false

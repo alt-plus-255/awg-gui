@@ -31,6 +31,8 @@ sudo awg-gui info
 
 Prints the panel URL, host, port, and `admin` login (password is not shown). Useful after install or when changing domain / HTTPS.
 
+After you attach a domain and issue a Let's Encrypt certificate in **Settings → HTTPS**, open the panel over `https://` — you can install it as a PWA (header **Install app** button, or the browser Install / Add to Home Screen menu).
+
 ## Public VPN endpoint
 
 Client configs use `Endpoint = <public IP>:<UDP port>`. After install you can view or change it from the shell:

@@ -26,5 +26,7 @@
   "liveConnecting": "Live…",
   "liveConnectingHint": "Подключение к каналу обновлений",
   "updateAvailable": "Доступно обновление",
-  "updateAvailableTooltip": "Перейти к обновлению панели"
+  "updateAvailableTooltip": "Перейти к обновлению панели",
+  "installApp": "Установить приложение",
+  "installAppTooltip": "Установить AWG-GUI как приложение на этом устройстве"
 }

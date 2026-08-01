@@ -276,6 +276,10 @@
                 {{ sslHint }}
               </div>
 
+              <div v-if="ssl.enabled" class="text-caption text-grey-5 q-mb-md">
+                {{ t('settings.pwaInstallHint') }}
+              </div>
+
               <div class="row q-col-gutter-md q-mb-md">
                 <div class="col-12 col-md-6">
                   <q-input

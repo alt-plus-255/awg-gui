@@ -441,6 +441,13 @@ CADDY;
 		}
 	}
 
+	@sw path /sw.js /sw.js.map /workbox-*.js /workbox-*.js.map
+	handle @sw {
+		root * /srv
+		header Cache-Control "no-cache"
+		file_server
+	}
+
 	handle {
 		root * /srv
 		try_files {path} /index.html

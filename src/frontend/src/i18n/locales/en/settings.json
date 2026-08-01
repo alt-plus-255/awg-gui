@@ -97,6 +97,7 @@
   "httpsError": "Error",
   "acmeTxtHint": "An A record to the panel IP is not enough for Let's Encrypt. You will also need a _acme-challenge TXT record (name and value are shown after Issue / Renew). After adding it, confirm issuance in the panel.",
   "httpsAccessHint": "Access: https://your-domain:{port} (port can be changed in the Panel tab).",
+  "pwaInstallHint": "With HTTPS active, open the panel over https:// and install it as an app (header button, or the browser Install / Add to Home Screen menu). On iPhone/iPad: Share → Add to Home Screen.",
   "addTxtRecord": "Add a TXT record in DNS",
   "txtName": "Name:",
   "txtValue": "Value:",

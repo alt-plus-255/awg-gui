@@ -26,5 +26,7 @@
   "liveConnecting": "Live…",
   "liveConnectingHint": "Connecting to the updates channel",
   "updateAvailable": "Update available",
-  "updateAvailableTooltip": "Go to panel update settings"
+  "updateAvailableTooltip": "Go to panel update settings",
+  "installApp": "Install app",
+  "installAppTooltip": "Install AWG-GUI as an app on this device"
 }
