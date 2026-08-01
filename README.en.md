@@ -20,11 +20,13 @@ Downloads a pre-built release bundle from GitHub Releases. No source checkout, `
 curl -fsSL https://raw.githubusercontent.com/alt-plus-255/awg-gui/refs/heads/main/dist/install.sh | sudo bash
 ```
 
-Non-interactive (panel port **8877**, upgrade if already installed):
+Non-interactive (panel port **8877**, upgrade if already installed; installs **AmneziaWG kernel module** by default):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/alt-plus-255/awg-gui/refs/heads/main/dist/install.sh | sudo bash -s -- --yes
 ```
+
+Skip the kernel module (userspace `amneziawg-go`): `--no-awg-kernel` or `AWG_GUI_SKIP_KERNEL=1`. An already-installed module is not reinstalled. Manage later under **Settings → Panel**.
 
 Specific version:
 
@@ -83,6 +85,8 @@ Resolver on the **Resolver** page:
 | IP-CIDR from community lists | **Fully** proxied |
 
 Use when you want a classic “full VPN via server”, with blocked resources exiting through a separate upstream connection.
+
+For ABR video (YouTube/Instagram) you need **kernel AmneziaWG** on the VDS host plus working QUIC (Block QUIC off + UDP-capable outbound) or a solid TCP path. Delivery: FakeIP/list TCP via **NAT REDIRECT** `:1602`, FakeIP UDP via **TPROXY** `:1603` (sing-box **1.13.x**).
 
 **After enabling or disabling:** delete the server in AmneziaWG and **re-import** QR/`.conf` — lists will not work without re-import.
 

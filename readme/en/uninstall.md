@@ -31,6 +31,6 @@ sudo ./awg-gui-uninstall.sh
 sudo ./awg-gui-uninstall.sh --yes --keep-images   # leave images/cache alone
 ```
 
-Stops/removes `awggui` containers and volumes, project images, dangling layers and build cache, **project logs** (Docker container json logs, `/etc/awg-gui/update.log`, `awg-gui` journal, tmp extract dirs), disables systemd `awg-gui.service`, removes `/usr/local/bin/awg-gui`, `/etc/awg-gui` (Caddyfile, certs, ACME), and `src/.env`. Paths are read from `/etc/awg-gui/awg-gui.conf` when present.
+Stops/removes `awggui` containers and volumes, project images, dangling layers and build cache, **project logs** (Docker container json logs, `/etc/awg-gui/update.log`, `awg-kernel` helper/state/logs, `awg-gui` journal, tmp extract dirs), disables systemd `awg-gui.service`, removes `/usr/local/bin/awg-gui`, `/etc/awg-gui` (Caddyfile, certs, ACME, `awg-kernel-host.sh`), and `src/.env`. Paths are read from `/etc/awg-gui/awg-gui.conf` when present.
 
-Does **not** remove Docker Engine or repository source files (production `--purge` also removes `/opt/awg-gui`).
+Does **not** remove Docker Engine, repository source files (production `--purge` also removes `/opt/awg-gui`), or the **AmneziaWG kernel module packages** on the host. Remove the module first in **Settings → Panel → AmneziaWG kernel module**, or uninstall the Amnezia packages manually if you no longer need them.

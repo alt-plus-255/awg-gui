@@ -91,6 +91,21 @@
           </DialogHeader>
           <q-card-section class="col dialog-scroll-body">
             <div class="text-caption text-grey-5 q-mb-sm">{{ t('dashboard.liveViewHint') }}</div>
+            <div v-if="containerRows.length" class="q-mb-md">
+              <div class="text-subtitle2 q-mb-xs">{{ t('dashboard.containers') }}</div>
+              <q-table
+                dense
+
+                flat
+                :rows="containerRows"
+                :columns="activeContainerColumns"
+                row-key="name"
+                :rows-per-page-options="[0]"
+                hide-pagination
+                class="bg-transparent"
+              />
+            </div>
+            <div class="text-subtitle2 q-mb-xs">{{ t('dashboard.processes') }}</div>
             <q-table
               dense
 
@@ -111,20 +126,6 @@
                 </q-td>
               </template>
             </q-table>
-            <div v-if="containerRows.length" class="q-mt-md">
-              <div class="text-subtitle2 q-mb-xs">{{ t('dashboard.containers') }}</div>
-              <q-table
-                dense
-
-                flat
-                :rows="containerRows"
-                :columns="activeContainerColumns"
-                row-key="name"
-                :rows-per-page-options="[0]"
-                hide-pagination
-                class="bg-transparent"
-              />
-            </div>
           </q-card-section>
         </q-card>
       </q-dialog>

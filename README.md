@@ -20,11 +20,13 @@ VPN-сервер AmneziaWG (версии протокола **1.0**, **1.5** и 
 curl -fsSL https://raw.githubusercontent.com/alt-plus-255/awg-gui/refs/heads/main/dist/install.sh | sudo bash
 ```
 
-Без интерактива (порт панели **8877**, при существующей установке — режим обновления):
+Без интерактива (порт панели **8877**, при существующей установке — режим обновления; **kernel-модуль AmneziaWG** ставится по умолчанию):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/alt-plus-255/awg-gui/refs/heads/main/dist/install.sh | sudo bash -s -- --yes
 ```
+
+Пропустить kernel-модуль (`amneziawg-go` userspace): `--no-awg-kernel` или `AWG_GUI_SKIP_KERNEL=1`. Уже установленный модуль инсталлер не переустанавливает. Управление позже: **Настройки → Панель**.
 
 Конкретная версия:
 
@@ -83,6 +85,8 @@ sudo bash /tmp/awg-gui-install.sh --yes
 | IP-CIDR из community-списков | **Полностью** проксируются |
 
 Подходит, когда нужен классический «весь VPN через сервер», но с точечным выходом в интернет для заблокированных ресурсов через отдельное подключение.
+
+Для ABR-видео (YouTube/Instagram) нужен **kernel AmneziaWG** на хосте VDS плюс рабочий QUIC (Block QUIC выкл + UDP-capable outbound) или устойчивый TCP-path. Доставка: TCP FakeIP/list через **NAT REDIRECT** `:1602`, UDP FakeIP через **TPROXY** `:1603` (sing-box **1.13.x**).
 
 **После включения или выключения:** удалите сервер в AmneziaWG и **заново импортируйте** QR/`.conf` — без переимпорта списки не заработают.
 

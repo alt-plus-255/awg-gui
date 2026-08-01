@@ -31,6 +31,6 @@ sudo ./awg-gui-uninstall.sh
 sudo ./awg-gui-uninstall.sh --yes --keep-images   # не трогать образы/cache
 ```
 
-Останавливает и удаляет контейнеры и volumes `awggui`, образы проекта, dangling-слои и build cache, **логи проекта** (Docker json-логи контейнеров, `/etc/awg-gui/update.log`, journal `awg-gui`, tmp extract), отключает systemd `awg-gui.service`, удаляет `/usr/local/bin/awg-gui`, `/etc/awg-gui` (Caddyfile, сертификаты, ACME) и `src/.env`. Пути берутся из `/etc/awg-gui/awg-gui.conf`, если файл существует.
+Останавливает и удаляет контейнеры и volumes `awggui`, образы проекта, dangling-слои и build cache, **логи проекта** (Docker json-логи контейнеров, `/etc/awg-gui/update.log`, helper/state/логи `awg-kernel`, journal `awg-gui`, tmp extract), отключает systemd `awg-gui.service`, удаляет `/usr/local/bin/awg-gui`, `/etc/awg-gui` (Caddyfile, сертификаты, ACME, `awg-kernel-host.sh`) и `src/.env`. Пути берутся из `/etc/awg-gui/awg-gui.conf`, если файл существует.
 
-**Не удаляет:** Docker Engine и исходники репозитория (для production `--purge` убирает `/opt/awg-gui`).
+**Не удаляет:** Docker Engine, исходники репозитория (для production `--purge` убирает `/opt/awg-gui`) и **пакеты kernel-модуля AmneziaWG** на хосте. Сначала удалите модуль в **Настройки → Панель → Kernel-модуль AmneziaWG** или снимите пакеты Amnezia вручную, если они больше не нужны.

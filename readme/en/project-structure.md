@@ -25,7 +25,9 @@ src/
   systemd/awg-gui.service
   scripts/
     build-dist.sh
+    host/             # awg-kernel-host.sh (host kernel module helper)
     release/          # prod bundle templates
+  panel-ops/          # privileged host ops (update, awg-kernel)
   caddy/
   awg/
   backend/     # Laravel 12
@@ -42,6 +44,8 @@ Compose project name: **`awggui`**.
 | `awggui-app` | Laravel API |
 | `awggui-db` | MariaDB |
 | `awggui-awg` | AmneziaWG + sing-box (resolver) |
+| `awggui-panel-ops` | Host operations: panel update, AmneziaWG kernel module install/remove |
+| `awggui-docker-proxy` | Restricted Docker socket proxy for the app |
 
 ## Related docs
 

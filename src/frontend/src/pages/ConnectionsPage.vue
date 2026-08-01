@@ -1340,8 +1340,7 @@ function showPingBusyToast (message) {
     type: 'warning',
     color: 'orange',
     message: msg,
-    timeout: 5000,
-    position: 'top'
+    timeout: 5000
   })
 }
 

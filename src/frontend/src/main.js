@@ -62,6 +62,6 @@ app.use(Quasar, {
 useLocaleStore(pinia).init()
 useThemeStore(pinia).init()
 useSoundStore(pinia).init()
-installUiSounds({ router, Notify })
+installUiSounds({ router, Notify, app })
 useAuthStore(pinia).fetchMe()
 app.mount('#q-app')

@@ -13,7 +13,7 @@ The resolver is a “smart VPN via VDS”: all client traffic goes to the server
 | **Resolver** | Enable resolver on a server config, pick lists, custom domains/CIDRs, connection, DNS upstream, QUIC blocking |
 | **Connections** | Internet exit points for sing-box (outbounds) |
 | **List settings** | Download community rulesets (`.srs`), sync interval, custom lists |
-| **Diagnostics** | Check sing-box, on-disk rulesets, DNS → FakeIP |
+| **Diagnostics** | Check sing-box, on-disk rulesets, DNS → FakeIP, AWG datapath (kernel/userspace), FakeIP UDP/QUIC sessions |
 
 ## How it works
 
@@ -108,7 +108,9 @@ Do not test list routing with Speedtest — open a specific site or app from a s
 
 ## Diagnostics and common issues
 
-- **Diagnostics** page — sing-box, on-disk `.srs`, DNS → FakeIP for enabled lists.
+- **Diagnostics** page — sing-box, on-disk `.srs`, DNS → FakeIP for enabled lists, **AWG datapath** (kernel vs userspace `amneziawg-go`), and **FakeIP UDP / QUIC sessions** (TPROXY hits vs Clash UDP connections).
+- **Userspace datapath** — YouTube/Instagram ABR will stutter; install the kernel module (**Settings → Panel**) and confirm Diagnostics shows `datapath=kernel`.
+- **UDP hits but no Clash UDP sessions** — QUIC/FakeIP reverse is likely dead: reconnect VPN on the phone, **Save** resolver, turn **Block QUIC** off, use a UDP-capable Connection (e.g. VLESS + XUDP). TCP path may still work.
 - **Android:** disable Private DNS / DoH; if Telegram fails, clear the app cache.
 - **iPhone:** disable iCloud Private Relay.
 - Make sure community lists are downloaded (**List settings** → “On disk”).
@@ -116,6 +118,6 @@ Do not test list routing with Speedtest — open a specific site or app from a s
 
 ## sing-box in the AWG image
 
-The resolver uses [sing-box](https://github.com/SagerNet/sing-box) inside the AWG container. Production builds include sing-box in the image; dev builds download the tarball via the installer — see [install.md](install.md#sing-box-vendor-dev-build-only).
+The resolver uses [sing-box](https://github.com/SagerNet/sing-box) **1.13.x** inside the AWG container (version pinned in `src/awg/Dockerfile`). Sniffing is configured at **route** level; legacy inbound `sniff_*` fields are stripped so Save/apply never writes a config that `sing-box check` rejects. Production builds include sing-box in the image; dev builds download the tarball via the installer — see [install.md](install.md#sing-box-vendor-dev-build-only).
 
 License and branding details for sing-box — in [README](../../README.en.md#sing-box-and-branding) and [NOTICE.md](../../NOTICE.md).

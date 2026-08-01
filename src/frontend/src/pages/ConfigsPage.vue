@@ -976,7 +976,6 @@ function confirmRestartAwg () {
   if (restartBusy.value) {
     $q.notify({
       type: 'warning',
-      position: 'top-right',
       message: t('common.restartAwgInProgress')
     })
     return
@@ -1005,14 +1004,12 @@ async function restartAwg () {
     const { data } = await api.post('/api/settings/restart-awg')
     $q.notify({
       type: data.ok ? 'positive' : 'negative',
-      position: 'top-right',
       message: data.message || (data.ok ? t('configs.awgRestarted') : t('configs.restartError'))
     })
   } catch (e) {
     const already = e?.response?.status === 409 || e?.response?.data?.already_restarting
     $q.notify({
       type: already ? 'warning' : 'negative',
-      position: 'top-right',
       message: e?.response?.data?.message || t('configs.restartFailed')
     })
   } finally {

@@ -13,7 +13,7 @@
 | **Резолвер** | Включение резолвера на серверном конфиге, выбор списков, своих доменов/CIDR, подключения, DNS upstream, блокировка QUIC |
 | **Подключения** | Точки выхода в интернет для sing-box (outbound) |
 | **Настройки списков** | Скачивание community ruleset-ов (`.srs`), интервал sync, свои списки |
-| **Диагностика** | Проверка sing-box, ruleset-ов на диске, DNS → FakeIP |
+| **Диагностика** | Проверка sing-box, ruleset-ов на диске, DNS → FakeIP, datapath AWG (kernel/userspace), сессий FakeIP UDP/QUIC |
 
 ## Как это работает
 
@@ -108,7 +108,9 @@ AllowedIPs = 0.0.0.0/0, ::/0
 
 ## Диагностика и типичные проблемы
 
-- Страница **Диагностика** — sing-box, `.srs` на диске, DNS → FakeIP для включённых списков.
+- Страница **Диагностика** — sing-box, `.srs` на диске, DNS → FakeIP для включённых списков, **datapath AWG** (kernel vs userspace `amneziawg-go`) и **сессии FakeIP UDP / QUIC** (хиты TPROXY vs UDP-соединения Clash).
+- **Userspace datapath** — ABR YouTube/Instagram будет дёргаться; установите kernel-модуль (**Настройки → Панель**) и убедитесь, что Диагностика показывает `datapath=kernel`.
+- **UDP-хиты есть, а Clash UDP-сессий нет** — скорее всего мёртв QUIC/FakeIP reverse: переподключите VPN на телефоне, **Сохраните** резолвер, выключите **Блокировать QUIC**, используйте UDP-capable Подключение (например VLESS + XUDP). TCP-path при этом может работать.
 - **Android:** отключите Private DNS / DoH; при сбоях Telegram — очистите кэш приложения.
 - **iPhone:** отключите iCloud Private Relay.
 - Убедитесь, что community-списки скачаны (**Настройки списков** → «На диске»).
@@ -116,6 +118,6 @@ AllowedIPs = 0.0.0.0/0, ::/0
 
 ## sing-box в образе AWG
 
-Резолвер использует [sing-box](https://github.com/SagerNet/sing-box) внутри контейнера AWG. В production-сборке sing-box уже включён в образ; при dev-сборке tarball скачивается установщиком — см. [install.md](install.md#sing-box-vendor-только-dev-сборка).
+Резолвер использует [sing-box](https://github.com/SagerNet/sing-box) **1.13.x** внутри контейнера AWG (версия зафиксирована в `src/awg/Dockerfile`). Sniff настроен на уровне **route**; устаревшие inbound-поля `sniff_*` снимаются при сохранении, чтобы `sing-box check` не отклонял конфиг. В production-сборке sing-box уже включён в образ; при dev-сборке tarball скачивается установщиком — см. [install.md](install.md#sing-box-vendor-только-dev-сборка).
 
 Подробности лицензии и брендинга sing-box — в [README](../../README.md#sing-box-и-брендинг) и [NOTICE.md](../../NOTICE.md).

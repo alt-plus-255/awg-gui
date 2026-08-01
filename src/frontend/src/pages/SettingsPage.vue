@@ -1154,7 +1154,6 @@ async function startTwoFactorSetup () {
   } catch (e) {
     $q.notify({
       type: 'negative',
-      position: 'top-right',
       message: e?.response?.data?.message || t('settings.twoFactorSetupError')
     })
   } finally {
@@ -1171,10 +1170,10 @@ async function confirmTwoFactor () {
     twoFactorQr.value = ''
     twoFactorSecret.value = ''
     twoFactorConfirmCode.value = ''
-    $q.notify({ type: 'positive', position: 'top-right', message: t('settings.twoFactorEnabled') })
+    $q.notify({ type: 'positive', message: t('settings.twoFactorEnabled') })
   } catch (e) {
     const msg = e?.response?.data?.errors?.code?.[0] || e?.response?.data?.message || t('settings.invalidCode')
-    $q.notify({ type: 'negative', position: 'top-right', message: msg })
+    $q.notify({ type: 'negative', message: msg })
   } finally {
     twoFactorBusy.value = false
   }
@@ -1206,11 +1205,11 @@ async function disableTwoFactor () {
     twoFactorDisableOpen.value = false
     twoFactorDisablePassword.value = ''
     twoFactorDisableCode.value = ''
-    $q.notify({ type: 'positive', position: 'top-right', message: t('settings.twoFactorDisabled') })
+    $q.notify({ type: 'positive', message: t('settings.twoFactorDisabled') })
   } catch (e) {
     const errors = e?.response?.data?.errors
     const msg = errors?.password?.[0] || errors?.code?.[0] || e?.response?.data?.message || t('settings.disableFailed')
-    $q.notify({ type: 'negative', position: 'top-right', message: msg })
+    $q.notify({ type: 'negative', message: msg })
   } finally {
     twoFactorBusy.value = false
   }
@@ -1343,7 +1342,6 @@ async function submitTelegramProxyDialog () {
     telegramProxyDialogError.value = ''
     $q.notify({
       type: 'positive',
-      position: 'top-right',
       message: data?.message || t('settings.telegramProxyAdded', { ms: data?.latency_ms || 0 })
     })
   } catch (e) {
@@ -1410,11 +1408,10 @@ async function save () {
     const { data } = await api.put('/api/settings', payload)
     settingsStore.applyResponse(data)
     applySettings(data.settings || {})
-    $q.notify({ type: 'positive', position: 'top-right', message: t('settings.settingsSaved') })
+    $q.notify({ type: 'positive', message: t('settings.settingsSaved') })
     if (data.telegram_sync && data.telegram_sync.ok === false) {
       $q.notify({
         type: 'warning',
-        position: 'top-right',
         message: data.telegram_sync.message || t('settings.telegramSyncWarn')
       })
     }
@@ -1429,7 +1426,6 @@ async function save () {
     const firstError = errors && Object.values(errors).flat().find(Boolean)
     $q.notify({
       type: 'negative',
-      position: 'top-right',
       message: firstError || e?.response?.data?.message || t('settings.saveError')
     })
   } finally {
@@ -1443,7 +1439,6 @@ async function redirectToHttpsPanel (panelUrl) {
   if (window.location.href.startsWith(target)) return false
   $q.notify({
     type: 'positive',
-    position: 'top-right',
     message: t('settings.switchingToHttps'),
     timeout: 1500
   })
@@ -1458,7 +1453,6 @@ async function tryRecoverSslAndRedirect () {
     if (data?.ok) {
       $q.notify({
         type: 'positive',
-        position: 'top-right',
         message: data.message || t('settings.certPickedUp')
       })
       await redirectToHttpsPanel(data.panel_url)
@@ -1473,7 +1467,7 @@ async function tryRecoverSslAndRedirect () {
 async function issueSsl (renew) {
   const email = String(sslEmail.value || '').trim()
   if (!email) {
-    $q.notify({ type: 'warning', position: 'top-right', message: t('settings.specifyLetsEncryptEmail') })
+    $q.notify({ type: 'warning', message: t('settings.specifyLetsEncryptEmail') })
     return
   }
   sslIssuing.value = true
@@ -1482,7 +1476,6 @@ async function issueSsl (renew) {
     if (data?.redirect || data?.recovered) {
       $q.notify({
         type: 'positive',
-        position: 'top-right',
         message: data.message || t('settings.httpsEnabledNotify')
       })
       await redirectToHttpsPanel(data.panel_url)
@@ -1490,7 +1483,6 @@ async function issueSsl (renew) {
     }
     $q.notify({
       type: 'info',
-      position: 'top-right',
       message: data.message || t('settings.addTxtNotify')
     })
   } catch (e) {
@@ -1506,7 +1498,6 @@ async function issueSsl (renew) {
     if (await tryRecoverSslAndRedirect()) return
     $q.notify({
       type: 'negative',
-      position: 'top-right',
       message: msg || t('settings.certIssueStartError')
     })
   } finally {
@@ -1520,7 +1511,6 @@ async function completeSsl () {
     const data = await settingsStore.sslIssueComplete()
     $q.notify({
       type: 'positive',
-      position: 'top-right',
       message: data.message || t('settings.certIssued')
     })
     if (data?.redirect !== false) {
@@ -1532,7 +1522,6 @@ async function completeSsl () {
       settingsStore.applyResponse(body)
       $q.notify({
         type: 'positive',
-        position: 'top-right',
         message: body.message || t('settings.certPickedUp')
       })
       await redirectToHttpsPanel(body.panel_url)
@@ -1541,7 +1530,6 @@ async function completeSsl () {
     if (await tryRecoverSslAndRedirect()) return
     $q.notify({
       type: 'negative',
-      position: 'top-right',
       message: body?.message || t('settings.certFinishError')
     })
   } finally {
@@ -1552,11 +1540,10 @@ async function completeSsl () {
 async function abortSsl () {
   try {
     await settingsStore.sslAbort()
-    $q.notify({ type: 'info', position: 'top-right', message: t('settings.issueCancelled') })
+    $q.notify({ type: 'info', message: t('settings.issueCancelled') })
   } catch (e) {
     $q.notify({
       type: 'negative',
-      position: 'top-right',
       message: e?.response?.data?.message || t('settings.cancelFailed')
     })
   }
@@ -1568,13 +1555,11 @@ async function disableSsl () {
     const data = await settingsStore.sslDisable()
     $q.notify({
       type: 'positive',
-      position: 'top-right',
       message: data.message || t('settings.httpsDisabledNotify')
     })
   } catch (e) {
     $q.notify({
       type: 'negative',
-      position: 'top-right',
       message: e?.response?.data?.message || t('settings.disableHttpsError')
     })
   } finally {
@@ -1588,13 +1573,11 @@ async function testWebhook () {
     const { data } = await api.post('/api/settings/test-webhook')
     $q.notify({
       type: data.ok ? 'positive' : 'warning',
-      position: 'top-right',
       message: data.ok ? t('settings.webhookTestSent') : t('settings.webhookTestFailedCode', { code: data.exit_code })
     })
   } catch (e) {
     $q.notify({
       type: 'negative',
-      position: 'top-right',
       message: e?.response?.data?.message || t('settings.testFailed')
     })
   } finally {
@@ -1635,12 +1618,11 @@ const awgKernelStatusClass = computed(() => {
 async function onAwgKernelInstall () {
   try {
     await awgKernel.startInstall()
-    $q.notify({ type: 'positive', position: 'top-right', message: t('settings.awgKernelStarted') })
+    $q.notify({ type: 'positive', message: t('settings.awgKernelStarted') })
   } catch (e) {
     const code = e?.response?.status
     $q.notify({
       type: code === 409 ? 'warning' : 'negative',
-      position: 'top-right',
       message: e?.response?.data?.message || t(code === 409 ? 'settings.awgKernelAlreadyRunning' : 'settings.awgKernelStartError')
     })
   }
@@ -1656,12 +1638,11 @@ function onAwgKernelUninstall () {
   }).onOk(async () => {
     try {
       await awgKernel.startUninstall()
-      $q.notify({ type: 'positive', position: 'top-right', message: t('settings.awgKernelStarted') })
+      $q.notify({ type: 'positive', message: t('settings.awgKernelStarted') })
     } catch (e) {
       const code = e?.response?.status
       $q.notify({
         type: code === 409 ? 'warning' : 'negative',
-        position: 'top-right',
         message: e?.response?.data?.message || t(code === 409 ? 'settings.awgKernelAlreadyRunning' : 'settings.awgKernelStartError')
       })
     }
@@ -1674,7 +1655,6 @@ async function checkForUpdatesFromSettings () {
     if (data?.release_check_error) {
       $q.notify({
         type: 'negative',
-        position: 'top-right',
         message: data.release_check_error
       })
       return
@@ -1682,20 +1662,17 @@ async function checkForUpdatesFromSettings () {
     if (data?.update_available) {
       $q.notify({
         type: 'warning',
-        position: 'top-right',
         message: t('settings.updateAvailableHint', { version: data.latest_version || '—' })
       })
     } else {
       $q.notify({
         type: 'positive',
-        position: 'top-right',
         message: t('settings.upToDate')
       })
     }
   } catch (e) {
     $q.notify({
       type: 'negative',
-      position: 'top-right',
       message: e?.response?.data?.message || t('settings.updateCheckError')
     })
   }
@@ -1716,7 +1693,6 @@ async function startProjectUpdate () {
     await projectUpdate.startUpdate()
     $q.notify({
       type: 'info',
-      position: 'top-right',
       message: t('settings.updateStarted')
     })
     await projectUpdate.fetchStatus({ silent: true })
@@ -1725,10 +1701,10 @@ async function startProjectUpdate () {
     const msg = e?.response?.data?.message || t('settings.updateStartError')
     if (status === 409) {
       await projectUpdate.fetchStatus({ silent: true })
-      $q.notify({ type: 'warning', position: 'top-right', message: t('settings.updateAlreadyRunning') })
+      $q.notify({ type: 'warning', message: t('settings.updateAlreadyRunning') })
       return
     }
-    $q.notify({ type: 'negative', position: 'top-right', message: msg })
+    $q.notify({ type: 'negative', message: msg })
   }
 }
 
