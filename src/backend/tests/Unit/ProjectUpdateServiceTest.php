@@ -319,11 +319,43 @@ class ProjectUpdateServiceTest extends TestCase
         file_put_contents($hostDir.'/install.state', "bundle_version=1.0.0\n");
         file_put_contents($hostDir.'/update.log', "old line\n");
 
-        $service = new ProjectUpdateService(new PanelOpsClient, $hostDir, $composeDir);
+        $client = $this->createMock(PanelOpsClient::class);
+        $client->expects($this->never())->method('clearUpdateLog');
+
+        $service = new ProjectUpdateService($client, $hostDir, $composeDir);
         $status = $service->clearLog();
 
         $this->assertSame('', $status['log_tail']);
         $this->assertSame('', (string) file_get_contents($hostDir.'/update.log'));
+    }
+
+    public function test_clear_log_falls_back_to_panel_ops_when_local_write_fails(): void
+    {
+        putenv('PANEL_OPS_TOKEN=test-token');
+        $_ENV['PANEL_OPS_TOKEN'] = 'test-token';
+
+        $hostDir = $this->makeTempDir();
+        $composeDir = $this->makeTempDir();
+        file_put_contents($hostDir.'/install.state', "bundle_version=1.0.0\n");
+        $logPath = $hostDir.'/update.log';
+        file_put_contents($logPath, "old line\n");
+        chmod($logPath, 0444);
+
+        $client = $this->createMock(PanelOpsClient::class);
+        $client->expects($this->once())
+            ->method('clearUpdateLog')
+            ->willReturnCallback(function () use ($logPath) {
+                chmod($logPath, 0644);
+                file_put_contents($logPath, '');
+
+                return ['ok' => true];
+            });
+
+        $service = new ProjectUpdateService($client, $hostDir, $composeDir);
+        $status = $service->clearLog();
+
+        $this->assertSame('', $status['log_tail']);
+        $this->assertSame('', (string) file_get_contents($logPath));
     }
 
     public function test_clear_log_blocked_while_update_running(): void

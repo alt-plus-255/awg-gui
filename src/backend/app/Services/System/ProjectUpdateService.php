@@ -115,6 +115,7 @@ class ProjectUpdateService
 
     /**
      * Truncate the host update log. Blocked while a non-stuck update is running.
+     * Prefers a direct write; falls back to panel-ops (root) when the file is root-owned.
      *
      * @return array<string, mixed>
      */
@@ -126,8 +127,20 @@ class ProjectUpdateService
         }
 
         $path = $this->hostGuiDir.'/update.log';
+        $cleared = false;
         if (is_dir($this->hostGuiDir)) {
-            if (@file_put_contents($path, '') === false && file_exists($path)) {
+            if (! file_exists($path)) {
+                $cleared = true;
+            } elseif (@file_put_contents($path, '') !== false) {
+                $cleared = true;
+            }
+        }
+
+        if (! $cleared) {
+            try {
+                $this->panelOps->clearUpdateLog();
+                $cleared = true;
+            } catch (\Throwable) {
                 throw new RuntimeException('update_log_clear_failed');
             }
         }

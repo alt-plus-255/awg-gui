@@ -216,6 +216,27 @@ function startUpdate(?string $version): array
 }
 
 /**
+ * Truncate update.log (root-owned on host; app www-data cannot write it).
+ *
+ * @return array<string, mixed>
+ */
+function clearUpdateLog(): array
+{
+    $path = getenv('AWG_GUI_UPDATE_LOG_PATH') ?: '/host-awg-gui/update.log';
+    $dir = dirname($path);
+    if (! is_dir($dir)) {
+        return ['ok' => false, 'error' => 'Host GUI directory is missing.', 'status' => 500];
+    }
+
+    if (@file_put_contents($path, '') === false) {
+        return ['ok' => false, 'error' => 'Failed to clear update log.', 'status' => 500];
+    }
+    @chmod($path, 0666);
+
+    return ['ok' => true, 'status' => 200];
+}
+
+/**
  * Sync host status via fixed nsenter → awg-kernel-host.sh status.
  *
  * @return array<string, mixed>
@@ -361,7 +382,13 @@ if ($method === 'GET' && $path === '/health') {
 }
 
 $allowedGet = ['/ops/awg-kernel/status'];
-$allowedPost = ['/ops/caddy/recreate', '/ops/update/start', '/ops/awg-kernel/install', '/ops/awg-kernel/uninstall'];
+$allowedPost = [
+    '/ops/caddy/recreate',
+    '/ops/update/start',
+    '/ops/update/clear-log',
+    '/ops/awg-kernel/install',
+    '/ops/awg-kernel/uninstall',
+];
 
 if ($method === 'GET' && in_array($path, $allowedGet, true)) {
     $expected = expectedToken();
@@ -399,6 +426,11 @@ if ($path === '/ops/update/start') {
     $version = is_array($payload) ? trim((string) ($payload['version'] ?? '')) : '';
     $result = startUpdate($version !== '' ? $version : null);
     respond((int) ($result['status'] ?? 202), $result);
+}
+
+if ($path === '/ops/update/clear-log') {
+    $result = clearUpdateLog();
+    respond((int) ($result['status'] ?? 200), $result);
 }
 
 if ($path === '/ops/awg-kernel/install') {

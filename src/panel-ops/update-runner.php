@@ -35,9 +35,11 @@ function buildHostUpdateJobScript(?string $version, string $installUrl): string
 {
     $script = "#!/bin/bash\n"
         ."set -euxo pipefail\n"
+        ."mkdir -p /etc/awg-gui\n"
+        ."touch /etc/awg-gui/update.log\n"
+        ."chmod 666 /etc/awg-gui/update.log\n"
         ."exec >>/etc/awg-gui/update.log 2>&1\n"
         .'echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] host update job running"'."\n";
-
     if ($version !== null && $version !== '') {
         $script .= 'export AWG_GUI_VERSION='.escapeshellarg($version)."\n";
     }
@@ -123,6 +125,7 @@ writeRunnerState($state);
 
 $logPath = runnerLogPath();
 @file_put_contents($logPath, '['.isoNow()."] update started\n");
+@chmod($logPath, 0666);
 
 try {
     $command = buildUpdateCommand($targetVersion);
