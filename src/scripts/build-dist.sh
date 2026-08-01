@@ -137,10 +137,12 @@ assemble_runtime() {
   cp "${RELEASE}/bundle-uninstall.sh" "${bundle_dir}/bundle-uninstall.sh"
   mkdir -p "${bundle_dir}/lib" "${bundle_dir}/host"
   cp "${ROOT}/src/scripts/lib/ensure-docker.sh" "${bundle_dir}/lib/ensure-docker.sh"
+  cp "${ROOT}/src/scripts/lib/install-i18n.sh" "${bundle_dir}/lib/install-i18n.sh"
   cp "${ROOT}/src/scripts/host/awg-kernel-host.sh" "${bundle_dir}/host/awg-kernel-host.sh"
   chmod +x "${bundle_dir}/host/awg-kernel-host.sh"
-  # Keep online installer helper in sync for curl|bash entrypoint
+  # Keep online installer helpers in sync for curl|bash entrypoint
   cp "${ROOT}/src/scripts/lib/ensure-docker.sh" "${DIST}/ensure-docker.sh"
+  cp "${ROOT}/src/scripts/lib/install-i18n.sh" "${DIST}/install-i18n.sh"
   cp "${ROOT}/LICENSE" "${bundle_dir}/LICENSE"
   cp "${ROOT}/NOTICE.md" "${bundle_dir}/NOTICE.md"
   echo "${VERSION}" > "${bundle_dir}/VERSION"

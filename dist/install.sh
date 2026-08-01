@@ -24,6 +24,48 @@ ok() { echo -e "${GREEN}[ok]${NC} $*" >&2; }
 warn() { echo -e "${YELLOW}[warn]${NC} $*" >&2; }
 die() { echo -e "${RED}[error]${NC} $*" >&2; exit 1; }
 
+load_install_i18n() {
+  local base c
+  base="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)" || true
+  for c in \
+    ${base:+"${base}/install-i18n.sh"} \
+    ${base:+"${base}/../src/scripts/lib/install-i18n.sh"}
+  do
+    if [[ -f "${c}" ]]; then
+      # shellcheck disable=SC1090
+      source "${c}"
+      return 0
+    fi
+  done
+
+  local ref="refs/heads/main" url tmp
+  if [[ -n "${VERSION}" ]]; then
+    ref="refs/tags/v${VERSION#v}"
+  fi
+  tmp="$(mktemp /tmp/awg-gui-install-i18n.XXXXXX)"
+  for url in \
+    "https://raw.githubusercontent.com/${GITHUB_REPO}/${ref}/dist/install-i18n.sh" \
+    "https://raw.githubusercontent.com/${GITHUB_REPO}/refs/heads/main/dist/install-i18n.sh" \
+    "https://raw.githubusercontent.com/${GITHUB_REPO}/refs/heads/main/src/scripts/lib/install-i18n.sh"
+  do
+    if curl -fsSL "${url}" -o "${tmp}" 2>/dev/null; then
+      # shellcheck disable=SC1090
+      source "${tmp}"
+      rm -f "${tmp}"
+      return 0
+    fi
+  done
+  rm -f "${tmp}"
+  # Minimal fallback
+  AWG_GUI_LANG="${AWG_GUI_LANG:-ru}"
+  t() { local k="$1"; shift; if [[ $# -gt 0 ]]; then printf -- "$k" "$@"; else printf '%s' "$k"; fi; }
+  set_awg_gui_lang() { AWG_GUI_LANG="$1"; AWG_GUI_LANG_EXPLICIT=1; }
+  select_install_lang() { :; }
+  normalize_awg_gui_lang() { :; }
+  is_yes_answer() { case "$1" in y|Y|yes|YES|д|Д|да|ДА) return 0 ;; *) return 1 ;; esac; }
+  confirm_hint() { [[ "${1:-n}" == "y" ]] && printf '%s' '[Y/n]' || printf '%s' '[y/N]'; }
+}
+
 cleanup() {
   if [[ -n "${DOWNLOAD_TMP_DIR}" && -d "${DOWNLOAD_TMP_DIR}" ]]; then
     rm -rf "${DOWNLOAD_TMP_DIR}"
@@ -33,57 +75,96 @@ cleanup() {
 trap cleanup EXIT
 
 usage() {
-  cat <<EOF
+  normalize_awg_gui_lang 2>/dev/null || true
+  if [[ "${AWG_GUI_LANG:-ru}" == "en" ]]; then
+    cat <<EOF
 Usage:
   curl -fsSL https://raw.githubusercontent.com/${GITHUB_REPO}/refs/heads/main/dist/install.sh | sudo bash
   curl -fsSL .../dist/install.sh | sudo bash -s -- --yes
+  curl -fsSL .../dist/install.sh | sudo bash -s -- --yes --lang=en
   curl -fsSL .../dist/install.sh | sudo AWG_GUI_VERSION=1.0.0 bash -s -- --yes
   wget --no-config -O /tmp/awg-gui-install.sh .../dist/install.sh && sudo bash /tmp/awg-gui-install.sh --yes
 
 Options:
-  --yes              Non-interactive install (auto-install Docker if missing; installs kernel module unless skipped)
-  --no-awg-kernel    Skip AmneziaWG kernel module install
-  --bundle=PATH      Use local .run bundle (skip download)
-  --dir=/opt/awg-gui Install directory
+  $(t usage_opt_yes)
+  $(t usage_opt_no_kernel)
+  $(t opt_lang)
+  $(t usage_opt_bundle)
+  $(t usage_opt_dir)
 
 Environment:
   AWG_GUI_GITHUB_REPO   GitHub owner/repo (default: ${GITHUB_REPO})
   AWG_GUI_VERSION       Release tag without v (default: latest release)
   AWG_GUI_INSTALL_DIR   Target install dir (default: ${INSTALL_DIR})
+  AWG_GUI_LANG          Installer language ru|en (default: ru)
   AWG_GUI_SKIP_KERNEL=1 Same as --no-awg-kernel
 EOF
+  else
+    cat <<EOF
+Usage:
+  curl -fsSL https://raw.githubusercontent.com/${GITHUB_REPO}/refs/heads/main/dist/install.sh | sudo bash
+  curl -fsSL .../dist/install.sh | sudo bash -s -- --yes
+  curl -fsSL .../dist/install.sh | sudo bash -s -- --yes --lang=en
+  curl -fsSL .../dist/install.sh | sudo AWG_GUI_VERSION=1.0.0 bash -s -- --yes
+  wget --no-config -O /tmp/awg-gui-install.sh .../dist/install.sh && sudo bash /tmp/awg-gui-install.sh --yes
+
+Options:
+  $(t usage_opt_yes)
+  $(t usage_opt_no_kernel)
+  $(t opt_lang)
+  $(t usage_opt_bundle)
+  $(t usage_opt_dir)
+
+Environment:
+  AWG_GUI_GITHUB_REPO   GitHub owner/repo (по умолчанию: ${GITHUB_REPO})
+  AWG_GUI_VERSION       Тег релиза без v (по умолчанию: latest)
+  AWG_GUI_INSTALL_DIR   Каталог установки (по умолчанию: ${INSTALL_DIR})
+  AWG_GUI_LANG          Язык установщика ru|en (по умолчанию: ru)
+  AWG_GUI_SKIP_KERNEL=1 То же, что --no-awg-kernel
+EOF
+  fi
 }
+
+# Load i18n early so --help and die messages can be localized.
+load_install_i18n
 
 for arg in "$@"; do
   case "$arg" in
     --yes|-y) YES=1 ;;
     --no-awg-kernel) SKIP_KERNEL=1 ;;
+    --lang=*) set_awg_gui_lang "${arg#*=}" ;;
     --bundle=*) BUNDLE_LOCAL="${arg#*=}" ;;
     --dir=*) INSTALL_DIR="${arg#*=}" ;;
     --help|-h) usage; exit 0 ;;
-    *) die "Unknown argument: $arg (try --help)" ;;
+    *) die "$(t err_unknown_arg_help "$arg")" ;;
   esac
 done
+
+normalize_awg_gui_lang
+export AWG_GUI_LANG
 
 if [[ "${AWG_GUI_SKIP_KERNEL:-0}" == "1" ]]; then
   SKIP_KERNEL=1
 fi
 
-[[ "$(id -u)" -eq 0 ]] || die "Run as root: curl -fsSL .../dist/install.sh | sudo bash"
+[[ "$(id -u)" -eq 0 ]] || die "$(t err_run_as_root_install_curl)"
+
+select_install_lang
+export AWG_GUI_LANG
 
 detect_arch() {
   case "$(uname -m)" in
     x86_64|amd64) echo amd64 ;;
     aarch64|arm64) echo arm64 ;;
     armv7l) echo armhf ;;
-    *) die "Unsupported architecture: $(uname -m)" ;;
+    *) die "$(t err_unsupported_arch "$(uname -m)")" ;;
   esac
 }
 
 need_downloader() {
   command -v curl >/dev/null 2>&1 && return 0
   command -v wget >/dev/null 2>&1 && return 0
-  die "curl or wget required"
+  die "$(t err_curl_or_wget)"
 }
 
 # Load Docker installer helper. Prefer local checkout, else fetch from GitHub
@@ -120,7 +201,7 @@ load_ensure_docker() {
     fi
   done
   rm -f "${tmp}"
-  die "Failed to load Docker install helper. Install Docker manually: https://docs.docker.com/engine/install/"
+  die "$(t docker_err_load_helper)"
 }
 
 human_size() {
@@ -155,20 +236,16 @@ read_tty() {
 confirm() {
   local msg="$1" default="${2:-n}" ans hint
   if [[ "${YES}" -eq 1 ]]; then
-    log "${msg} → yes (--yes)"
+    log "$(t log_confirm_yes "${msg}")"
     return 0
   fi
-  if [[ "${default}" == "y" ]]; then
-    hint="[Y/n]"
-  else
-    hint="[y/N]"
-  fi
+  hint="$(confirm_hint "${default}")"
   ans="$(read_tty "${msg} ${hint}: ")"
   ans="${ans:-${default}}"
-  case "${ans}" in
-    y|Y|yes|YES) return 0 ;;
-    *) return 1 ;;
-  esac
+  if is_yes_answer "${ans}"; then
+    return 0
+  fi
+  return 1
 }
 
 existing_parent_dir() {
@@ -197,24 +274,25 @@ cleanup_stale_tmp_artifacts() {
   (( count > 0 )) || return 0
 
   size="$(du -sb "${paths[@]}" 2>/dev/null | awk '{sum+=$1} END {print sum+0}')"
-  warn "Found ${count} stale awg-gui temp artifact(s) in /tmp using $(human_size "${size}")"
-  if confirm "Remove stale awg-gui temp files from /tmp before install?" y; then
+  warn "$(t warn_stale_tmp "${count}" "$(human_size "${size}")")"
+  if confirm "$(t confirm_remove_stale_tmp)" y; then
     rm -rf "${paths[@]}"
-    ok "Removed stale awg-gui temp files from /tmp"
+    ok "$(t ok_removed_stale_tmp)"
   else
-    warn "Keeping stale /tmp artifacts may cause install to run out of disk space"
+    warn "$(t warn_keep_stale_tmp)"
   fi
 }
 
 # After the .run returns, drop leftover tmp paths and unused previous awggui:* tags.
 cleanup_after_bundle() {
   local img removed=0 self="${BASH_SOURCE[0]:-}"
-  log "Cleaning temporary files and unused Docker images ..."
+  log "$(t log_cleanup_after_bundle)"
 
   find /tmp -maxdepth 1 -type d \( -name 'awg-gui-install.*' -o -name 'awg-gui-extract.*' \) \
     -exec rm -rf {} + 2>/dev/null || true
   find /tmp -maxdepth 1 -type f \( \
     -name 'awg-gui-ensure-docker.*' \
+    -o -name 'awg-gui-install-i18n.*' \
     -o -name 'awg-gui*.log' -o -name 'awg-gui-*.log' \
   \) -delete 2>/dev/null || true
   # Do not delete the script we may still be executing (wget one-liner path).
@@ -234,20 +312,20 @@ cleanup_after_bundle() {
   docker rmi alpine:3.20 >/dev/null 2>&1 || true
 
   if [[ "${removed}" -gt 0 ]]; then
-    ok "Removed ${removed} unused awg-gui image(s) and cleaned /tmp"
+    ok "$(t ok_removed_unused_images_tmp "${removed}")"
   else
-    ok "Cleaned /tmp and dangling Docker images"
+    ok "$(t ok_cleaned_tmp_dangling)"
   fi
 }
 
 require_free_space() {
   local path="$1" required="$2" label="$3" avail
   avail="$(available_bytes "${path}")"
-  [[ "${avail}" =~ ^[0-9]+$ ]] || die "Failed to check free space for ${path}"
+  [[ "${avail}" =~ ^[0-9]+$ ]] || die "$(t err_free_space_check "${path}")"
   if (( avail < required )); then
-    die "Not enough free space for ${label} at ${path}: need at least $(human_size "${required}") free, have $(human_size "${avail}"). Clean disk space and retry."
+    die "$(t err_not_enough_space "${label}" "${path}" "$(human_size "${required}")" "$(human_size "${avail}")")"
   fi
-  ok "${label} free space OK at ${path} ($(human_size "${avail}") available)"
+  ok "$(t ok_free_space "${label}" "${path}" "$(human_size "${avail}")")"
 }
 
 preflight_disk_checks() {
@@ -264,9 +342,9 @@ preflight_disk_checks() {
   install_parent="$(existing_parent_dir "${INSTALL_DIR}")"
   docker_root="$(docker_root_dir)"
 
-  require_free_space "/tmp" "${tmp_required}" "installer temp space"
-  require_free_space "${install_parent}" "${install_required}" "install directory space"
-  require_free_space "${docker_root}" "${docker_required}" "Docker data space"
+  require_free_space "/tmp" "${tmp_required}" "$(t label_temp_space)"
+  require_free_space "${install_parent}" "${install_required}" "$(t label_install_space)"
+  require_free_space "${docker_root}" "${docker_required}" "$(t label_docker_space)"
 }
 
 RELEASE_URL=""
@@ -284,12 +362,12 @@ resolve_release_asset() {
     api="${api}/latest"
   fi
 
-  log "Fetching release metadata from GitHub (${GITHUB_REPO}) ..."
+  log "$(t log_fetch_release "${GITHUB_REPO}")"
   json="$(curl -fsSL "${api}" 2>/dev/null || true)"
-  [[ -n "${json}" ]] || die "Failed to fetch release info from GitHub"
+  [[ -n "${json}" ]] || die "$(t err_fetch_release)"
 
   if echo "${json}" | grep -q 'API rate limit'; then
-    die "GitHub API rate limit. Set AWG_GUI_VERSION and retry later, or download .run manually."
+    die "$(t err_github_rate_limit)"
   fi
 
   RELEASE_URL="$(echo "${json}" | grep -oE "https://[^\"]+awg-gui-[^\"]+-${arch}\\.run" | head -1)"
@@ -300,7 +378,7 @@ resolve_release_asset() {
       if (RSTART) { print substr($0, RSTART, RLENGTH); exit }
     }
   ')"
-  [[ -n "${RELEASE_URL}" ]] || die "Release bundle awg-gui-*-${arch}.run not found for ${GITHUB_REPO}"
+  [[ -n "${RELEASE_URL}" ]] || die "$(t err_release_bundle_missing "${arch}" "${GITHUB_REPO}")"
   [[ "${RELEASE_SIZE_BYTES}" =~ ^[0-9]+$ ]] || RELEASE_SIZE_BYTES=0
 }
 
@@ -310,7 +388,11 @@ fetch_url_with_progress() {
   [[ "${expected}" -gt 0 ]] && total="$(human_size "${expected}")"
   [[ -t 2 ]] && is_tty=1
 
-  log "Bundle download started${total:+ (${total})} ..."
+  if [[ -n "${total:-}" ]]; then
+    log "$(t log_download_started " (${total})")"
+  else
+    log "$(t log_download_started "")"
+  fi
 
   if command -v curl >/dev/null 2>&1; then
     curl -fsSL -o "${dest}" "${url}" &
@@ -367,21 +449,21 @@ download_bundle() {
   dest="${dir}/bundle.run"
 
   if [[ -n "${BUNDLE_LOCAL}" ]]; then
-    [[ -f "${BUNDLE_LOCAL}" ]] || die "Bundle not found: ${BUNDLE_LOCAL}"
+    [[ -f "${BUNDLE_LOCAL}" ]] || die "$(t err_bundle_not_found "${BUNDLE_LOCAL}")"
     cp "${BUNDLE_LOCAL}" "${dest}"
-    ok "Using local bundle ${BUNDLE_LOCAL}"
+    ok "$(t ok_using_local_bundle "${BUNDLE_LOCAL}")"
   else
     [[ -n "${RELEASE_URL}" ]] || resolve_release_asset
     url="${RELEASE_URL}"
     size_bytes="${RELEASE_SIZE_BYTES}"
     filename="${url##*/}"
     if [[ "${size_bytes}" -gt 0 ]]; then
-      log "Downloading ${filename} ($(human_size "${size_bytes}")) ..."
+      log "$(t log_downloading_file_size "${filename}" "$(human_size "${size_bytes}")")"
     else
-      log "Downloading ${filename} ..."
+      log "$(t log_downloading_file "${filename}")"
     fi
     fetch_url_with_progress "${url}" "${dest}" "${size_bytes}"
-    ok "Download complete ($(human_size "$(stat -c%s "${dest}")"))"
+    ok "$(t ok_download_complete "$(human_size "$(stat -c%s "${dest}")")")"
   fi
 
   chmod +x "${dest}"
@@ -395,7 +477,7 @@ main() {
   load_ensure_docker
   ensure_docker_engine
   if [[ -n "${BUNDLE_LOCAL}" ]]; then
-    [[ -f "${BUNDLE_LOCAL}" ]] || die "Bundle not found: ${BUNDLE_LOCAL}"
+    [[ -f "${BUNDLE_LOCAL}" ]] || die "$(t err_bundle_not_found "${BUNDLE_LOCAL}")"
     bundle_bytes="$(stat -c%s "${BUNDLE_LOCAL}" 2>/dev/null || echo 0)"
   else
     resolve_release_asset
@@ -408,7 +490,9 @@ main() {
   args=(--dir="${INSTALL_DIR}")
   [[ "${YES}" -eq 1 ]] && args+=(--yes)
   [[ "${SKIP_KERNEL}" -eq 1 ]] && args+=(--no-awg-kernel)
-  log "Running release installer ..."
+  args+=(--lang="${AWG_GUI_LANG}")
+  log "$(t log_running_release)"
+  export AWG_GUI_LANG
   "${bundle}" "${args[@]}"
   # Bundle finished: download/extract traps may still run on EXIT; clear leftovers + old images now.
   DOWNLOAD_TMP_DIR=""

@@ -31,9 +31,13 @@ ok() { echo -e "${GREEN}[ok]${NC} $*"; }
 warn() { echo -e "${YELLOW}[warn]${NC} $*"; }
 die() { echo -e "${RED}[error]${NC} $*" >&2; exit 1; }
 
+# shellcheck source=src/scripts/lib/install-i18n.sh
+source "${SCRIPT_DIR}/src/scripts/lib/install-i18n.sh"
+
 usage() {
-  cat <<EOF
-Usage: $0 [--yes] [--no-awg-kernel] [--help]
+  if [[ "${AWG_GUI_LANG:-ru}" == "en" ]]; then
+    cat <<EOF
+Usage: $0 [--yes] [--no-awg-kernel] [--lang=ru|en] [--help]
 
 Installs AmneziaWG 2.0 + Laravel 12 + Quasar admin (Docker project awggui).
 Before installing missing system packages (curl/jq, Docker) asks y/N
@@ -45,28 +49,58 @@ Creates src/.env from src/.env.example with random DB password (fresh install).
 If an existing install is detected, offers abort or upgrade (with --yes: upgrade).
 Upgrade keeps .env, volumes and database/AWG data; rebuilds images and runs migrations.
 
-  --yes              Non-interactive (defaults; installs kernel module unless skipped)
-  --no-awg-kernel    Skip AmneziaWG kernel module install (userspace amneziawg-go)
+  $(t usage_opt_yes)
+  $(t usage_opt_no_kernel)
+  $(t opt_lang)
 
 Management after install: awg-gui help
 Uninstall: ./awg-gui-uninstall.sh
 EOF
+  else
+    cat <<EOF
+Usage: $0 [--yes] [--no-awg-kernel] [--lang=ru|en] [--help]
+
+Устанавливает AmneziaWG 2.0 + Laravel 12 + Quasar admin (Docker-проект awggui).
+Перед установкой недостающих пакетов (curl/jq, Docker) спрашивает y/N
+(если не указан --yes). Скачивает tarball sing-box для образа AWG, если его нет.
+Затем спрашивает: порт панели, AWG-порт, endpoint, подсеть, DNS, AllowedIPs.
+Также спрашивает про модуль ядра AmneziaWG (рекомендуется для YouTube/Instagram; по умолчанию Y).
+Создаёт src/.env из src/.env.example со случайным паролем БД (чистая установка).
+
+При обнаружении существующей установки предлагает прервать или обновить (с --yes: обновление).
+Обновление сохраняет .env, volumes и данные БД/AWG; пересобирает образы и выполняет миграции.
+
+  $(t usage_opt_yes)
+  $(t usage_opt_no_kernel)
+  $(t opt_lang)
+
+Управление после установки: awg-gui help
+Удаление: ./awg-gui-uninstall.sh
+EOF
+  fi
 }
 
 for arg in "$@"; do
   case "$arg" in
     --yes|-y) YES=1 ;;
     --no-awg-kernel) SKIP_KERNEL=1 ;;
-    --help|-h) usage; exit 0 ;;
-    *) die "Unknown argument: $arg" ;;
+    --lang=*) set_awg_gui_lang "${arg#*=}" ;;
+    --help|-h) normalize_awg_gui_lang; usage; exit 0 ;;
+    *) die "$(t err_unknown_arg "$arg")" ;;
   esac
 done
+
+normalize_awg_gui_lang
+export AWG_GUI_LANG
 
 if [[ "${AWG_GUI_SKIP_KERNEL:-0}" == "1" ]]; then
   SKIP_KERNEL=1
 fi
 
-[[ "$(id -u)" -eq 0 ]] || die "Run as root (sudo)"
+[[ "$(id -u)" -eq 0 ]] || die "$(t err_run_as_root)"
+
+select_install_lang
+export AWG_GUI_LANG
 
 compose() {
   docker compose -p "${PROJECT_NAME}" --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" "$@"
@@ -87,7 +121,7 @@ detect_arch() {
     x86_64|amd64) ARCH=amd64 ;;
     aarch64|arm64) ARCH=arm64 ;;
     armv7l) ARCH=armhf ;;
-    *) die "Unsupported architecture: $m" ;;
+    *) die "$(t err_unsupported_arch "$m")" ;;
   esac
 }
 
@@ -96,7 +130,7 @@ sing_box_arch() {
     amd64) echo amd64 ;;
     arm64) echo arm64 ;;
     armhf) echo armv7 ;;
-    *) die "Unsupported sing-box architecture: ${ARCH}" ;;
+    *) die "$(t err_unsupported_singbox_arch "${ARCH}")" ;;
   esac
 }
 
@@ -106,7 +140,7 @@ ensure_curl() {
   command -v jq >/dev/null 2>&1 || need_jq=1
 
   if [[ "${need_curl}" -eq 0 ]]; then
-    ok "curl present"
+    ok "$(t ok_curl_present)"
   fi
   if [[ "${need_curl}" -eq 0 && "${need_jq}" -eq 0 ]]; then
     return
@@ -119,13 +153,13 @@ ensure_curl() {
   list="$(printf '%s, ' "${missing[@]}")"
   list="${list%, }"
 
-  if ! confirm "Не хватает пакетов (${list}). Установить через пакетный менеджер?"; then
-    [[ "${need_curl}" -eq 1 ]] && die "curl is required. Install it manually and re-run."
-    warn "jq not installed (optional for rich webhook JSON)"
+  if ! confirm "$(t confirm_install_packages "${list}")"; then
+    [[ "${need_curl}" -eq 1 ]] && die "$(t err_curl_manual)"
+    warn "$(t warn_jq_optional)"
     return
   fi
 
-  log "Installing ${list}..."
+  log "$(t log_installing_packages "${list}")"
   detect_os
   case "${OS_ID}" in
     ubuntu|debian|raspbian)
@@ -137,12 +171,12 @@ ensure_curl() {
       else yum install -y curl ca-certificates jq; fi
       ;;
     *)
-      command -v curl >/dev/null 2>&1 || die "Cannot install curl on ${OS_ID}. Install curl manually."
-      warn "jq not installed (optional for rich webhook JSON)"
+      command -v curl >/dev/null 2>&1 || die "$(t err_cannot_install_curl "${OS_ID}")"
+      warn "$(t warn_jq_optional)"
       ;;
   esac
-  command -v curl >/dev/null 2>&1 || die "curl install failed"
-  ok "curl ready"
+  command -v curl >/dev/null 2>&1 || die "$(t err_curl_install_failed)"
+  ok "$(t ok_curl_ready)"
 }
 
 ensure_sing_box_vendor() {
@@ -151,19 +185,19 @@ ensure_sing_box_vendor() {
   sb_arch="$(sing_box_arch)"
   dest="${SRC_DIR}/awg/vendor/sing-box-${SING_BOX_VERSION}-linux-${sb_arch}.tar.gz"
   if [[ -f "${dest}" ]]; then
-    ok "sing-box vendor present (${dest})"
+    ok "$(t ok_singbox_present "${dest}")"
     return
   fi
 
   url="https://github.com/SagerNet/sing-box/releases/download/v${SING_BOX_VERSION}/sing-box-${SING_BOX_VERSION}-linux-${sb_arch}.tar.gz"
-  if ! confirm "Tarball sing-box отсутствует (${dest}). Скачать с GitHub?"; then
-    die "sing-box vendor required for AWG image. Place tarball in src/awg/vendor/ and re-run."
+  if ! confirm "$(t confirm_download_singbox "${dest}")"; then
+    die "$(t err_singbox_required)"
   fi
 
   mkdir -p "${SRC_DIR}/awg/vendor"
-  log "Downloading sing-box ${SING_BOX_VERSION} (${sb_arch})..."
+  log "$(t log_downloading_singbox "${SING_BOX_VERSION}" "${sb_arch}")"
   curl -fsSL -o "${dest}" "${url}"
-  ok "Downloaded ${dest}"
+  ok "$(t ok_downloaded "${dest}")"
 }
 
 # shellcheck source=src/scripts/lib/ensure-docker.sh
@@ -178,7 +212,7 @@ read_tty() {
   elif [[ -t 0 ]]; then
     read -r -p "${prompt}" ans || true
   else
-    die "Non-interactive shell (no TTY). Re-run with --yes"
+    die "$(t err_no_tty_use_yes)"
   fi
   printf '%s' "${ans}"
 }
@@ -188,20 +222,16 @@ confirm() {
   local default="${2:-n}"
   local ans hint
   if [[ "${YES}" -eq 1 ]]; then
-    log "${msg} → yes (--yes)"
+    log "$(t log_confirm_yes "${msg}")"
     return 0
   fi
-  if [[ "${default}" == "y" ]]; then
-    hint="[Y/n]"
-  else
-    hint="[y/N]"
-  fi
+  hint="$(confirm_hint "${default}")"
   ans="$(read_tty "${msg} ${hint}: ")"
   ans="${ans:-${default}}"
-  case "${ans}" in
-    y|Y|yes|YES) return 0 ;;
-    *) return 1 ;;
-  esac
+  if is_yes_answer "${ans}"; then
+    return 0
+  fi
+  return 1
 }
 
 prompt() {
@@ -224,13 +254,13 @@ install_awg_kernel_module() {
   if [[ -f "${KERNEL_HOST_SCRIPT_SRC}" ]]; then
     install -m 0755 "${KERNEL_HOST_SCRIPT_SRC}" /etc/awg-gui/awg-kernel-host.sh
   else
-    warn "Kernel helper missing at ${KERNEL_HOST_SCRIPT_SRC}; skip kernel install"
+    warn "$(t warn_kernel_helper_missing "${KERNEL_HOST_SCRIPT_SRC}")"
     env_set "AWG_KERNEL_WANTED" "0" "${ENV_FILE}" 2>/dev/null || true
     return 0
   fi
 
   if [[ "${SKIP_KERNEL}" -eq 1 ]]; then
-    log "Skipping AmneziaWG kernel module (--no-awg-kernel / AWG_GUI_SKIP_KERNEL)"
+    log "$(t log_skip_kernel)"
     env_set "AWG_KERNEL_WANTED" "0" "${ENV_FILE}" 2>/dev/null || true
     return 0
   fi
@@ -238,22 +268,22 @@ install_awg_kernel_module() {
   local kernel_status=""
   kernel_status="$(/etc/awg-gui/awg-kernel-host.sh status 2>/dev/null || true)"
   if echo "${kernel_status}" | grep -qE '"package_installed":true|"module_loaded":true'; then
-    ok "AmneziaWG kernel module already installed — skipping"
+    ok "$(t ok_kernel_already)"
     env_set "AWG_KERNEL_WANTED" "1" "${ENV_FILE}" 2>/dev/null || true
     return 0
   fi
 
-  if confirm "Install AmneziaWG kernel module? Recommended for YouTube/Instagram streaming (https://github.com/amnezia-vpn/amneziawg-linux-kernel-module)" "y"; then
+  if confirm "$(t confirm_install_kernel)" "y"; then
     env_set "AWG_KERNEL_WANTED" "1" "${ENV_FILE}" 2>/dev/null || true
-    log "Installing AmneziaWG kernel module on host (may take several minutes)..."
+    log "$(t log_installing_kernel)"
     if /etc/awg-gui/awg-kernel-host.sh install; then
-      ok "AmneziaWG kernel module installed"
+      ok "$(t ok_kernel_installed)"
     else
-      warn "Kernel module install failed — continuing with userspace amneziawg-go"
+      warn "$(t warn_kernel_failed)"
     fi
   else
     env_set "AWG_KERNEL_WANTED" "0" "${ENV_FILE}" 2>/dev/null || true
-    log "Kernel module skipped by user"
+    log "$(t log_kernel_skipped_user)"
   fi
 }
 
@@ -328,7 +358,7 @@ choose_install_mode() {
 
   # Leftover .env after uninstall (no containers): do not reuse old ADMIN_PASSWORD.
   if ! has_awggui_containers; then
-    warn "Найден оставшийся ${ENV_FILE} без контейнеров — чистая установка с новыми паролями"
+    warn "$(t warn_leftover_env "${ENV_FILE}")"
     UPGRADE_MODE=0
     REPAIR_MODE=0
     return
@@ -337,7 +367,7 @@ choose_install_mode() {
   if detect_incomplete_install; then
     REPAIR_MODE=1
     UPGRADE_MODE=1
-    warn "Обнаружена незавершённая установка — продолжаем восстановление автоматически ..."
+    warn "$(t warn_incomplete_repair)"
     return
   fi
 
@@ -345,19 +375,19 @@ choose_install_mode() {
 
   if [[ "${YES}" -eq 1 ]]; then
     UPGRADE_MODE=1
-    log "Existing install detected → upgrade mode (--yes)"
+    log "$(t log_existing_upgrade_yes)"
     return
   fi
 
   echo
-  warn "Обнаружена существующая установка awggui."
-  echo "  [1] Прервать (рекомендуется uninstall перед чистой установкой)"
-  echo "  [2] Обновить (сохранить .env, volumes, данные БД/AWG)"
+  warn "$(t warn_existing_install)"
+  echo "$(t choice_abort_recommend)"
+  echo "$(t choice_upgrade)"
   local choice=""
-  choice="$(read_tty "Выбор [1/2]: ")"
+  choice="$(read_tty "$(t prompt_choice_1_2)")"
   case "${choice}" in
     2) UPGRADE_MODE=1 ;;
-    *) log "Установка прервана."; exit 0 ;;
+    *) log "$(t log_install_aborted)"; exit 0 ;;
   esac
 }
 
@@ -460,7 +490,7 @@ env_set() {
 }
 
 env_merge_missing_keys() {
-  [[ -f "${SRC_DIR}/.env.example" ]] || die "Missing ${SRC_DIR}/.env.example"
+  [[ -f "${SRC_DIR}/.env.example" ]] || die "$(t err_missing_path "${SRC_DIR}/.env.example")"
   if [[ ! -f "${ENV_FILE}" ]]; then
     cp "${SRC_DIR}/.env.example" "${ENV_FILE}"
     chmod 600 "${ENV_FILE}"
@@ -488,7 +518,7 @@ ensure_panel_ops_token() {
   fi
   token="$(openssl rand -hex 32 2>/dev/null || rand_secret 64)"
   env_set "PANEL_OPS_TOKEN" "${token}" "${ENV_FILE}"
-  ok "Generated PANEL_OPS_TOKEN in ${ENV_FILE}"
+  ok "$(t ok_panel_ops_token "${ENV_FILE}")"
 }
 
 remove_legacy_certbot_container() {
@@ -500,7 +530,7 @@ write_env_from_example() {
   local internal_subnet="$4" peer_dns="$5" allowed_ips="$6"
   local admin_pass="$7" db_pass="$8" app_key="$9"
 
-  [[ -f "${SRC_DIR}/.env.example" ]] || die "Missing ${SRC_DIR}/.env.example"
+  [[ -f "${SRC_DIR}/.env.example" ]] || die "$(t err_missing_path "${SRC_DIR}/.env.example")"
   cp "${SRC_DIR}/.env.example" "${ENV_FILE}"
   chmod 600 "${ENV_FILE}"
 
@@ -540,13 +570,13 @@ EOF
   install -m 0644 "${SRC_DIR}/systemd/awg-gui.service" /etc/systemd/system/awg-gui.service
   systemctl daemon-reload
   systemctl enable --now awg-gui.service
-  ok "CLI /usr/local/bin/awg-gui and systemd awg-gui.service installed"
+  ok "$(t ok_cli_systemd)"
 }
 
 print_helper() {
   echo
   echo -e "${BOLD}────────────────────────────────────────${NC}"
-  echo -e "${BOLD}Management (system-wide):${NC}"
+  echo -e "${BOLD}$(t helper_management_system)${NC}"
   echo
   echo "  awg-gui help"
   echo "  awg-gui status"
@@ -581,11 +611,13 @@ print_install_result_json() {
 
 print_credentials() {
   local url="$1" port="$2" pass="$3"
+  local title
   echo -e "${GREEN}"
   if [[ -n "${pass}" ]]; then
+    title="$(t banner_established)"
     cat <<EOF
 ╔══════════════════════════════════════════════╗
-║  AmneziaWG GUI established                   ║
+║  ${title}
 ║  URL:      ${url}
 ║  Port:     ${port}
 ║  Login:    admin
@@ -593,13 +625,14 @@ print_credentials() {
 ╚══════════════════════════════════════════════╝
 EOF
   else
+    title="$(t banner_upgraded)"
     cat <<EOF
 ╔══════════════════════════════════════════════╗
-║  AmneziaWG GUI upgraded                      ║
+║  ${title}
 ║  URL:      ${url}
 ║  Port:     ${port}
 ║  Login:    admin
-║  Password: (unchanged — use awg-gui password) ║
+║  Password: $(t banner_password_unchanged)
 ╚══════════════════════════════════════════════╝
 EOF
   fi
@@ -608,7 +641,7 @@ EOF
 }
 
 wait_for_app() {
-  log "Waiting for app container..."
+  log "$(t log_waiting_app)"
   local i
   for i in $(seq 1 60); do
     if compose exec -T app php -v >/dev/null 2>&1; then
@@ -616,20 +649,20 @@ wait_for_app() {
     fi
     sleep 3
   done
-  warn "App container not ready — bootstrap steps may fail"
+  warn "$(t warn_app_not_ready)"
   return 1
 }
 
 wait_for_migrate_lock() {
-  log "Waiting for in-container migrations to finish (if any)..."
+  log "$(t log_waiting_migrations)"
   compose exec -T app bash -c '
     mkdir -p /var/www/html/storage/framework
     flock -w "${AWG_GUI_MIGRATE_LOCK_TIMEOUT:-300}" /var/www/html/storage/framework/migrate.lock true
-  ' || warn "Timed out waiting for migration lock"
+  ' || warn "$(t warn_migrate_lock)"
 }
 
 run_migrations() {
-  log "Running migrations..."
+  log "$(t log_running_migrations)"
   compose exec -T app awg-migrate-locked
 }
 
@@ -641,13 +674,13 @@ run_bootstrap() {
   run_migrations
 
   if [[ -n "${admin_pass}" ]]; then
-    log "Ensuring admin user..."
+    log "$(t log_ensuring_admin)"
     compose exec -T \
       -e ADMIN_PASSWORD="${admin_pass}" \
       app php artisan admin:ensure --username=admin --password="${admin_pass}" --email=admin@localhost
   fi
 
-  log "Bootstrapping AmneziaWG config..."
+  log "$(t log_bootstrapping_awg)"
   compose exec -T \
     -e SERVER_ENDPOINT="${endpoint}" \
     -e AWG_PORT="${awg_port}" \
@@ -660,8 +693,8 @@ run_bootstrap() {
 }
 
 main() {
-  [[ -f "${COMPOSE_FILE}" ]] || die "Missing ${COMPOSE_FILE}"
-  [[ -d /dev/net/tun ]] || warn "/dev/net/tun not found — AWG userspace may still work"
+  [[ -f "${COMPOSE_FILE}" ]] || die "$(t err_missing_path "${COMPOSE_FILE}")"
+  [[ -d /dev/net/tun ]] || warn "$(t warn_tun_missing)"
 
   ensure_curl
   ensure_docker_engine
@@ -673,7 +706,7 @@ main() {
 
   if [[ "${UPGRADE_MODE}" -eq 1 ]]; then
     env_merge_missing_keys
-    ok "Using existing ${ENV_FILE} (missing keys merged from .env.example)"
+    ok "$(t ok_using_existing_env_merged "${ENV_FILE}")"
     panel_port="$(env_get PANEL_PORT "${ENV_FILE}" "${PANEL_PORT_DEFAULT}")"
     awg_port="$(env_get AWG_PORT "${ENV_FILE}" "${AWG_PORT_DEFAULT}")"
     endpoint="$(env_get SERVER_ENDPOINT "${ENV_FILE}" "auto")"
@@ -688,12 +721,12 @@ main() {
     allowed_ips="$(env_get ALLOWED_IPS "${ENV_FILE}" "${ALLOWED_IPS_DEFAULT}")"
     admin_pass="$(env_get ADMIN_PASSWORD "${ENV_FILE}")"
   else
-    prompt panel_port "Panel port" "${PANEL_PORT_DEFAULT}"
-    prompt awg_port "AmneziaWG UDP port (AWG_PORT)" "${AWG_PORT_DEFAULT}"
-    prompt endpoint "Server endpoint (public IP/DNS, or auto)" "auto"
-    prompt internal_subnet "Internal subnet (INTERNAL_SUBNET)" "${INTERNAL_SUBNET_DEFAULT}"
-    prompt peer_dns "Peer DNS (PEER_DNS)" "${PEER_DNS_DEFAULT}"
-    prompt allowed_ips "AllowedIPs for clients (ALLOWED_IPS)" "${ALLOWED_IPS_DEFAULT}"
+    prompt panel_port "$(t prompt_panel_port)" "${PANEL_PORT_DEFAULT}"
+    prompt awg_port "$(t prompt_awg_port)" "${AWG_PORT_DEFAULT}"
+    prompt endpoint "$(t prompt_endpoint)" "auto"
+    prompt internal_subnet "$(t prompt_internal_subnet)" "${INTERNAL_SUBNET_DEFAULT}"
+    prompt peer_dns "$(t prompt_peer_dns)" "${PEER_DNS_DEFAULT}"
+    prompt allowed_ips "$(t prompt_allowed_ips)" "${ALLOWED_IPS_DEFAULT}"
 
     admin_pass="$(rand_secret 20)"
     db_pass="$(rand_secret 32)"
@@ -703,7 +736,7 @@ main() {
       "${panel_port}" "${awg_port}" "${endpoint}" \
       "${internal_subnet}" "${peer_dns}" "${allowed_ips}" \
       "${admin_pass}" "${db_pass}" "${app_key}"
-    ok "Created ${ENV_FILE} from .env.example (random DB password generated)"
+    ok "$(t ok_created_env_dev "${ENV_FILE}")"
   fi
 
   display_host="$(resolve_endpoint_host "${endpoint}")"
@@ -715,9 +748,9 @@ main() {
   ensure_panel_ops_token
   install_awg_kernel_module
   remove_legacy_certbot_container
-  log "Freeing Docker build cache (small disks)..."
+  log "$(t log_prune_build_cache)"
   docker builder prune -af >/dev/null 2>&1 || true
-  log "Building and starting containers (this may take several minutes)..."
+  log "$(t log_building_containers)"
   COMPOSE_PARALLEL_LIMIT=1 compose build
   compose up -d
 
@@ -752,13 +785,13 @@ EOF
     else
       print_credentials "${url}" "${panel_port}" ""
     fi
-    ok "Восстановление установки завершено"
+    ok "$(t ok_repair_complete)"
   elif [[ "${UPGRADE_MODE}" -eq 1 ]]; then
     print_credentials "${url}" "${panel_port}" ""
-    ok "Upgrade complete"
+    ok "$(t ok_upgrade_complete)"
   else
     print_credentials "${url}" "${panel_port}" "${admin_pass}"
-    ok "Installation complete"
+    ok "$(t ok_install_complete)"
   fi
 }
 

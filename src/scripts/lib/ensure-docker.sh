@@ -2,8 +2,32 @@
 # Expects caller to define: die, log, ok, warn
 # Uses optional YES=0|1 (default 0).
 # Provides: ensure_docker_engine
+# Uses t() from install-i18n.sh when available (auto-sourced if found).
 #
 # Official docs: https://docs.docker.com/engine/install/
+
+# Load i18n if caller has not already.
+if [[ -z "${_AWG_GUI_I18N_LOADED:-}" ]]; then
+  _ed_i18n=""
+  for _ed_c in \
+    "$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)/install-i18n.sh" \
+    "$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)/../lib/install-i18n.sh"
+  do
+    if [[ -n "${_ed_c}" && -f "${_ed_c}" ]]; then
+      # shellcheck disable=SC1090
+      source "${_ed_c}"
+      break
+    fi
+  done
+  unset _ed_c _ed_i18n
+fi
+
+# Fallback if i18n still missing (older bundles): identity t()
+if ! declare -F t >/dev/null 2>&1; then
+  t() { local k="$1"; shift; if [[ $# -gt 0 ]]; then printf -- "$k" "$@"; else printf '%s' "$k"; fi; }
+  is_yes_answer() { case "$1" in y|Y|yes|YES|д|Д|да|ДА) return 0 ;; *) return 1 ;; esac; }
+  is_no_answer() { case "$1" in n|N|no|NO|н|Н|нет|НЕТ) return 0 ;; *) return 1 ;; esac; }
+fi
 
 _docker_read_tty() {
   local prompt="$1"
@@ -15,7 +39,7 @@ _docker_read_tty() {
   elif [[ -t 0 ]]; then
     read -r -p "${prompt}" ans || true
   else
-    die "Non-interactive shell (no TTY). Re-run with --yes, e.g.: curl -fsSL .../install.sh | sudo bash -s -- --yes"
+    die "$(t err_no_tty_docker)"
   fi
   printf '%s' "${ans}"
 }
@@ -24,20 +48,19 @@ _docker_confirm_yes() {
   local msg="$1"
   local ans
   if [[ "${YES:-0}" -eq 1 ]]; then
-    log "${msg} → yes (--yes)"
+    log "$(t log_confirm_yes "${msg}")"
     return 0
   fi
   ans="$(_docker_read_tty "${msg} [Y/n]: ")"
-  case "${ans}" in
-    ""|y|Y|yes|YES) return 0 ;;
-    n|N|no|NO) return 1 ;;
-    *) return 0 ;;
-  esac
+  if is_no_answer "${ans}"; then
+    return 1
+  fi
+  return 0
 }
 
 _docker_detect_os() {
   # shellcheck disable=SC1091
-  [[ -f /etc/os-release ]] || die "Cannot detect OS (/etc/os-release missing)"
+  [[ -f /etc/os-release ]] || die "$(t docker_err_no_os_release)"
   source /etc/os-release
   DOCKER_OS_ID="${ID:-}"
   DOCKER_OS_ID_LIKE="${ID_LIKE:-}"
@@ -55,7 +78,7 @@ _docker_detect_os() {
         *" rhel "*|*" centos "*) DOCKER_OS_ID=centos ;;
         *" fedora "*) DOCKER_OS_ID=fedora ;;
         *)
-          die "Unsupported OS '${DOCKER_OS_ID}'. Install Docker manually: https://docs.docker.com/engine/install/"
+          die "$(t docker_err_unsupported_os "${DOCKER_OS_ID}")"
           ;;
       esac
       ;;
@@ -71,7 +94,7 @@ _docker_detect_arch() {
     armv7l) DOCKER_ARCH=armhf ;;
     s390x) DOCKER_ARCH=s390x ;;
     ppc64le) DOCKER_ARCH=ppc64le ;;
-    *) die "Unsupported architecture for Docker: $m" ;;
+    *) die "$(t docker_err_unsupported_arch "$m")" ;;
   esac
   # dpkg --print-architecture is preferred on Debian/Ubuntu when available
   if command -v dpkg >/dev/null 2>&1; then
@@ -85,7 +108,7 @@ _docker_remove_conflicts_apt() {
     | awk '/^(docker\.io|docker-compose|docker-compose-v2|docker-doc|docker-buildx|podman-docker|containerd|runc)\>/ {print $1}' \
     || true)"
   if [[ -n "${pkgs}" ]]; then
-    log "Removing conflicting Docker packages: ${pkgs}"
+    log "$(t docker_remove_conflicts "${pkgs}")"
     # shellcheck disable=SC2086
     apt-get remove -y ${pkgs} >/dev/null 2>&1 || true
   fi
@@ -112,10 +135,10 @@ _docker_install_apt_repo() {
       gpg_url="https://download.docker.com/linux/debian/gpg"
       repo_url="https://download.docker.com/linux/debian"
       ;;
-    *) die "Internal error: unknown apt distro '${distro}'" ;;
+    *) die "$(t docker_err_unknown_apt "${distro}")" ;;
   esac
 
-  [[ -n "${suite}" ]] || die "Cannot determine ${distro} codename for Docker repo"
+  [[ -n "${suite}" ]] || die "$(t docker_err_no_codename "${distro}")"
 
   apt-get update -y
   apt-get install -y ca-certificates curl
@@ -180,21 +203,21 @@ _docker_install_rhel() {
 
 ensure_docker_engine() {
   if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
-    ok "Docker and Compose already installed"
+    ok "$(t docker_already)"
     systemctl enable --now docker 2>/dev/null || true
     return 0
   fi
 
   _docker_detect_os
-  log "Docker not found (detected OS: ${DOCKER_OS_ID}${DOCKER_VERSION_ID:+ ${DOCKER_VERSION_ID}})"
-  log "Docs: https://docs.docker.com/engine/install/"
+  log "$(t docker_not_found "${DOCKER_OS_ID}${DOCKER_VERSION_ID:+ ${DOCKER_VERSION_ID}}")"
+  log "$(t docker_docs)"
 
-  if ! _docker_confirm_yes "Docker is required. Install from official repositories now?"; then
-    die "Docker is required. https://docs.docker.com/engine/install/"
+  if ! _docker_confirm_yes "$(t docker_confirm_install)"; then
+    die "$(t docker_required_die)"
   fi
 
   _docker_detect_arch
-  log "Installing Docker Engine for ${DOCKER_OS_ID} (${DOCKER_ARCH}) ..."
+  log "$(t docker_installing "${DOCKER_OS_ID}" "${DOCKER_ARCH}")"
 
   case "${DOCKER_OS_ID}" in
     ubuntu)
@@ -213,14 +236,14 @@ ensure_docker_engine() {
       _docker_install_centos_family
       ;;
     *)
-      die "Unsupported OS '${DOCKER_OS_ID}'. Install Docker manually: https://docs.docker.com/engine/install/"
+      die "$(t docker_err_unsupported_os "${DOCKER_OS_ID}")"
       ;;
   esac
 
   systemctl enable --now docker
   # Give the daemon a moment on fresh RPM installs
   sleep 1
-  command -v docker >/dev/null 2>&1 || die "Docker binary missing after install"
-  docker compose version >/dev/null 2>&1 || die "docker compose plugin missing after install"
-  ok "Docker Engine installed"
+  command -v docker >/dev/null 2>&1 || die "$(t docker_err_binary_missing)"
+  docker compose version >/dev/null 2>&1 || die "$(t docker_err_compose_missing)"
+  ok "$(t docker_installed)"
 }

@@ -99,8 +99,19 @@
         </div>
       </q-card>
 
+      <div class="row justify-end q-mb-sm">
+        <q-btn
+          color="primary"
+          unelevated
+          :label="t('resolver.selectConfig')"
+          :disable="!pickerConfigOptions.length || enabling"
+          @click="openConfigPicker"
+        />
+      </div>
+
       <q-table
-        :rows="serverConfigs"
+        v-model:expanded="expandedIds"
+        :rows="visibleConfigs"
         :columns="columns"
         row-key="id"
 
@@ -108,7 +119,7 @@
         :loading="loading"
         class="bg-transparent"
         :rows-per-page-options="[10, 25, 0]"
-        :no-data-label="t('resolver.noServerConfigs')"
+        :no-data-label="tableEmptyLabel"
       >
         <template #body="props">
           <q-tr :props="props">
@@ -433,6 +444,62 @@
         {{ t('resolver.virtualNetworksHidden') }}
         {{ vnConfigs.map(c => c.name).join(', ') }}.
       </div>
+
+      <q-dialog v-model="pickerOpen" v-bind="mobileDialog" persistent>
+        <q-card style="width: min(420px, 95vw); max-width: 95vw;" class="surface-panel dialog-card column no-wrap">
+          <DialogHeader :title="t('resolver.selectConfigTitle')" />
+          <q-card-section class="col dialog-scroll-body">
+            <q-select
+              v-model="pickerConfigId"
+              :options="pickerConfigOptions"
+              option-value="id"
+              option-label="name"
+              emit-value
+              map-options
+              :label="t('resolver.selectConfigLabel')"
+              filled
+              class="q-mb-md"
+              :disable="!pickerConfigOptions.length"
+            >
+              <template #no-option>
+                <q-item>
+                  <q-item-section class="text-grey-5">
+                    {{ t('resolver.noConfigsToPick') }}
+                  </q-item-section>
+                </q-item>
+              </template>
+            </q-select>
+            <q-select
+              v-model="pickerConnectionId"
+              :options="connectionOptions"
+              :label="t('resolver.connectionRequired')"
+              emit-value
+              map-options
+              filled
+              :disable="!connectionOptions.length"
+            >
+              <template #no-option>
+                <q-item>
+                  <q-item-section class="text-grey-5">
+                    {{ t('resolver.noConnections') }}
+                    <router-link :to="{ name: 'resolver-connections' }" class="text-primary">{{ t('resolver.create') }}</router-link>
+                  </q-item-section>
+                </q-item>
+              </template>
+            </q-select>
+          </q-card-section>
+          <q-card-actions align="right">
+            <q-btn flat :label="t('common.cancel')" v-close-popup :disable="enabling" />
+            <q-btn
+              color="primary"
+              :label="t('resolver.pickConfig')"
+              :loading="enabling"
+              :disable="!pickerConfigId || !pickerConnectionId"
+              @click="confirmConfigPick"
+            />
+          </q-card-actions>
+        </q-card>
+      </q-dialog>
     </div>
   </q-page>
 </template>
@@ -442,18 +509,25 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useQuasar } from 'quasar'
 import api from '@/boot/axios'
+import DialogHeader from '@/components/DialogHeader.vue'
 import TagListInput from '@/components/TagListInput.vue'
 import { useApplyProgress } from '@/composables/useApplyProgress'
+import { useMobileDialog } from '@/composables/useMobileDialog'
 import { useResolverListsBootstrap } from '@/composables/useResolverListsBootstrap'
 import { bcp47Locale } from '@/i18n'
 
 const { t, locale } = useI18n()
 const $q = useQuasar()
+const mobileDialog = useMobileDialog()
 const { withApplyProgress } = useApplyProgress()
 const { ensureListsReady } = useResolverListsBootstrap()
 const loading = ref(true)
 const savingId = ref(null)
+const enabling = ref(false)
 const expandedIds = ref([])
+const pickerOpen = ref(false)
+const pickerConfigId = ref(null)
+const pickerConnectionId = ref(null)
 const status = reactive({
   enabled: false,
   healthy: true,
@@ -483,7 +557,14 @@ const selectableLists = computed(() => [
   ...(status.custom_lists || [])
 ])
 const serverConfigs = computed(() => (status.configs || []).filter(c => c.type === 'server'))
+const visibleConfigs = computed(() => serverConfigs.value.filter(c => c.resolver_enabled))
+const pickerConfigOptions = computed(() => serverConfigs.value.filter(c => !c.resolver_enabled))
 const vnConfigs = computed(() => (status.configs || []).filter(c => c.type === 'virtual_network'))
+const tableEmptyLabel = computed(() =>
+  serverConfigs.value.length
+    ? t('resolver.noConfigsSelected')
+    : t('resolver.noServerConfigs')
+)
 const connectionOptions = computed(() =>
   (status.connections || [])
     .filter(c => c.enabled)
@@ -602,6 +683,70 @@ function toggleExpand (props) {
   }
 }
 
+function openConfigPicker () {
+  pickerConfigId.value = pickerConfigOptions.value.length === 1
+    ? pickerConfigOptions.value[0].id
+    : null
+  pickerConnectionId.value = connectionOptions.value.length === 1
+    ? connectionOptions.value[0].value
+    : null
+  pickerOpen.value = true
+}
+
+async function confirmConfigPick () {
+  const id = pickerConfigId.value
+  const connectionId = pickerConnectionId.value
+  if (!id || !connectionId) return
+
+  const cfg = serverConfigs.value.find(c => c.id === id)
+  if (!cfg) return
+  if (!forms[id]) syncForm(cfg)
+
+  const form = forms[id]
+  form.resolver_enabled = true
+  form.connection_id = connectionId
+
+  enabling.value = true
+  savingId.value = id
+  try {
+    const { data } = await withApplyProgress('resolver-save', () =>
+      api.put(`/api/resolver/configs/${id}`, {
+        resolver_enabled: true,
+        resolver_reject_quic: form.resolver_reject_quic,
+        connection_id: connectionId,
+        resolver_dns: form.resolver_dns,
+        community_lists: form.community_lists,
+        user_domains: form.user_domains,
+        user_subnets: form.user_subnets
+      })
+    )
+    Object.assign(status, data.status)
+    for (const row of data.status?.configs || []) {
+      syncForm(row)
+    }
+    pickerOpen.value = false
+    pickerConfigId.value = null
+    pickerConnectionId.value = null
+    if (!expandedIds.value.includes(id)) expandedIds.value.push(id)
+    if (data.apply_error) {
+      $q.notify({ type: 'negative', message: data.apply_error, timeout: 12000 })
+    } else if (data.warning) {
+      $q.notify({ type: 'warning', message: data.warning, timeout: 8000 })
+    } else {
+      $q.notify({ type: 'positive', message: t('common.saved') })
+    }
+  } catch (e) {
+    form.resolver_enabled = false
+    const msg = e?.response?.data?.message
+      || Object.values(e?.response?.data?.errors || {}).flat()[0]
+      || t('common.saveError')
+    $q.notify({ type: 'negative', message: msg })
+  } finally {
+    enabling.value = false
+    savingId.value = null
+  }
+}
+
 function isListDisabled (configId, item) {
   if (!item.exclusive_group) return false
   const selected = forms[configId]?.community_lists || []
@@ -678,6 +823,11 @@ async function save (id) {
     for (const cfg of data.status?.configs || []) {
       syncForm(cfg)
     }
+    // Drop expand state for configs that left the table after disable
+    const visibleIds = new Set(
+      (data.status?.configs || []).filter(c => c.type === 'server' && c.resolver_enabled).map(c => c.id)
+    )
+    expandedIds.value = expandedIds.value.filter(id => visibleIds.has(id))
     if (data.apply_error) {
       $q.notify({ type: 'negative', message: data.apply_error, timeout: 12000 })
     } else if (data.warning) {

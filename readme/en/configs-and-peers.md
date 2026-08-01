@@ -20,6 +20,8 @@ Config types:
 | **Server** | Classic VPN: clients reach the internet via the server (or via the [resolver](resolver.md)) |
 | **Virtual network** | Isolated LAN between peers — see [virtual-networks.md](virtual-networks.md) |
 
+Typical deployment layouts (simple VPN, cascade, VN routers) — [use cases](use-cases.md).
+
 When creating a config the panel automatically allocates a free `iface` and UDP port.
 
 ## AmneziaWG protocol versions

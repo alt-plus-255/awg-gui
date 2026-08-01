@@ -27,9 +27,13 @@ log() { echo -e "${CYAN}[awg-gui-uninstall]${NC} $*"; }
 ok() { echo -e "${GREEN}[ok]${NC} $*"; }
 die() { echo -e "${RED}[error]${NC} $*" >&2; exit 1; }
 
+# shellcheck source=src/scripts/lib/install-i18n.sh
+source "${SCRIPT_DIR}/src/scripts/lib/install-i18n.sh"
+
 usage() {
-  cat <<EOF
-Usage: $0 [--yes] [--keep-images] [--images] [--help]
+  if [[ "${AWG_GUI_LANG:-ru}" == "en" ]]; then
+    cat <<EOF
+Usage: $0 [--yes] [--keep-images] [--images] [--lang=ru|en] [--help]
 
 Removes awggui containers, volumes, project images, Docker build cache,
 dangling layers, project logs (Docker json logs, update.log, journal),
@@ -37,10 +41,27 @@ CLI, systemd unit and src/.env.
 Paths are read from /etc/awg-gui/awg-gui.conf when present.
 Repository source files are kept. Docker Engine is not removed.
 
-  --yes          Skip confirmation
-  --keep-images  Keep awggui Docker images and build cache
-  --images       Accepted for compatibility (images are removed by default)
+  $(t usage_opt_yes_uninstall)
+  $(t usage_opt_keep_images)
+  $(t usage_opt_images)
+  $(t opt_lang)
 EOF
+  else
+    cat <<EOF
+Usage: $0 [--yes] [--keep-images] [--images] [--lang=ru|en] [--help]
+
+Удаляет контейнеры awggui, volumes, образы проекта, Docker build cache,
+dangling-слои, логи проекта (Docker json logs, update.log, journal),
+CLI, unit systemd и src/.env.
+Пути читаются из /etc/awg-gui/awg-gui.conf при наличии.
+Исходники репозитория сохраняются. Docker Engine не удаляется.
+
+  $(t usage_opt_yes_uninstall)
+  $(t usage_opt_keep_images)
+  $(t usage_opt_images)
+  $(t opt_lang)
+EOF
+  fi
 }
 
 for arg in "$@"; do
@@ -48,30 +69,46 @@ for arg in "$@"; do
     --yes|-y) YES=1 ;;
     --images) REMOVE_IMAGES=1 ;;
     --keep-images) KEEP_IMAGES=1; REMOVE_IMAGES=0 ;;
-    --help|-h) usage; exit 0 ;;
-    *) die "Unknown argument: $arg" ;;
+    --lang=*) set_awg_gui_lang "${arg#*=}" ;;
+    --help|-h) normalize_awg_gui_lang; usage; exit 0 ;;
+    *) die "$(t err_unknown_arg "$arg")" ;;
   esac
 done
 
-[[ "$(id -u)" -eq 0 ]] || die "Run as root (sudo)"
+normalize_awg_gui_lang
+export AWG_GUI_LANG
+
+[[ "$(id -u)" -eq 0 ]] || die "$(t err_run_as_root)"
+
+select_install_lang
+export AWG_GUI_LANG
 
 confirm_uninstall() {
   if [[ "${YES}" -eq 1 ]]; then
     return 0
   fi
-  if [[ ! -t 0 ]]; then
-    die "No interactive terminal for confirmation. Re-run with --yes, for example:
-  sudo ./awg-gui-uninstall.sh --yes"
+  if [[ ! -t 0 && ! -r /dev/tty ]]; then
+    die "$(t err_no_tty_uninstall)"
   fi
-  local ans=""
-  read -r -p "Remove awggui stack, volumes, images, logs and build cache? [y/N]: " ans
-  [[ "${ans}" =~ ^[Yy]$ ]] || { echo "Aborted"; exit 0; }
+  local ans="" hint
+  hint="$(confirm_hint n)"
+  if [[ -r /dev/tty ]]; then
+    printf '%s' "$(t confirm_remove_stack) ${hint}: " > /dev/tty
+    read -r ans < /dev/tty || true
+  else
+    read -r -p "$(t confirm_remove_stack) ${hint}: " ans || true
+  fi
+  if is_yes_answer "${ans}"; then
+    return 0
+  fi
+  echo "$(t msg_aborted)"
+  exit 0
 }
 
 confirm_uninstall
 
 remove_project_logs() {
-  log "Removing project logs ..."
+  log "$(t log_removing_logs)"
   local c logpath
 
   # Truncate Docker json-file logs while containers still exist (main disk hog).
@@ -162,7 +199,7 @@ remove_project_images() {
 }
 
 prune_docker_junk() {
-  log "Pruning dangling images and Docker build cache ..."
+  log "$(t log_pruning_docker)"
   docker image prune -f >/dev/null 2>&1 || true
   # BuildKit cache is often the largest leftover after awg/golang image builds
   docker builder prune -af >/dev/null 2>&1 || true
@@ -173,15 +210,15 @@ if systemctl list-unit-files 2>/dev/null | grep -q '^awg-gui.service'; then
 fi
 rm -f /etc/systemd/system/awg-gui.service
 systemctl daemon-reload || true
-ok "systemd unit removed"
+ok "$(t ok_systemd_removed)"
 
 remove_project_logs
 
 if [[ -f "${COMPOSE_FILE}" ]]; then
   compose_down || true
-  ok "compose down -v completed"
+  ok "$(t ok_compose_down)"
 else
-  log "Compose file missing — removing containers by name if present"
+  log "$(t log_compose_missing)"
   fallback_remove_containers
 fi
 
@@ -191,18 +228,18 @@ fallback_remove_network
 
 rm -f /usr/local/bin/awg-gui
 rm -rf /etc/awg-gui
-ok "CLI, /etc/awg-gui and project logs removed"
+ok "$(t ok_cli_etc_removed)"
 
 if [[ -f "${ENV_FILE}" ]]; then
   rm -f "${ENV_FILE}"
-  ok "Removed ${ENV_FILE}"
+  ok "$(t ok_removed_path "${ENV_FILE}")"
 fi
 
 if [[ "${REMOVE_IMAGES}" -eq 1 ]]; then
   remove_project_images
   prune_docker_junk
-  ok "Project images, dangling layers and build cache removed"
+  ok "$(t ok_images_cache_removed)"
 fi
 
 echo
-ok "Uninstall finished. Repository source files were kept. Docker Engine was not removed."
+ok "$(t ok_uninstall_finished_dev)"

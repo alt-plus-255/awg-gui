@@ -108,6 +108,7 @@ Remote panel control from Telegram: configs, peers, connections and resolver, pe
 | [CLI](readme/en/cli.md) | `awg-gui`: info, endpoint, password, 2FA, systemd |
 | [Webhook](readme/en/webhook.md) | Failure notification JSON schema |
 | [Telegram bot](readme/en/telegram.md) | Setup, polling/webhook, menus, notifications, proxies |
+| [Use cases](readme/en/use-cases.md) | Server→client, resolver/cascade, VN routers, home behind VPN |
 | [Configs & peers](readme/en/configs-and-peers.md) | Multi-config, protocol versions, attach/detach, export |
 | [Virtual networks](readme/en/virtual-networks.md) | VN, zones, exclusions |
 | [Resolver](readme/en/resolver.md) | Full tunnel, lists, connections (incl. WG/AWG), diagnostics |

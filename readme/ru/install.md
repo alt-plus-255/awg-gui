@@ -19,10 +19,19 @@
 curl -fsSL https://raw.githubusercontent.com/alt-plus-255/awg-gui/refs/heads/main/dist/install.sh | sudo bash
 ```
 
-Без интерактива (порт панели **8877**, при существующей установке — режим обновления; kernel-модуль ставится по умолчанию):
+В интерактивном режиме сначала спрашивается **язык** (по умолчанию русский; можно выбрать English). Статусы установки выводятся на выбранном языке.
+
+Без интерактива (порт панели **8877**, при существующей установке — режим обновления; kernel-модуль ставится по умолчанию; язык **ru**):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/alt-plus-255/awg-gui/refs/heads/main/dist/install.sh | sudo bash -s -- --yes
+```
+
+Английский язык сообщений без интерактива:
+
+```bash
+curl -fsSL .../dist/install.sh | sudo bash -s -- --yes --lang=en
+# или: AWG_GUI_LANG=en
 ```
 
 Пропустить kernel-модуль AmneziaWG (останется userspace `amneziawg-go`):
@@ -61,6 +70,7 @@ cd awg-gui
 sudo ./awg-gui-install.sh
 # или без интерактива (порт панели 8877, upgrade при существующей установке):
 sudo ./awg-gui-install.sh --yes
+# язык сообщений: --lang=en или AWG_GUI_LANG=en (по умолчанию ru)
 ```
 
 Dev-скрипт установки:

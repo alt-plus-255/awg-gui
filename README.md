@@ -108,6 +108,7 @@ sudo bash /tmp/awg-gui-install.sh --yes
 | [CLI](readme/ru/cli.md) | `awg-gui`: info, endpoint, password, 2FA, systemd |
 | [Webhook](readme/ru/webhook.md) | JSON schema оповещений о сбоях |
 | [Telegram-бот](readme/ru/telegram.md) | Настройка, polling/webhook, меню, уведомления, прокси |
+| [Кейсы использования](readme/ru/use-cases.md) | Сервер→клиент, резолвер/каскад, VN-роутеры, дом за VPN |
 | [Конфиги и пиры](readme/ru/configs-and-peers.md) | Мульти-конфиг, версии протокола, attach/detach, экспорт |
 | [Виртуальные сети](readme/ru/virtual-networks.md) | VN, зоны, исключения |
 | [Резолвер](readme/ru/resolver.md) | Полный туннель, списки, подключения (в т.ч. WG/AWG), диагностика |

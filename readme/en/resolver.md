@@ -58,6 +58,8 @@ AllowedIPs = 0.0.0.0/0, ::/0
 
 Use when you want a classic “full VPN via server”, but blocked resources (Telegram, YouTube, Meta…) exit through a separate upstream connection.
 
+Typical layouts (foreign VDS + `russia_inside`, Russia VDS cascade + `russia_outside`, …) — [use cases](use-cases.md).
+
 ## Quick setup
 
 1. **List settings** — download the community lists you need (or create custom ones).

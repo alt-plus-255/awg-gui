@@ -53,4 +53,4 @@ src/
 
 - [Установка](install.md) · [Удаление](uninstall.md) · [Сборка release](build-release.md)
 - [CLI](cli.md) · [Webhook](webhook.md) · [Telegram-бот](telegram.md)
-- [Конфиги и пиры](configs-and-peers.md) · [Виртуальные сети](virtual-networks.md) · [Резолвер](resolver.md)
+- [Кейсы использования](use-cases.md) · [Конфиги и пиры](configs-and-peers.md) · [Виртуальные сети](virtual-networks.md) · [Резолвер](resolver.md)

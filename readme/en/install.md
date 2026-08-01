@@ -19,10 +19,19 @@ Quick one-liner — see [README](../../README.en.md#quick-install-production).
 curl -fsSL https://raw.githubusercontent.com/alt-plus-255/awg-gui/refs/heads/main/dist/install.sh | sudo bash
 ```
 
-Non-interactive (panel port **8877**, upgrade if already installed; installs AmneziaWG kernel module by default):
+In interactive mode the installer first asks for **language** (default Russian; English available). Status messages use the selected language.
+
+Non-interactive (panel port **8877**, upgrade if already installed; installs AmneziaWG kernel module by default; language **ru**):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/alt-plus-255/awg-gui/refs/heads/main/dist/install.sh | sudo bash -s -- --yes
+```
+
+English messages without prompts:
+
+```bash
+curl -fsSL .../dist/install.sh | sudo bash -s -- --yes --lang=en
+# or: AWG_GUI_LANG=en
 ```
 
 Skip the AmneziaWG kernel module (keep userspace `amneziawg-go`):
@@ -61,6 +70,7 @@ cd awg-gui
 sudo ./awg-gui-install.sh
 # or non-interactive defaults (panel port 8877, upgrade if already installed):
 sudo ./awg-gui-install.sh --yes
+# message language: --lang=en or AWG_GUI_LANG=en (default ru)
 ```
 
 The dev installer:

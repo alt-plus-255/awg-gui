@@ -53,4 +53,4 @@ Compose project name: **`awggui`**.
 
 - [Install](install.md) · [Uninstall](uninstall.md) · [Build release](build-release.md)
 - [CLI](cli.md) · [Webhook](webhook.md) · [Telegram bot](telegram.md)
-- [Configs & peers](configs-and-peers.md) · [Virtual networks](virtual-networks.md) · [Resolver](resolver.md)
+- [Use cases](use-cases.md) · [Configs & peers](configs-and-peers.md) · [Virtual networks](virtual-networks.md) · [Resolver](resolver.md)

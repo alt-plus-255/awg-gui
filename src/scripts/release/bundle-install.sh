@@ -32,32 +32,67 @@ ok() { echo -e "${GREEN}[ok]${NC} $*"; }
 warn() { echo -e "${YELLOW}[warn]${NC} $*"; }
 die() { echo -e "${RED}[error]${NC} $*" >&2; exit 1; }
 
+_I18N=""
+if [[ -f "${SCRIPT_DIR}/lib/install-i18n.sh" ]]; then
+  _I18N="${SCRIPT_DIR}/lib/install-i18n.sh"
+elif [[ -f "${SCRIPT_DIR}/../lib/install-i18n.sh" ]]; then
+  _I18N="${SCRIPT_DIR}/../lib/install-i18n.sh"
+fi
+if [[ -n "${_I18N}" ]]; then
+  # shellcheck disable=SC1090
+  source "${_I18N}"
+fi
+unset _I18N
+
 usage() {
-  cat <<EOF
-Usage: $0 [--yes] [--no-awg-kernel] [--help]
+  if [[ "${AWG_GUI_LANG:-ru}" == "en" ]]; then
+    cat <<EOF
+Usage: $0 [--yes] [--no-awg-kernel] [--lang=ru|en] [--help]
 
 Production install: loads pre-built Docker images and starts awggui stack.
 Asks about AmneziaWG kernel module (recommended for YouTube/Instagram; default Y).
 
-  --yes              Non-interactive (defaults; installs kernel module unless skipped)
-  --no-awg-kernel    Skip AmneziaWG kernel module install
+  $(t usage_opt_yes)
+  $(t usage_opt_no_kernel)
+  $(t opt_lang)
 EOF
+  else
+    cat <<EOF
+Usage: $0 [--yes] [--no-awg-kernel] [--lang=ru|en] [--help]
+
+Production-установка: загружает готовые Docker-образы и запускает стек awggui.
+Спрашивает про модуль ядра AmneziaWG (рекомендуется для YouTube/Instagram; по умолчанию Y).
+
+  $(t usage_opt_yes)
+  $(t usage_opt_no_kernel)
+  $(t opt_lang)
+EOF
+  fi
 }
 
 for arg in "$@"; do
   case "$arg" in
     --yes|-y) YES=1 ;;
     --no-awg-kernel) SKIP_KERNEL=1 ;;
-    --help|-h) usage; exit 0 ;;
-    *) die "Unknown argument: $arg" ;;
+    --lang=*) set_awg_gui_lang "${arg#*=}" ;;
+    --help|-h) normalize_awg_gui_lang; usage; exit 0 ;;
+    *) die "$(t err_unknown_arg "$arg")" ;;
   esac
 done
+
+normalize_awg_gui_lang
+export AWG_GUI_LANG
 
 if [[ "${AWG_GUI_SKIP_KERNEL:-0}" == "1" ]]; then
   SKIP_KERNEL=1
 fi
 
-[[ "$(id -u)" -eq 0 ]] || die "Run as root (sudo)"
+[[ "$(id -u)" -eq 0 ]] || die "$(t err_run_as_root)"
+
+# Language was already chosen by online installer / run-header when --lang is explicit;
+# otherwise ask here (interactive) before Docker work.
+select_install_lang
+export AWG_GUI_LANG
 
 compose() {
   docker compose -p "${PROJECT_NAME}" --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" "$@"
@@ -69,15 +104,15 @@ if [[ -f "${SCRIPT_DIR}/lib/ensure-docker.sh" ]]; then
 elif [[ -f "${SCRIPT_DIR}/../lib/ensure-docker.sh" ]]; then
   _ENSURE_DOCKER="${SCRIPT_DIR}/../lib/ensure-docker.sh"
 else
-  die "Missing ensure-docker.sh helper"
+  die "$(t err_missing_ensure_docker)"
 fi
 # shellcheck source=../lib/ensure-docker.sh
 source "${_ENSURE_DOCKER}"
 unset _ENSURE_DOCKER
 
 ensure_curl() {
-  command -v curl >/dev/null 2>&1 || die "curl is required"
-  ok "curl present"
+  command -v curl >/dev/null 2>&1 || die "$(t err_curl_required)"
+  ok "$(t ok_curl_present)"
 }
 
 read_tty() {
@@ -89,7 +124,7 @@ read_tty() {
   elif [[ -t 0 ]]; then
     read -r -p "${prompt}" ans || true
   else
-    die "Non-interactive shell (no TTY). Re-run with --yes"
+    die "$(t err_no_tty_use_yes)"
   fi
   printf '%s' "${ans}"
 }
@@ -99,20 +134,16 @@ confirm() {
   local default="${2:-n}"
   local ans hint
   if [[ "${YES}" -eq 1 ]]; then
-    log "${msg} → yes (--yes)"
+    log "$(t log_confirm_yes "${msg}")"
     return 0
   fi
-  if [[ "${default}" == "y" ]]; then
-    hint="[Y/n]"
-  else
-    hint="[y/N]"
-  fi
+  hint="$(confirm_hint "${default}")"
   ans="$(read_tty "${msg} ${hint}: ")"
   ans="${ans:-${default}}"
-  case "${ans}" in
-    y|Y|yes|YES) return 0 ;;
-    *) return 1 ;;
-  esac
+  if is_yes_answer "${ans}"; then
+    return 0
+  fi
+  return 1
 }
 
 prompt() {
@@ -135,13 +166,13 @@ install_awg_kernel_module() {
   if [[ -f "${KERNEL_HOST_SCRIPT_SRC}" ]]; then
     install -m 0755 "${KERNEL_HOST_SCRIPT_SRC}" /etc/awg-gui/awg-kernel-host.sh
   else
-    warn "Kernel helper missing at ${KERNEL_HOST_SCRIPT_SRC}; skip kernel install"
+    warn "$(t warn_kernel_helper_missing "${KERNEL_HOST_SCRIPT_SRC}")"
     env_set "AWG_KERNEL_WANTED" "0" "${ENV_FILE}" 2>/dev/null || true
     return 0
   fi
 
   if [[ "${SKIP_KERNEL}" -eq 1 ]]; then
-    log "Skipping AmneziaWG kernel module (--no-awg-kernel / AWG_GUI_SKIP_KERNEL)"
+    log "$(t log_skip_kernel)"
     env_set "AWG_KERNEL_WANTED" "0" "${ENV_FILE}" 2>/dev/null || true
     return 0
   fi
@@ -149,22 +180,22 @@ install_awg_kernel_module() {
   local kernel_status=""
   kernel_status="$(/etc/awg-gui/awg-kernel-host.sh status 2>/dev/null || true)"
   if echo "${kernel_status}" | grep -qE '"package_installed":true|"module_loaded":true'; then
-    ok "AmneziaWG kernel module already installed — skipping"
+    ok "$(t ok_kernel_already)"
     env_set "AWG_KERNEL_WANTED" "1" "${ENV_FILE}" 2>/dev/null || true
     return 0
   fi
 
-  if confirm "Install AmneziaWG kernel module? Recommended for YouTube/Instagram streaming (https://github.com/amnezia-vpn/amneziawg-linux-kernel-module)" "y"; then
+  if confirm "$(t confirm_install_kernel)" "y"; then
     env_set "AWG_KERNEL_WANTED" "1" "${ENV_FILE}" 2>/dev/null || true
-    log "Installing AmneziaWG kernel module on host (may take several minutes)..."
+    log "$(t log_installing_kernel)"
     if /etc/awg-gui/awg-kernel-host.sh install; then
-      ok "AmneziaWG kernel module installed"
+      ok "$(t ok_kernel_installed)"
     else
-      warn "Kernel module install failed — continuing with userspace amneziawg-go"
+      warn "$(t warn_kernel_failed)"
     fi
   else
     env_set "AWG_KERNEL_WANTED" "0" "${ENV_FILE}" 2>/dev/null || true
-    log "Kernel module skipped by user"
+    log "$(t log_kernel_skipped_user)"
   fi
 }
 
@@ -239,7 +270,7 @@ choose_install_mode() {
 
   # Leftover .env after uninstall (no containers): do not reuse old ADMIN_PASSWORD.
   if ! has_awggui_containers; then
-    warn "Найден оставшийся ${ENV_FILE} без контейнеров — чистая установка с новыми паролями"
+    warn "$(t warn_leftover_env "${ENV_FILE}")"
     UPGRADE_MODE=0
     REPAIR_MODE=0
     return
@@ -248,7 +279,7 @@ choose_install_mode() {
   if detect_incomplete_install; then
     REPAIR_MODE=1
     UPGRADE_MODE=1
-    warn "Обнаружена незавершённая установка — продолжаем восстановление автоматически ..."
+    warn "$(t warn_incomplete_repair)"
     return
   fi
 
@@ -256,19 +287,19 @@ choose_install_mode() {
 
   if [[ "${YES}" -eq 1 ]]; then
     UPGRADE_MODE=1
-    log "Existing install detected → upgrade mode (--yes)"
+    log "$(t log_existing_upgrade_yes)"
     return
   fi
 
   echo
-  warn "Обнаружена существующая установка awggui."
-  echo "  [1] Прервать"
-  echo "  [2] Обновить (сохранить .env, volumes, данные БД/AWG)"
+  warn "$(t warn_existing_install)"
+  echo "$(t choice_abort)"
+  echo "$(t choice_upgrade)"
   local choice=""
-  choice="$(read_tty "Выбор [1/2]: ")"
+  choice="$(read_tty "$(t prompt_choice_1_2)")"
   case "${choice}" in
     2) UPGRADE_MODE=1 ;;
-    *) log "Установка прервана."; exit 0 ;;
+    *) log "$(t log_install_aborted)"; exit 0 ;;
   esac
 }
 
@@ -425,7 +456,7 @@ env_set() {
 }
 
 env_merge_missing_keys() {
-  [[ -f "${ENV_EXAMPLE}" ]] || die "Missing ${ENV_EXAMPLE}"
+  [[ -f "${ENV_EXAMPLE}" ]] || die "$(t err_missing_path "${ENV_EXAMPLE}")"
   if [[ ! -f "${ENV_FILE}" ]]; then
     cp "${ENV_EXAMPLE}" "${ENV_FILE}"
     chmod 600 "${ENV_FILE}"
@@ -449,7 +480,7 @@ write_env_from_example() {
   local internal_subnet="$4" peer_dns="$5" allowed_ips="$6"
   local admin_pass="$7" db_pass="$8" app_key="$9"
 
-  [[ -f "${ENV_EXAMPLE}" ]] || die "Missing ${ENV_EXAMPLE}"
+  [[ -f "${ENV_EXAMPLE}" ]] || die "$(t err_missing_path "${ENV_EXAMPLE}")"
   cp "${ENV_EXAMPLE}" "${ENV_FILE}"
   chmod 600 "${ENV_FILE}"
 
@@ -476,7 +507,7 @@ ensure_panel_ops_token() {
   fi
   token="$(openssl rand -hex 32 2>/dev/null || rand_secret 64)"
   env_set "PANEL_OPS_TOKEN" "${token}" "${ENV_FILE}"
-  ok "Generated PANEL_OPS_TOKEN in ${ENV_FILE}"
+  ok "$(t ok_panel_ops_token "${ENV_FILE}")"
 }
 
 remove_legacy_certbot_container() {
@@ -491,29 +522,29 @@ cleanup_loaded_image_archives() {
     removed=1
   done
   if [[ "${removed}" -eq 1 ]]; then
-    ok "Removed bundled image archive(s) from ${SCRIPT_DIR}/images"
+    ok "$(t ok_removed_archives "${SCRIPT_DIR}")"
   fi
 }
 
 # Drop previous awggui:* tags left after upgrade. In-use images stay (docker rmi refuses without -f).
 cleanup_unused_project_images() {
   local img removed=0
-  log "Removing unused awg-gui Docker images ..."
+  log "$(t log_removing_unused_images)"
   while read -r img; do
     [[ -n "${img}" ]] || continue
     [[ "${img}" == *":<none>" ]] && continue
     if docker rmi "${img}" >/dev/null 2>&1; then
       removed=$((removed + 1))
-      log "Removed unused image ${img}"
+      log "$(t log_removed_unused_image "${img}")"
     fi
   done < <(docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep -E '^awggui-' || true)
 
   docker image prune -f >/dev/null 2>&1 || true
 
   if [[ "${removed}" -gt 0 ]]; then
-    ok "Removed ${removed} unused awg-gui image(s)"
+    ok "$(t ok_removed_n_images "${removed}")"
   else
-    ok "No unused awg-gui images to remove"
+    ok "$(t ok_no_unused_images)"
   fi
 }
 
@@ -538,13 +569,13 @@ load_images() {
   for tar_file in "${SCRIPT_DIR}"/images/awggui-all-*.tar.gz "${SCRIPT_DIR}"/images/awggui-all-*.tar; do
     [[ -f "${tar_file}" ]] && break
   done
-  [[ -f "${tar_file}" ]] || die "Missing ${SCRIPT_DIR}/images/awggui-all-*.tar.gz"
+  [[ -f "${tar_file}" ]] || die "$(t err_missing_image_archive "${SCRIPT_DIR}")"
 
   detect_bundle_version || true
 
-  log "Loading Docker images from ${tar_file} ..."
+  log "$(t log_loading_images "${tar_file}")"
   docker load -i "${tar_file}"
-  ok "Images loaded"
+  ok "$(t ok_images_loaded)"
   cleanup_loaded_image_archives
 }
 
@@ -570,19 +601,19 @@ EOF
   install -m 0644 "${RUNTIME_DIR}/systemd/awg-gui.service" /etc/systemd/system/awg-gui.service
   systemctl daemon-reload
   systemctl enable --now awg-gui.service
-  ok "CLI /usr/local/bin/awg-gui and systemd awg-gui.service installed"
+  ok "$(t ok_cli_systemd)"
 }
 
 print_helper() {
   local repo="${AWG_GUI_GITHUB_REPO:-alt-plus-255/awg-gui}"
   echo
   echo -e "${BOLD}────────────────────────────────────────${NC}"
-  echo -e "${BOLD}Management:${NC}"
+  echo -e "${BOLD}$(t helper_management)${NC}"
   echo "  awg-gui help"
   echo "  awg-gui status"
   echo "  awg-gui ensure-up"
   echo
-  echo -e "${BOLD}Uninstall (production):${NC}"
+  echo -e "${BOLD}$(t helper_uninstall_prod)${NC}"
   echo "  curl -fsSL https://raw.githubusercontent.com/${repo}/refs/heads/main/dist/uninstall.sh | sudo bash"
   echo -e "${BOLD}────────────────────────────────────────${NC}"
   echo
@@ -601,11 +632,13 @@ print_install_result_json() {
 
 print_credentials() {
   local url="$1" port="$2" pass="$3"
+  local title
   echo -e "${GREEN}"
   if [[ -n "${pass}" ]]; then
+    title="$(t banner_established)"
     cat <<EOF
 ╔══════════════════════════════════════════════╗
-║  AmneziaWG GUI established                   ║
+║  ${title}
 ║  URL:      ${url}
 ║  Port:     ${port}
 ║  Login:    admin
@@ -613,13 +646,14 @@ print_credentials() {
 ╚══════════════════════════════════════════════╝
 EOF
   else
+    title="$(t banner_upgraded)"
     cat <<EOF
 ╔══════════════════════════════════════════════╗
-║  AmneziaWG GUI upgraded                      ║
+║  ${title}
 ║  URL:      ${url}
 ║  Port:     ${port}
 ║  Login:    admin
-║  Password: (unchanged — use awg-gui password) ║
+║  Password: $(t banner_password_unchanged)
 ╚══════════════════════════════════════════════╝
 EOF
   fi
@@ -628,7 +662,7 @@ EOF
 }
 
 wait_for_app() {
-  log "Waiting for app container..."
+  log "$(t log_waiting_app)"
   local i
   for i in $(seq 1 60); do
     if compose exec -T app php -v >/dev/null 2>&1; then
@@ -636,7 +670,7 @@ wait_for_app() {
     fi
     sleep 3
   done
-  warn "App container not ready — bootstrap steps may fail"
+  warn "$(t warn_app_not_ready)"
   return 1
 }
 
@@ -651,7 +685,7 @@ container_health() {
 }
 
 wait_for_runtime_services() {
-  log "Waiting for runtime services to report healthy/running state..."
+  log "$(t log_waiting_runtime)"
   local attempts="${1:-60}" sleep_sec="${2:-3}" i c state health pending status
   for i in $(seq 1 "${attempts}"); do
     pending=0
@@ -672,7 +706,7 @@ wait_for_runtime_services() {
     done
 
     if [[ "${pending}" -eq 0 ]]; then
-      ok "All containers are running"
+      ok "$(t ok_all_containers)"
       return 0
     fi
 
@@ -697,17 +731,17 @@ verify_public_http() {
     return 1
   fi
   rm -f "${body_file}"
-  ok "Public API responded on ${url}"
+  ok "$(t ok_public_api "${url}")"
 }
 
 print_startup_diagnostics() {
   echo
-  warn "Startup diagnostics:"
+  warn "$(t warn_startup_diag)"
   compose ps || true
   local c
   for c in "${EXPECTED_CONTAINERS[@]}"; do
     echo
-    warn "Recent logs for ${c}:"
+    warn "$(t warn_recent_logs "${c}")"
     docker logs --tail 60 "${c}" 2>&1 || true
   done
 }
@@ -717,25 +751,25 @@ verify_installation_runtime() {
 
   wait_for_runtime_services 60 3 || {
     print_startup_diagnostics
-    die "Not all awg-gui services reached running/healthy state after install"
+    die "$(t err_services_not_ready)"
   }
 
   verify_public_http "${panel_port}" || {
     print_startup_diagnostics
-    die "Panel API did not become reachable after install"
+    die "$(t err_panel_unreachable)"
   }
 }
 
 wait_for_migrate_lock() {
-  log "Waiting for in-container migrations to finish (if any)..."
+  log "$(t log_waiting_migrations)"
   compose exec -T app bash -c '
     mkdir -p /var/www/html/storage/framework
     flock -w "${AWG_GUI_MIGRATE_LOCK_TIMEOUT:-300}" /var/www/html/storage/framework/migrate.lock true
-  ' || warn "Timed out waiting for migration lock"
+  ' || warn "$(t warn_migrate_lock)"
 }
 
 run_migrations() {
-  log "Running migrations..."
+  log "$(t log_running_migrations)"
   compose exec -T app awg-migrate-locked
 }
 
@@ -748,24 +782,24 @@ run_bootstrap() {
 
   if [[ "${UPGRADE_MODE}" -eq 1 ]]; then
     # Create admin only if missing; existing password is never overwritten.
-    log "Ensuring admin user exists (preserving password)..."
+    log "$(t log_ensuring_admin_preserve)"
     if [[ -n "${admin_pass}" ]]; then
       compose exec -T \
         -e ADMIN_PASSWORD="${admin_pass}" \
         app php artisan admin:ensure --username=admin --password="${admin_pass}" --email=admin@localhost \
-        || warn "admin:ensure skipped (will rely on existing DB user)"
+        || warn "$(t warn_admin_ensure_skipped)"
     else
       compose exec -T app php artisan admin:ensure --username=admin --email=admin@localhost \
-        || warn "admin:ensure skipped (will rely on existing DB user)"
+        || warn "$(t warn_admin_ensure_skipped)"
     fi
   elif [[ -n "${admin_pass}" ]]; then
-    log "Ensuring admin user..."
+    log "$(t log_ensuring_admin)"
     compose exec -T \
       -e ADMIN_PASSWORD="${admin_pass}" \
       app php artisan admin:ensure --username=admin --password="${admin_pass}" --email=admin@localhost
   fi
 
-  log "Bootstrapping AmneziaWG config..."
+  log "$(t log_bootstrapping_awg)"
   compose exec -T \
     -e SERVER_ENDPOINT="${endpoint}" \
     -e AWG_PORT="${awg_port}" \
@@ -778,8 +812,8 @@ run_bootstrap() {
 }
 
 main() {
-  [[ -f "${COMPOSE_FILE}" ]] || die "Missing ${COMPOSE_FILE}"
-  [[ -d /dev/net/tun ]] || warn "/dev/net/tun not found — AWG userspace may still work"
+  [[ -f "${COMPOSE_FILE}" ]] || die "$(t err_missing_path "${COMPOSE_FILE}")"
+  [[ -d /dev/net/tun ]] || warn "$(t warn_tun_missing)"
 
   trap on_install_exit EXIT
 
@@ -792,7 +826,7 @@ main() {
 
   if [[ "${UPGRADE_MODE}" -eq 1 ]]; then
     env_merge_missing_keys
-    ok "Using existing ${ENV_FILE}"
+    ok "$(t ok_using_existing_env "${ENV_FILE}")"
     panel_port="$(env_get PANEL_PORT "${ENV_FILE}" "${PANEL_PORT_DEFAULT}")"
     awg_port="$(env_get AWG_PORT "${ENV_FILE}" "${AWG_PORT_DEFAULT}")"
     endpoint="$(env_get SERVER_ENDPOINT "${ENV_FILE}" "auto")"
@@ -806,12 +840,12 @@ main() {
     allowed_ips="$(env_get ALLOWED_IPS "${ENV_FILE}" "${ALLOWED_IPS_DEFAULT}")"
     admin_pass="$(env_get ADMIN_PASSWORD "${ENV_FILE}")"
   else
-    prompt panel_port "Panel port" "${PANEL_PORT_DEFAULT}"
-    prompt awg_port "AmneziaWG UDP port (AWG_PORT)" "${AWG_PORT_DEFAULT}"
-    prompt endpoint "Server endpoint (public IP/DNS, or auto)" "auto"
-    prompt internal_subnet "Internal subnet (INTERNAL_SUBNET)" "${INTERNAL_SUBNET_DEFAULT}"
-    prompt peer_dns "Peer DNS (PEER_DNS)" "${PEER_DNS_DEFAULT}"
-    prompt allowed_ips "AllowedIPs for clients (ALLOWED_IPS)" "${ALLOWED_IPS_DEFAULT}"
+    prompt panel_port "$(t prompt_panel_port)" "${PANEL_PORT_DEFAULT}"
+    prompt awg_port "$(t prompt_awg_port)" "${AWG_PORT_DEFAULT}"
+    prompt endpoint "$(t prompt_endpoint)" "auto"
+    prompt internal_subnet "$(t prompt_internal_subnet)" "${INTERNAL_SUBNET_DEFAULT}"
+    prompt peer_dns "$(t prompt_peer_dns)" "${PEER_DNS_DEFAULT}"
+    prompt allowed_ips "$(t prompt_allowed_ips)" "${ALLOWED_IPS_DEFAULT}"
 
     admin_pass="$(rand_secret 20)"
     db_pass="$(rand_secret 32)"
@@ -821,7 +855,7 @@ main() {
       "${panel_port}" "${awg_port}" "${endpoint}" \
       "${internal_subnet}" "${peer_dns}" "${allowed_ips}" \
       "${admin_pass}" "${db_pass}" "${app_key}"
-    ok "Created ${ENV_FILE}"
+    ok "$(t ok_created_env "${ENV_FILE}")"
   fi
 
   display_host="$(resolve_endpoint_host "${endpoint}")"
@@ -835,7 +869,7 @@ main() {
   remove_legacy_certbot_container
   load_images
 
-  log "Starting containers ..."
+  log "$(t log_starting_containers)"
   compose up -d
 
   wait_for_app || true
@@ -875,13 +909,13 @@ EOF
     else
       print_credentials "${url}" "${panel_port}" ""
     fi
-    ok "Восстановление установки завершено"
+    ok "$(t ok_repair_complete)"
   elif [[ "${UPGRADE_MODE}" -eq 1 ]]; then
     print_credentials "${url}" "${panel_port}" ""
-    ok "Upgrade complete"
+    ok "$(t ok_upgrade_complete)"
   else
     print_credentials "${url}" "${panel_port}" "${admin_pass}"
-    ok "Installation complete"
+    ok "$(t ok_install_complete)"
   fi
 }
 

@@ -8,7 +8,11 @@
 curl -fsSL https://raw.githubusercontent.com/alt-plus-255/awg-gui/refs/heads/main/dist/uninstall.sh | sudo bash
 ```
 
-Piped `curl | bash` has no TTY, so confirmation is skipped and uninstall runs immediately.
+Interactive mode first asks for **language** (default Russian). Piped `curl | bash` has no TTY, so confirmation is skipped and uninstall runs immediately (language **ru**, or `--lang=en` / `AWG_GUI_LANG=en`).
+
+```bash
+curl -fsSL .../dist/uninstall.sh | sudo bash -s -- --yes --lang=en
+```
 
 By default this also removes local `awggui-*` Docker images, dangling layers, and the Docker build cache (often the largest leftover after image builds).
 
@@ -29,6 +33,7 @@ curl -fsSL https://raw.githubusercontent.com/alt-plus-255/awg-gui/refs/heads/mai
 ```bash
 sudo ./awg-gui-uninstall.sh
 sudo ./awg-gui-uninstall.sh --yes --keep-images   # leave images/cache alone
+sudo ./awg-gui-uninstall.sh --yes --lang=en       # English status messages
 ```
 
 Stops/removes `awggui` containers and volumes, project images, dangling layers and build cache, **project logs** (Docker container json logs, `/etc/awg-gui/update.log`, `awg-kernel` helper/state/logs, `awg-gui` journal, tmp extract dirs), disables systemd `awg-gui.service`, removes `/usr/local/bin/awg-gui`, `/etc/awg-gui` (Caddyfile, certs, ACME, `awg-kernel-host.sh`), and `src/.env`. Paths are read from `/etc/awg-gui/awg-gui.conf` when present.
