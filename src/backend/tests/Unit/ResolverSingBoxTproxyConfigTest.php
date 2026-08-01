@@ -117,7 +117,6 @@ class ResolverSingBoxTproxyConfigTest extends TestCase
             $this->assertSame(ResolverService::TPROXY_LISTEN, $redir['listen']);
             $this->assertSame(ResolverService::TPROXY_PORT, $redir['listen_port']);
             $this->assertTrue($redir['tcp_fast_open'] ?? false);
-            $this->assertTrue($redir['sniff_override_destination'] ?? false);
 
             $udp = collect($sb['inbounds'])->firstWhere('tag', ResolverService::UDP_TPROXY_INBOUND_TAG);
             $this->assertNotNull($udp);
@@ -125,13 +124,11 @@ class ResolverSingBoxTproxyConfigTest extends TestCase
             $this->assertSame(ResolverService::UDP_TPROXY_PORT, $udp['listen_port']);
             $this->assertSame('udp', $udp['network'] ?? null);
             $this->assertTrue($udp['udp_fragment'] ?? false);
-            $this->assertTrue($udp['sniff_override_destination'] ?? false);
 
             $dnsIn = collect($sb['inbounds'])->firstWhere('tag', 'dns-in');
             $this->assertSame('direct', $dnsIn['type']);
             $this->assertSame(ResolverService::DNS_LISTEN_PORT, $dnsIn['listen_port']);
             $this->assertArrayNotHasKey('sniff', $dnsIn);
-            $this->assertArrayNotHasKey('sniff_override_destination', $dnsIn);
 
             $this->assertFalse($sb['route']['auto_detect_interface']);
             $this->assertNotSame('', $sb['route']['default_interface']);
@@ -147,14 +144,12 @@ class ResolverSingBoxTproxyConfigTest extends TestCase
             $this->assertContains(ResolverService::UDP_TPROXY_INBOUND_TAG, $sniff['inbound'] ?? []);
 
             foreach ($sb['inbounds'] as $inbound) {
+                // sing-box 1.13 removed legacy inbound sniff_* / domain_strategy fields.
                 $this->assertArrayNotHasKey('sniff', $inbound);
+                $this->assertArrayNotHasKey('sniff_override_destination', $inbound);
+                $this->assertArrayNotHasKey('sniff_timeout', $inbound);
                 $this->assertArrayNotHasKey('domain_strategy', $inbound);
-                $tag = $inbound['tag'] ?? '';
-                if ($tag === ResolverService::TPROXY_INBOUND_TAG || $tag === ResolverService::UDP_TPROXY_INBOUND_TAG) {
-                    $this->assertTrue($inbound['sniff_override_destination'] ?? false);
-                } else {
-                    $this->assertArrayNotHasKey('sniff_override_destination', $inbound);
-                }
+                $this->assertArrayNotHasKey('udp_disable_domain_unmapping', $inbound);
             }
             foreach ($sb['dns']['servers'] as $server) {
                 $this->assertArrayHasKey('type', $server);
@@ -277,6 +272,41 @@ class ResolverSingBoxTproxyConfigTest extends TestCase
             $cfg->delete();
             $conn->delete();
         }
+    }
+
+    public function test_strip_legacy_inbound_fields_removes_sing_box_113_forbidden_keys(): void
+    {
+        $svc = app(ResolverService::class);
+        $cleaned = $svc->stripLegacyInboundFields([
+            'inbounds' => [
+                [
+                    'type' => 'redirect',
+                    'tag' => 'tproxy-in',
+                    'listen' => '0.0.0.0',
+                    'listen_port' => 1602,
+                    'tcp_fast_open' => true,
+                    'sniff_override_destination' => true,
+                    'sniff' => true,
+                    'sniff_timeout' => '1s',
+                    'domain_strategy' => 'ipv4_only',
+                ],
+                [
+                    'type' => 'tproxy',
+                    'tag' => 'tproxy-udp-in',
+                    'udp_fragment' => true,
+                    'udp_disable_domain_unmapping' => true,
+                ],
+            ],
+        ]);
+
+        $this->assertSame(
+            ['type', 'tag', 'listen', 'listen_port', 'tcp_fast_open'],
+            array_keys($cleaned['inbounds'][0])
+        );
+        $this->assertSame(
+            ['type', 'tag', 'udp_fragment'],
+            array_keys($cleaned['inbounds'][1])
+        );
     }
 
     private function rmTree(string $dir): void

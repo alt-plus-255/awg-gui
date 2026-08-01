@@ -748,6 +748,7 @@ class ResolverService
             $this->mergedRulesets->resetChangeFlags();
 
             $sb = $this->buildSingBoxConfig($configs, $forceSyncLists);
+            $sb = $this->stripLegacyInboundFields($sb);
             $json = json_encode($sb, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
             if ($json === false) {
                 throw new RuntimeException(__('resolver.singbox_serialize_failed'));
@@ -848,14 +849,16 @@ class ResolverService
         $allProxyCidrs = [];
         $quicRejectRules = [];
 
-        // TCP redirect + UDP tproxy. Sniff before FakeIP reverse so QUIC/TLS
-        // can recover the domain when store_fakeip briefly misses.
+        // TCP redirect + UDP tproxy. Route-level sniff (not inbound sniff_* —
+        // those legacy inbound fields were removed in sing-box 1.13).
+        // FakeIP reverse uses experimental.cache_file.store_fakeip.
         $sniffInbounds = [self::TPROXY_INBOUND_TAG, self::UDP_TPROXY_INBOUND_TAG, 'dns-in'];
 
         $routeRules = [
             [
                 'action' => 'sniff',
                 // Short timeout: fail fast on broken QUIC so ABR falls back to TCP sooner.
+                // Default in sing-box is already 300ms; keep explicit for clarity.
                 'timeout' => '300ms',
                 'inbound' => $sniffInbounds,
             ],
@@ -1046,7 +1049,7 @@ class ResolverService
             'inet4_range' => self::FAKEIP_CIDR,
         ];
 
-        return [
+        $built = [
             'log' => [
                 // warn: info floods Docker json logs under client DNS/FakeIP load
                 'level' => 'warn',
@@ -1075,8 +1078,6 @@ class ResolverService
                     'listen' => self::TPROXY_LISTEN,
                     'listen_port' => self::TPROXY_PORT,
                     'tcp_fast_open' => true,
-                    // Dial by sniffed SNI/QUIC domain when FakeIP reverse map briefly misses.
-                    'sniff_override_destination' => true,
                 ],
                 [
                     // UDP FakeIP (QUIC/HTTP3) via TPROXY :1603.
@@ -1086,7 +1087,6 @@ class ResolverService
                     'listen_port' => self::UDP_TPROXY_PORT,
                     'network' => 'udp',
                     'udp_fragment' => true,
-                    'sniff_override_destination' => true,
                 ],
             ])), $outbounds, $routeRules, $outboundTagsAdded),
             'outbounds' => $outbounds,
@@ -1119,6 +1119,41 @@ class ResolverService
                 ],
             ],
         ];
+
+        return $this->stripLegacyInboundFields($built);
+    }
+
+    /**
+     * sing-box 1.13 removed legacy inbound listen fields (fatal on check).
+     * Strip them defensively so Save/apply never writes a broken config.
+     *
+     * @param  array<string, mixed>  $config
+     * @return array<string, mixed>
+     */
+    public function stripLegacyInboundFields(array $config): array
+    {
+        $legacy = [
+            'sniff',
+            'sniff_override_destination',
+            'sniff_timeout',
+            'domain_strategy',
+            'udp_disable_domain_unmapping',
+        ];
+
+        if (! isset($config['inbounds']) || ! is_array($config['inbounds'])) {
+            return $config;
+        }
+
+        foreach ($config['inbounds'] as $i => $inbound) {
+            if (! is_array($inbound)) {
+                continue;
+            }
+            foreach ($legacy as $key) {
+                unset($config['inbounds'][$i][$key]);
+            }
+        }
+
+        return $config;
     }
 
     /**
