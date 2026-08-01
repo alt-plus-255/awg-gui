@@ -146,11 +146,19 @@ install_awg_kernel_module() {
     return 0
   fi
 
+  local kernel_status=""
+  kernel_status="$(/etc/awg-gui/awg-kernel-host.sh status 2>/dev/null || true)"
+  if echo "${kernel_status}" | grep -qE '"package_installed":true|"module_loaded":true'; then
+    ok "AmneziaWG kernel module already installed — skipping"
+    env_set "AWG_KERNEL_WANTED" "1" "${ENV_FILE}" 2>/dev/null || true
+    return 0
+  fi
+
   if confirm "Install AmneziaWG kernel module? Recommended for YouTube/Instagram streaming (https://github.com/amnezia-vpn/amneziawg-linux-kernel-module)" "y"; then
     env_set "AWG_KERNEL_WANTED" "1" "${ENV_FILE}" 2>/dev/null || true
     log "Installing AmneziaWG kernel module on host (may take several minutes)..."
     if /etc/awg-gui/awg-kernel-host.sh install; then
-      ok "AmneziaWG kernel module installed (or already present)"
+      ok "AmneziaWG kernel module installed"
     else
       warn "Kernel module install failed — continuing with userspace amneziawg-go"
     fi
