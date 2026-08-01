@@ -568,6 +568,17 @@ print_helper() {
   echo
 }
 
+print_install_result_json() {
+  local url="$1" port="$2" pass="$3" ok="${4:-true}"
+  local pass_json="null"
+  if [[ -n "${pass}" ]]; then
+    pass_json="$(printf '%s' "${pass}" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))' 2>/dev/null \
+      || printf '"%s"' "${pass//\"/\\\"}")"
+  fi
+  printf 'AWG_GUI_RESULT={"ok":%s,"panel_port":%s,"username":"admin","password":%s,"url":"%s"}\n' \
+    "${ok}" "${port}" "${pass_json}" "${url}"
+}
+
 print_credentials() {
   local url="$1" port="$2" pass="$3"
   echo -e "${GREEN}"
@@ -593,6 +604,7 @@ EOF
 EOF
   fi
   echo -e "${NC}"
+  print_install_result_json "${url}" "${port}" "${pass}" "true"
 }
 
 wait_for_app() {

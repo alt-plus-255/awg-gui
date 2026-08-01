@@ -18,6 +18,8 @@ dist/
   install.sh          # production online installer (wget one-liner)
   uninstall.sh        # production online uninstaller
   README.md           # заметка про prod-bundle
+mobile/               # Quasar + Capacitor installer (FAQ, SSH install, panel WebView)
+build/                # mobile build artifacts (web/, android/)
 src/
   docker-compose.yml
   .env.example

@@ -1,0 +1,57 @@
+{
+  "nav": {
+    "faq": "FAQ",
+    "install": "Установка",
+    "panel": "Панель"
+  },
+  "faq": {
+    "title": "Развёртывание awg-gui",
+    "intro": "Приложение подключается к вашей VDS по SSH и запускает официальный production-инсталлер. Пароль root/sudo нужен только на время установки.",
+    "reqTitle": "Требования к серверу",
+    "reqBody": "Linux (Ubuntu, Debian, Fedora, CentOS/RHEL/Rocky/Alma), root или sudo, KVM или /dev/net/tun. Docker и curl ставятся автоматически, если их нет.",
+    "portsTitle": "Порты",
+    "portsBody": "SSH — обычно 22. Панель — 8877 (HTTP). AmneziaWG UDP — 51820 (и следующие при нескольких конфигах). Откройте их в firewall/security group.",
+    "cmdTitle": "Что выполняется",
+    "cmdBody": "curl -fsSL …/dist/install.sh | sudo bash -s -- --yes\n\nРежим без вопросов: порт панели 8877, kernel-модуль AmneziaWG по умолчанию включён.",
+    "kernelTitle": "Kernel-модуль",
+    "kernelBody": "Нужен для стабильного YouTube/Instagram ABR через full-tunnel + resolver. Можно отключить опцией при установке — останется userspace amneziawg-go.",
+    "securityTitle": "Безопасность",
+    "securityBody": "Приложение получает полный доступ к серверу через SSH. Пароли хранятся только на устройстве. Relay-сервера нет — трафик идёт напрямую на вашу VDS.",
+    "afterTitle": "После установки",
+    "afterBody": "Приложение дождётся ответа панели, выполнит вход как admin и откроет панель во встроенном WebView.",
+    "cta": "Перейти к установке"
+  },
+  "install": {
+    "title": "Установка на VDS",
+    "host": "IP или hostname",
+    "port": "SSH порт",
+    "username": "Логин",
+    "password": "Пароль",
+    "skipKernel": "Без kernel-модуля AmneziaWG",
+    "mockHint": "В браузере используется mock SSH (без реального сервера). На Android — настоящий SSH.",
+    "submit": "Установить awg-gui",
+    "validationHost": "Укажите IP или hostname",
+    "validationUser": "Укажите логин",
+    "validationPassword": "Укажите пароль"
+  },
+  "terminal": {
+    "title": "Установка",
+    "statusConnecting": "Подключение по SSH…",
+    "statusRunning": "Запуск инсталлера…",
+    "statusWaitingPanel": "Ожидание панели…",
+    "statusReadingCreds": "Чтение учётных данных…",
+    "statusDone": "Готово",
+    "statusFailed": "Ошибка",
+    "openPanel": "Открыть панель",
+    "retry": "Назад к форме",
+    "cancelled": "Отменено"
+  },
+  "panel": {
+    "title": "Панель",
+    "opening": "Открываем панель и выполняем вход…",
+    "openNative": "Открыть панель",
+    "missing": "Нет сохранённого подключения. Сначала установите awg-gui.",
+    "disconnect": "Отключить сервер",
+    "webHint": "В браузере WebView с auto-login ограничен CORS. На Android откроется нативный WebView."
+  }
+}

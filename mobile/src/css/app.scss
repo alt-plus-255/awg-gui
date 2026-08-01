@@ -1,0 +1,33 @@
+html, body, #q-app {
+  height: 100%;
+}
+
+body {
+  background: #0d1117;
+  color: #e6edf3;
+}
+
+.page-pad {
+  padding: 16px;
+  padding-bottom: calc(16px + env(safe-area-inset-bottom));
+}
+
+.terminal-log {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  background: #010409;
+  color: #c9d1d9;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  padding: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-y: auto;
+  min-height: 240px;
+  max-height: calc(100vh - 220px);
+}
+
+.faq-section + .faq-section {
+  margin-top: 16px;
+}
