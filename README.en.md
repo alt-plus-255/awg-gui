@@ -4,6 +4,19 @@
 
 AmneziaWG VPN server (protocol versions **1.0**, **1.5**, and **2.0**, default **2.0**) with a Laravel 12 API and Quasar Vue admin panel, all in Docker containers prefixed with `awggui`.
 
+## Use cases
+
+| Layout | Where the panel runs | What it does |
+|--------|----------------------|--------------|
+| **Server → client** | Foreign VDS | Classic VPN: all traffic exits via the server IP |
+| **Server + resolver (RU access)** | Foreign VDS | Default exit = foreign IP; `russia_inside` → Connection (VPN/proxy in Russia) |
+| **Cascade server → client** | Russia VDS | RU segment via provider IP; `russia_outside` and services → foreign hop |
+| **Virtual network hub** | Often Russia VDS | N routers/clients in one LAN; each router has its own subnet |
+| **Home / office via a router** | Any VDS | Router as a Server-config client — whole LAN behind VPN |
+| **Several roles** | One VDS | Up to 20 configs: plain VPN, cascade, and VN at once |
+
+→ [Details: use cases](readme/en/use-cases.md)
+
 <p align="center">
   <img src="readme/assets/dashboard.png" alt="AWG-GUI dashboard: server resources, peers, and connection status" width="720">
   <br><br>
