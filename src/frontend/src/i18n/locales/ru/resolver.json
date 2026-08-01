@@ -47,7 +47,7 @@
   "create": "создать",
   "fakeIpHint": "Для доменов вне списков FakeIP. В клиентском .conf при включённом резолвере остаётся gateway.",
   "blockQuic": "Блокировать QUIC (UDP/443) для доменов из списков",
-  "blockQuicHint": "Включено — QUIC отклоняется в sing-box, приложения идут по TCP (помогает на части Android YouTube). Выключено — QUIC/HTTP3 через Подключение (лучше для 4K; нужен UDP-capable outbound, напр. VLESS+XUDP). FakeIP TCP+UDP идёт в TPROXY :1602; это не полный drop UDP. Замер скорости ≠ ABR-видео.",
+  "blockQuicHint": "Включено — QUIC отклоняется в sing-box, приложения идут по TCP (помогает на части Android YouTube). Выключено — QUIC/HTTP3 через Подключение (лучше для 4K; нужен UDP-capable outbound, напр. VLESS+XUDP). FakeIP TCP идёт в REDIRECT :1602; UDP — в TPROXY :1603; это не полный drop UDP. Замер скорости ≠ ABR-видео.",
   "listsCommunityCustom": "Списки (community + свои)",
   "customDomains": "Свои домены",
   "domainsHint": "Enter или «Добавить». Можно вставить список из буфера.",

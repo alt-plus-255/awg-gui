@@ -21,7 +21,7 @@ The resolver is a “smart VPN via VDS”: all client traffic goes to the server
 2. Community lists ([allow-domains](https://github.com/itdoginfo/allow-domains)) are downloaded to disk (`rulesets/*.srs`) — **List settings**.
 3. Each server config on **Resolver** picks a **Connection** — upstream for listed domains. Multiple AWG configs are isolated by client VPN subnet (`source_ip_cidr`): own lists, outbound, DNS, and Block QUIC flag.
 4. The client gets a `.conf` / QR with `DNS = gateway`, `AllowedIPs = 0.0.0.0/0, ::/0`, and **MTU = 1420** (re-import on the device after an MTU change).
-5. For ABR video (YouTube/Instagram) over full-tunnel, prefer **kernel AmneziaWG** on the VDS host (installer or **Settings → Panel**); without it the stack uses userspace `amneziawg-go`.
+5. For ABR video (YouTube/Instagram) over full-tunnel, **kernel AmneziaWG** on the VDS host is required (installer or **Settings → Panel**); without it the stack uses userspace `amneziawg-go`. Kernel is necessary but not sufficient: stable 1080p/1440p also needs working QUIC (Block QUIC off + UDP-capable outbound) or a solid TCP path.
 
 ```mermaid
 flowchart LR

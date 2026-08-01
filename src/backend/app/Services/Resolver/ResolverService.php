@@ -855,7 +855,8 @@ class ResolverService
         $routeRules = [
             [
                 'action' => 'sniff',
-                'timeout' => '1s',
+                // Short timeout: fail fast on broken QUIC so ABR falls back to TCP sooner.
+                'timeout' => '300ms',
                 'inbound' => $sniffInbounds,
             ],
             [
@@ -1074,6 +1075,8 @@ class ResolverService
                     'listen' => self::TPROXY_LISTEN,
                     'listen_port' => self::TPROXY_PORT,
                     'tcp_fast_open' => true,
+                    // Dial by sniffed SNI/QUIC domain when FakeIP reverse map briefly misses.
+                    'sniff_override_destination' => true,
                 ],
                 [
                     // UDP FakeIP (QUIC/HTTP3) via TPROXY :1603.
@@ -1083,6 +1086,7 @@ class ResolverService
                     'listen_port' => self::UDP_TPROXY_PORT,
                     'network' => 'udp',
                     'udp_fragment' => true,
+                    'sniff_override_destination' => true,
                 ],
             ])), $outbounds, $routeRules, $outboundTagsAdded),
             'outbounds' => $outbounds,

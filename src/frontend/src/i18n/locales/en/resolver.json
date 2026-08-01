@@ -47,7 +47,7 @@
   "create": "create",
   "fakeIpHint": "FakeIP for domains outside the lists. With resolver enabled, the client .conf keeps the gateway.",
   "blockQuic": "Block QUIC (UDP/443) for listed domains",
-  "blockQuicHint": "On — reject QUIC in sing-box so apps fall back to TCP (helps some Android YouTube cases). Off — QUIC/HTTP3 goes via the Connection (better for 4K; needs a UDP-capable outbound, e.g. VLESS+XUDP). FakeIP TCP+UDP uses TPROXY :1602; this is not a full UDP drop. Speed test ≠ ABR video.",
+  "blockQuicHint": "On — reject QUIC in sing-box so apps fall back to TCP (helps some Android YouTube cases). Off — QUIC/HTTP3 goes via the Connection (better for 4K; needs a UDP-capable outbound, e.g. VLESS+XUDP). FakeIP TCP uses REDIRECT :1602; UDP uses TPROXY :1603 — this is not a full UDP drop. Speed test ≠ ABR video.",
   "listsCommunityCustom": "Lists (community + custom)",
   "customDomains": "Custom domains",
   "domainsHint": "Enter or Add. You can paste a list from the clipboard.",

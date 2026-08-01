@@ -176,6 +176,31 @@ unload_module() {
   modprobe -r "${MODULE_NAME}" 2>/dev/null || true
 }
 
+# Best-effort host TCP tuning for high-BDP ABR (container sysctls are rejected by runc).
+# Failures must never abort kernel install/uninstall.
+apply_host_streaming_sysctl() {
+  local conf=/etc/sysctl.d/99-awg-gui-streaming.conf
+  mkdir -p /etc/sysctl.d 2>/dev/null || true
+  cat > "${conf}" <<'EOF' 2>/dev/null || true
+# Managed by awg-gui AmneziaWG kernel helper — high-BDP TCP for ABR over nested tunnels.
+net.core.default_qdisc = fq
+net.ipv4.tcp_congestion_control = bbr
+net.core.rmem_max = 16777216
+net.core.wmem_max = 16777216
+net.ipv4.tcp_rmem = 4096 87380 16777216
+net.ipv4.tcp_wmem = 4096 65536 16777216
+EOF
+  sysctl -p "${conf}" >/dev/null 2>&1 || true
+  sysctl -w net.ipv4.tcp_congestion_control=bbr >/dev/null 2>&1 || true
+  sysctl -w net.core.rmem_max=16777216 >/dev/null 2>&1 || true
+  sysctl -w net.core.wmem_max=16777216 >/dev/null 2>&1 || true
+}
+
+remove_host_streaming_sysctl_file() {
+  # Leave live sysctl values alone; only drop our drop-in so uninstall stays fail-soft.
+  rm -f /etc/sysctl.d/99-awg-gui-streaming.conf 2>/dev/null || true
+}
+
 uninstall_debian() {
   export DEBIAN_FRONTEND=noninteractive
   apt-get remove -y -qq amneziawg amneziawg-dkms amneziawg-tools 2>/dev/null || true
@@ -257,6 +282,7 @@ cmd_install() {
       ;;
   esac
   load_module
+  apply_host_streaming_sysctl
   restart_awg_container
   force_awg_kernel_datapath
   if module_loaded && ! docker exec "${AWG_CONTAINER}" sh -c 'ps aux 2>/dev/null | grep -q "[a]mneziawg-go "' 2>/dev/null; then
@@ -280,6 +306,7 @@ cmd_uninstall() {
       return 1
       ;;
   esac
+  remove_host_streaming_sysctl_file
   restart_awg_container
   write_state "ok" "AmneziaWG kernel module removed; AWG will use userspace fallback"
   echo "AmneziaWG kernel module removed"

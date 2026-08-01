@@ -154,6 +154,7 @@ class ResolverDiagnostics
         ];
 
         $clashConns = 0;
+        $clashUdpConns = 0;
         $clashChains = [];
         if ($clashOk) {
             $connResp = $this->clash->clashApiRequest('/connections', [], 5);
@@ -163,6 +164,11 @@ class ResolverDiagnostics
                     if (! is_array($conn)) {
                         continue;
                     }
+                    $meta = is_array($conn['metadata'] ?? null) ? $conn['metadata'] : [];
+                    $network = strtolower((string) ($meta['network'] ?? $conn['network'] ?? ''));
+                    if ($network === 'udp') {
+                        $clashUdpConns++;
+                    }
                     foreach ($conn['chains'] ?? [] as $tag) {
                         if (is_string($tag) && $tag !== '') {
                             $clashChains[$tag] = true;
@@ -171,9 +177,11 @@ class ResolverDiagnostics
                 }
             }
         }
+        $udpHits = (int) $runtime['iptables']['tproxy_fakeip_udp_hits'];
         $runtime['clash'] = [
             'api_ok' => $clashOk,
             'connections_current' => $clashConns,
+            'udp_connections_current' => $clashUdpConns,
             'connection_chains' => array_values(array_keys($clashChains)),
         ];
         if ($fakeipHits > 20 && $clashConns === 0) {
@@ -200,6 +208,27 @@ class ResolverDiagnostics
                 'ok' => true,
                 'label' => __('resolver.diag_fakeip_delivery'),
                 'detail' => __('resolver.diag_active_clash_connections', ['count' => $clashConns]),
+            ];
+        }
+
+        // Separate warn: UDP FakeIP reaches TPROXY but no Clash UDP sessions (QUIC/FakeIP reverse dead).
+        // Do not fail the whole resolver — TCP path may still work.
+        $missingFakeip = $this->singBoxLogMentionsMissingFakeip($container);
+        if ($udpHits > 20 && $clashUdpConns === 0) {
+            $checks[] = [
+                'id' => 'fakeip_udp_sessions',
+                'ok' => false,
+                'label' => __('resolver.diag_fakeip_udp_sessions'),
+                'detail' => "tproxy_fakeip_udp_hits={$udpHits}, clash_udp_connections=0"
+                    .($missingFakeip ? ', missing_fakeip_in_log=yes' : ''),
+            ];
+            $hints[] = __('resolver.diag_fakeip_udp_dead_hint');
+        } elseif ($udpHits > 0 && $clashUdpConns > 0) {
+            $checks[] = [
+                'id' => 'fakeip_udp_sessions',
+                'ok' => true,
+                'label' => __('resolver.diag_fakeip_udp_sessions'),
+                'detail' => "tproxy_fakeip_udp_hits={$udpHits}, clash_udp_connections={$clashUdpConns}",
             ];
         }
 
@@ -379,7 +408,7 @@ class ResolverDiagnostics
      *     nat_dns_redirect_hits: int
      *   },
      *   awg_datapath: array{module_loaded: bool, userspace: bool, mode: string},
-     *   clash?: array{api_ok: bool,connections_current: int,connection_chains: list<string>}
+     *   clash?: array{api_ok: bool,connections_current: int,udp_connections_current: int,connection_chains: list<string>}
      * }
      */
     private function collectRuntimeSignals(string $container, array $enabledIfaces): array
@@ -792,6 +821,24 @@ SH;
                 'address' => null,
                 'detail' => $e->getMessage(),
             ];
+        }
+    }
+
+    /**
+     * Best-effort: recent sing-box.log mentions missing FakeIP reverse map.
+     */
+    private function singBoxLogMentionsMissingFakeip(string $container): bool
+    {
+        try {
+            $r = $this->docker->exec(
+                $container,
+                ['sh', '-c', 'tail -n 80 /config/sing-box.log 2>/dev/null | grep -qi "missing fakeip" && echo yes || echo no'],
+                timeout: 8,
+            );
+
+            return str_contains(strtolower(trim($r->output())), 'yes');
+        } catch (\Throwable) {
+            return false;
         }
     }
 

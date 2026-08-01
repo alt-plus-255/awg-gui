@@ -69,7 +69,7 @@
   "panelUrl": "Panel URL:",
   "awgConfigsHint": "AWG configs, server keys, and subnets are configured on the Configs page.",
   "awgKernelTitle": "AmneziaWG kernel module",
-  "awgKernelHint": "Needed for stable YouTube/Instagram ABR over full-tunnel + resolver. After install, datapath must be kernel (not userspace). Official Amnezia packages only; on failure AWG keeps amneziawg-go.",
+  "awgKernelHint": "Needed for YouTube/Instagram ABR over full-tunnel + resolver, but not enough alone — also need working QUIC (Block QUIC off + XUDP) or a solid TCP path. After install, datapath must be kernel (not userspace). Official Amnezia packages only; on failure AWG keeps amneziawg-go.",
   "awgKernelModule": "Module loaded",
   "awgKernelPackage": "Package installed",
   "awgKernelDatapath": "AWG datapath",

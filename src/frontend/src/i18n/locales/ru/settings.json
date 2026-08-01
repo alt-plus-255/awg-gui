@@ -69,7 +69,7 @@
   "panelUrl": "URL панели:",
   "awgConfigsHint": "AWG-конфиги, ключи сервера и подсети настраиваются на странице «Конфиги».",
   "awgKernelTitle": "Kernel-модуль AmneziaWG",
-  "awgKernelHint": "Нужен для стабильного YouTube/Instagram ABR при полном туннеле + резолвере. После установки datapath должен быть kernel (не userspace). Только официальные пакеты Amnezia; при ошибке остаётся amneziawg-go.",
+  "awgKernelHint": "Нужен для YouTube/Instagram ABR при полном туннеле + резолвере, но сам по себе недостаточен — ещё нужен рабочий QUIC (Block QUIC выкл + XUDP) или хороший TCP-path. После установки datapath должен быть kernel (не userspace). Только официальные пакеты Amnezia; при ошибке остаётся amneziawg-go.",
   "awgKernelModule": "Модуль загружен",
   "awgKernelPackage": "Пакет установлен",
   "awgKernelDatapath": "Путь AWG",

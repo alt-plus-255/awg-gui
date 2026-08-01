@@ -58,6 +58,11 @@ class ResolverMarkScriptsTest extends TestCase
         );
         $this->assertStringContainsString('--on-port "$UDP_PORT"', $mark);
         $this->assertStringContainsString('-d "$FAKEIP" -p udp -m socket -j DIVERT', $mark);
+        $this->assertStringContainsString('TCPMSS --clamp-mss-to-pmtu', $mark);
+        $this->assertStringContainsString(
+            'while iptables -t mangle -D PREROUTING -i "$IFACE" -d "$FAKEIP" -p udp -j TPROXY',
+            $mark
+        );
         $this->assertStringNotContainsString(
             'iptables -t mangle -I PREROUTING 1 -i "$IFACE" -d "$FAKEIP" -p tcp -m socket -j DIVERT',
             $mark
@@ -71,6 +76,7 @@ class ResolverMarkScriptsTest extends TestCase
         $unmark = (string) file_get_contents($this->awgDir.'/resolver-unmark.sh');
         $this->assertStringContainsString('UDP_PORT='.ResolverService::UDP_TPROXY_PORT, $unmark);
         $this->assertStringContainsString('RSNAT_', $unmark);
+        $this->assertStringContainsString('TCPMSS --clamp-mss-to-pmtu', $unmark);
     }
 
     private function rmTree(string $dir): void

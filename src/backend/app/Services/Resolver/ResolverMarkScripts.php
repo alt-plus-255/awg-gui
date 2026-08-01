@@ -73,7 +73,7 @@ done
 ip route flush table {$tunTable} 2>/dev/null || true
 ip link delete {$tunIface} 2>/dev/null || true
 
-# Clear previous NAT / mangle / UDP REJECT / unified-TPROXY leftovers.
+# Clear previous NAT / mangle / UDP REJECT / unified-TPROXY leftovers (idempotent; also drop duplicates).
 iptables -t nat -D PREROUTING -i "\$IFACE" -j "\$NAT_CHAIN" 2>/dev/null || true
 iptables -t nat -F "\$NAT_CHAIN" 2>/dev/null || true
 iptables -t nat -X "\$NAT_CHAIN" 2>/dev/null || true
@@ -81,19 +81,23 @@ iptables -D FORWARD -i "\$IFACE" -d "\$FAKEIP" -p udp -j REJECT --reject-with ic
 iptables -t mangle -D PREROUTING -i "\$IFACE" -j "\$MANGLE_CHAIN" 2>/dev/null || true
 iptables -t mangle -F "\$MANGLE_CHAIN" 2>/dev/null || true
 iptables -t mangle -X "\$MANGLE_CHAIN" 2>/dev/null || true
-iptables -t mangle -D PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p udp -j TPROXY --on-port "\$UDP_PORT" --on-ip "\$TPROXY_ON_IP" --tproxy-mark "\$TPROXY_MARK/\$TPROXY_MARK" 2>/dev/null || true
-iptables -t mangle -D PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p udp -j TPROXY --on-port "\$UDP_PORT" --on-ip 0.0.0.0 --tproxy-mark "\$TPROXY_MARK/\$TPROXY_MARK" 2>/dev/null || true
-iptables -t mangle -D PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p udp -j TPROXY --on-port "\$UDP_PORT" --on-ip 127.0.0.1 --tproxy-mark "\$TPROXY_MARK/\$TPROXY_MARK" 2>/dev/null || true
+# Remove all FakeIP UDP TPROXY/DIVERT lines for this iface (may have been duplicated by older PostUp).
+while iptables -t mangle -D PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p udp -j TPROXY --on-port "\$UDP_PORT" --on-ip "\$TPROXY_ON_IP" --tproxy-mark "\$TPROXY_MARK/\$TPROXY_MARK" 2>/dev/null; do :; done
+while iptables -t mangle -D PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p udp -j TPROXY --on-port "\$UDP_PORT" --on-ip 0.0.0.0 --tproxy-mark "\$TPROXY_MARK/\$TPROXY_MARK" 2>/dev/null; do :; done
+while iptables -t mangle -D PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p udp -j TPROXY --on-port "\$UDP_PORT" --on-ip 127.0.0.1 --tproxy-mark "\$TPROXY_MARK/\$TPROXY_MARK" 2>/dev/null; do :; done
 iptables -t mangle -D PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p tcp -j TPROXY --on-port "\$REDIR_PORT" --on-ip 0.0.0.0 --tproxy-mark "\$TPROXY_MARK/\$TPROXY_MARK" 2>/dev/null || true
 iptables -t mangle -D PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p udp -j TPROXY --on-port "\$REDIR_PORT" --on-ip 0.0.0.0 --tproxy-mark "\$TPROXY_MARK/\$TPROXY_MARK" 2>/dev/null || true
 iptables -t mangle -D PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p tcp -j TPROXY --on-port "\$REDIR_PORT" --on-ip "\$TPROXY_ON_IP" --tproxy-mark "\$TPROXY_MARK/\$TPROXY_MARK" 2>/dev/null || true
 iptables -t mangle -D PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p udp -j TPROXY --on-port "\$REDIR_PORT" --on-ip "\$TPROXY_ON_IP" --tproxy-mark "\$TPROXY_MARK/\$TPROXY_MARK" 2>/dev/null || true
-iptables -t mangle -D PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p tcp -m socket -j DIVERT 2>/dev/null || true
-iptables -t mangle -D PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p udp -m socket -j DIVERT 2>/dev/null || true
+while iptables -t mangle -D PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p tcp -m socket -j DIVERT 2>/dev/null; do :; done
+while iptables -t mangle -D PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p udp -m socket -j DIVERT 2>/dev/null; do :; done
 iptables -t mangle -D PREROUTING -p udp -m socket -j DIVERT 2>/dev/null || true
 iptables -t mangle -D PREROUTING -p tcp -m socket -j DIVERT 2>/dev/null || true
 iptables -t mangle -D PREROUTING -p udp -m socket --transparent -j DIVERT 2>/dev/null || true
 iptables -t mangle -D PREROUTING -p tcp -m socket --transparent -j DIVERT 2>/dev/null || true
+# Drop previous TCPMSS clamps for this iface (re-add below).
+while iptables -t mangle -D FORWARD -o "\$IFACE" -p tcp -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null; do :; done
+while iptables -t mangle -D FORWARD -i "\$IFACE" -p tcp -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null; do :; done
 
 # TCP FakeIP/list → NAT REDIRECT (works in Docker; TCP TPROXY does not).
 iptables -t nat -N "\$NAT_CHAIN" 2>/dev/null || iptables -t nat -F "\$NAT_CHAIN"
@@ -115,6 +119,12 @@ fi
 iptables -t nat -C PREROUTING -i "\$IFACE" -j "\$NAT_CHAIN" 2>/dev/null \\
   || iptables -t nat -A PREROUTING -i "\$IFACE" -j "\$NAT_CHAIN"
 
+# MSS clamp for nested AWG+proxy (MTU 1420) — iface-scoped, idempotent.
+iptables -t mangle -C FORWARD -o "\$IFACE" -p tcp -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null \\
+  || iptables -t mangle -A FORWARD -o "\$IFACE" -p tcp -j TCPMSS --clamp-mss-to-pmtu
+iptables -t mangle -C FORWARD -i "\$IFACE" -p tcp -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null \\
+  || iptables -t mangle -A FORWARD -i "\$IFACE" -p tcp -j TCPMSS --clamp-mss-to-pmtu
+
 # UDP FakeIP → TPROXY :1603 (always; Block QUIC is sing-box-only).
 iptables -t mangle -N DIVERT 2>/dev/null || true
 iptables -t mangle -C DIVERT -j MARK --set-mark "\$TPROXY_MARK" 2>/dev/null \\
@@ -131,7 +141,9 @@ ip rule add fwmark "\$TPROXY_MARK" lookup "\$TPROXY_TABLE" 2>/dev/null || true
 ip route replace local default dev lo table "\$TPROXY_TABLE" 2>/dev/null || true
 ip route replace local "\$FAKEIP" dev lo table "\$TPROXY_TABLE" 2>/dev/null || true
 
-iptables -t mangle -A PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p udp -j TPROXY \\
+iptables -t mangle -C PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p udp -j TPROXY \\
+  --on-port "\$UDP_PORT" --on-ip "\$TPROXY_ON_IP" --tproxy-mark "\$TPROXY_MARK/\$TPROXY_MARK" 2>/dev/null \\
+  || iptables -t mangle -A PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p udp -j TPROXY \\
   --on-port "\$UDP_PORT" --on-ip "\$TPROXY_ON_IP" --tproxy-mark "\$TPROXY_MARK/\$TPROXY_MARK"
 
 echo "[sing-box] redirect-tcp: \${IFACE} → :\${REDIR_PORT}; udp-fakeip TPROXY :\${UDP_PORT} on-ip=\${TPROXY_ON_IP}"
@@ -178,6 +190,8 @@ iptables -t mangle -D PREROUTING -i "\$IFACE" -d "\$FAKEIP" -j MARK --set-mark 0
 iptables -t mangle -D PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p tcp -j TPROXY --on-port "\$TPROXY_PORT" --on-ip 127.0.0.1 --tproxy-mark 0x1/0x1 2>/dev/null || true
 iptables -t mangle -D PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p udp -j TPROXY --on-port "\$TPROXY_PORT" --on-ip 127.0.0.1 --tproxy-mark 0x1/0x1 2>/dev/null || true
 iptables -t nat -D PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p tcp -j REDIRECT --to-ports "\$TPROXY_PORT" 2>/dev/null || true
+while iptables -t mangle -D FORWARD -o "\$IFACE" -p tcp -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null; do :; done
+while iptables -t mangle -D FORWARD -i "\$IFACE" -p tcp -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null; do :; done
 SH;
         $changed = $this->files->writeExecutable($unmark, $unmarkBody) || $changed;
 

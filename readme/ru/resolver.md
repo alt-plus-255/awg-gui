@@ -21,7 +21,7 @@
 2. Community-списки ([allow-domains](https://github.com/itdoginfo/allow-domains)) скачиваются на диск (`rulesets/*.srs`) — **Настройки списков**.
 3. Для каждого серверного конфига на **Резолвере** выбирается **Подключение** — upstream для доменов из списков. Несколько AWG-конфигов изолируются по VPN-подсети клиента (`source_ip_cidr`): свои списки, outbound, DNS и флаг Block QUIC.
 4. Клиент получает `.conf` / QR с `DNS = gateway`, `AllowedIPs = 0.0.0.0/0, ::/0` и **MTU = 1420** (после смены MTU нужен переимпорт на устройстве).
-5. Для ABR-видео (YouTube/Instagram) на полном туннеле предпочтителен **kernel AmneziaWG** на хосте VDS (инсталлер или **Настройки → Панель**); без модуля используется userspace `amneziawg-go`.
+5. Для ABR-видео (YouTube/Instagram) на полном туннеле нужен **kernel AmneziaWG** на хосте VDS (инсталлер или **Настройки → Панель**); без модуля — userspace `amneziawg-go`. Kernel необходим, но недостаточен: для 1080p/1440p также нужен живой QUIC (Block QUIC выкл + UDP-capable outbound) или устойчивый TCP-path.
 
 ```mermaid
 flowchart LR
