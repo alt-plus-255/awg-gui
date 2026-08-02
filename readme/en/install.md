@@ -43,6 +43,12 @@ curl -fsSL .../dist/install.sh | sudo bash -s -- --yes --no-awg-kernel
 
 If the module/package is already present on the host, the installer **skips** reinstall and sets `AWG_KERNEL_WANTED=1`.
 
+Failure diagnostics (container logs) only with `--debug` / `AWG_GUI_DEBUG=1`:
+
+```bash
+curl -fsSL .../dist/install.sh | sudo bash -s -- --yes --debug
+```
+
 Specific version:
 
 ```bash

@@ -43,6 +43,12 @@ curl -fsSL .../dist/install.sh | sudo bash -s -- --yes --no-awg-kernel
 
 Если модуль/пакет уже установлен на хосте, инсталлер **пропускает** повторную установку и выставляет `AWG_KERNEL_WANTED=1`.
 
+Диагностика при ошибке (логи контейнеров) — только с `--debug` / `AWG_GUI_DEBUG=1`:
+
+```bash
+curl -fsSL .../dist/install.sh | sudo bash -s -- --yes --debug
+```
+
 Конкретная версия:
 
 ```bash

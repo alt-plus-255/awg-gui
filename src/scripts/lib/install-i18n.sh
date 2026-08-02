@@ -242,6 +242,7 @@ _awg_gui_msg_en() {
     ok_all_containers) printf '%s' 'All containers are running' ;;
     ok_public_api) printf '%s' 'Public API responded on %s' ;;
     warn_startup_diag) printf '%s' 'Startup diagnostics:' ;;
+    warn_debug_hint) printf '%s' 'For container logs re-run with --debug (or AWG_GUI_DEBUG=1)' ;;
     warn_recent_logs) printf '%s' 'Recent logs for %s:' ;;
     err_services_not_ready) printf '%s' 'Not all awg-gui services reached running/healthy state after install' ;;
     err_panel_unreachable) printf '%s' 'Panel API did not become reachable after install' ;;
@@ -312,6 +313,7 @@ _awg_gui_msg_en() {
     usage_opt_yes) printf '%s' '--yes              Non-interactive (defaults; installs kernel module unless skipped)' ;;
     usage_opt_yes_uninstall) printf '%s' '--yes          Skip confirmation' ;;
     usage_opt_no_kernel) printf '%s' '--no-awg-kernel    Skip AmneziaWG kernel module install' ;;
+    usage_opt_debug) printf '%s' '--debug            Show container logs on install failure' ;;
     usage_opt_keep_images) printf '%s' '--keep-images  Keep awggui Docker images and build cache' ;;
     usage_opt_images) printf '%s' '--images       Accepted for compatibility (images are removed by default)' ;;
     usage_opt_purge) printf '%s' '--purge        Remove install directory after uninstall' ;;
@@ -428,6 +430,7 @@ _awg_gui_msg_ru() {
     ok_all_containers) printf '%s' 'Все контейнеры запущены' ;;
     ok_public_api) printf '%s' 'Публичный API ответил на %s' ;;
     warn_startup_diag) printf '%s' 'Диагностика запуска:' ;;
+    warn_debug_hint) printf '%s' 'Для логов контейнеров перезапустите с --debug (или AWG_GUI_DEBUG=1)' ;;
     warn_recent_logs) printf '%s' 'Последние логи %s:' ;;
     err_services_not_ready) printf '%s' 'Не все сервисы awg-gui достигли running/healthy после установки' ;;
     err_panel_unreachable) printf '%s' 'API панели недоступен после установки' ;;
@@ -495,6 +498,7 @@ _awg_gui_msg_ru() {
     usage_opt_yes) printf '%s' '--yes              Без интерактива (значения по умолчанию; kernel-модуль ставится, если не отключён)' ;;
     usage_opt_yes_uninstall) printf '%s' '--yes          Пропустить подтверждение' ;;
     usage_opt_no_kernel) printf '%s' '--no-awg-kernel    Пропустить установку модуля ядра AmneziaWG' ;;
+    usage_opt_debug) printf '%s' '--debug            Показать логи контейнеров при ошибке установки' ;;
     usage_opt_keep_images) printf '%s' '--keep-images  Сохранить образы awggui и build cache' ;;
     usage_opt_images) printf '%s' '--images       Принимается для совместимости (образы удаляются по умолчанию)' ;;
     usage_opt_purge) printf '%s' '--purge        Удалить каталог установки после uninstall' ;;

@@ -10,6 +10,7 @@ ENV_EXAMPLE="${RUNTIME_DIR}/.env.example"
 PROJECT_NAME=awggui
 YES=0
 SKIP_KERNEL=0
+DEBUG=0
 UPGRADE_MODE=0
 REPAIR_MODE=0
 BUNDLE_VERSION=""
@@ -47,24 +48,26 @@ unset _I18N
 usage() {
   if [[ "${AWG_GUI_LANG:-ru}" == "en" ]]; then
     cat <<EOF
-Usage: $0 [--yes] [--no-awg-kernel] [--lang=ru|en] [--help]
+Usage: $0 [--yes] [--no-awg-kernel] [--debug] [--lang=ru|en] [--help]
 
 Production install: loads pre-built Docker images and starts awggui stack.
 Asks about AmneziaWG kernel module (recommended for YouTube/Instagram; default Y).
 
   $(t usage_opt_yes)
   $(t usage_opt_no_kernel)
+  $(t usage_opt_debug)
   $(t opt_lang)
 EOF
   else
     cat <<EOF
-Usage: $0 [--yes] [--no-awg-kernel] [--lang=ru|en] [--help]
+Usage: $0 [--yes] [--no-awg-kernel] [--debug] [--lang=ru|en] [--help]
 
 Production-установка: загружает готовые Docker-образы и запускает стек awggui.
 Спрашивает про модуль ядра AmneziaWG (рекомендуется для YouTube/Instagram; по умолчанию Y).
 
   $(t usage_opt_yes)
   $(t usage_opt_no_kernel)
+  $(t usage_opt_debug)
   $(t opt_lang)
 EOF
   fi
@@ -74,6 +77,7 @@ for arg in "$@"; do
   case "$arg" in
     --yes|-y) YES=1 ;;
     --no-awg-kernel) SKIP_KERNEL=1 ;;
+    --debug) DEBUG=1 ;;
     --lang=*) set_awg_gui_lang "${arg#*=}" ;;
     --help|-h) normalize_awg_gui_lang; usage; exit 0 ;;
     *) die "$(t err_unknown_arg "$arg")" ;;
@@ -85,6 +89,9 @@ export AWG_GUI_LANG
 
 if [[ "${AWG_GUI_SKIP_KERNEL:-0}" == "1" ]]; then
   SKIP_KERNEL=1
+fi
+if [[ "${AWG_GUI_DEBUG:-0}" == "1" ]]; then
+  DEBUG=1
 fi
 
 [[ "$(id -u)" -eq 0 ]] || die "$(t err_run_as_root)"
@@ -732,22 +739,24 @@ wait_for_runtime_services() {
 verify_public_http() {
   local panel_port="$1"
   local url="http://127.0.0.1:${panel_port}/api/login/info"
-  local body_file http_code
+  local body_file http_code attempt
   body_file="$(mktemp)"
-  http_code="$(curl -fsS -o "${body_file}" -w '%{http_code}' --max-time 15 "${url}" || true)"
-  if [[ "${http_code}" != "200" ]]; then
-    rm -f "${body_file}"
-    return 1
-  fi
-  if ! grep -q '"panel_url"' "${body_file}" 2>/dev/null; then
-    rm -f "${body_file}"
-    return 1
-  fi
+  # Caddy/app may still be binding right after compose up — retry quietly.
+  for attempt in $(seq 1 20); do
+    http_code="$(curl -sS -o "${body_file}" -w '%{http_code}' --max-time 5 "${url}" 2>/dev/null || true)"
+    if [[ "${http_code}" == "200" ]] && grep -q '"panel_url"' "${body_file}" 2>/dev/null; then
+      rm -f "${body_file}"
+      ok "$(t ok_public_api "${url}")"
+      return 0
+    fi
+    sleep 2
+  done
   rm -f "${body_file}"
-  ok "$(t ok_public_api "${url}")"
+  return 1
 }
 
 print_startup_diagnostics() {
+  [[ "${DEBUG}" -eq 1 ]] || return 0
   echo
   warn "$(t warn_startup_diag)"
   compose ps || true
@@ -759,16 +768,25 @@ print_startup_diagnostics() {
   done
 }
 
+maybe_hint_debug() {
+  if [[ "${DEBUG}" -eq 1 ]]; then
+    return 0
+  fi
+  warn "$(t warn_debug_hint)"
+}
+
 verify_installation_runtime() {
   local panel_port="$1"
 
   wait_for_runtime_services 60 3 || {
     print_startup_diagnostics
+    maybe_hint_debug
     die "$(t err_services_not_ready)"
   }
 
   verify_public_http "${panel_port}" || {
     print_startup_diagnostics
+    maybe_hint_debug
     die "$(t err_panel_unreachable)"
   }
 }

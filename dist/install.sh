@@ -7,6 +7,7 @@ VERSION="${AWG_GUI_VERSION:-}"
 INSTALL_DIR="${AWG_GUI_INSTALL_DIR:-/opt/awg-gui}"
 YES=0
 SKIP_KERNEL=0
+DEBUG=0
 BUNDLE_LOCAL=""
 DOWNLOAD_TMP_DIR=""
 MIN_TMP_FREE_BYTES=$((1024 * 1024 * 1024))
@@ -88,6 +89,7 @@ Usage:
 Options:
   $(t usage_opt_yes)
   $(t usage_opt_no_kernel)
+  $(t usage_opt_debug)
   $(t opt_lang)
   $(t usage_opt_bundle)
   $(t usage_opt_dir)
@@ -98,6 +100,7 @@ Environment:
   AWG_GUI_INSTALL_DIR   Target install dir (default: ${INSTALL_DIR})
   AWG_GUI_LANG          Installer language ru|en (default: ru)
   AWG_GUI_SKIP_KERNEL=1 Same as --no-awg-kernel
+  AWG_GUI_DEBUG=1       Same as --debug
 EOF
   else
     cat <<EOF
@@ -111,6 +114,7 @@ Usage:
 Options:
   $(t usage_opt_yes)
   $(t usage_opt_no_kernel)
+  $(t usage_opt_debug)
   $(t opt_lang)
   $(t usage_opt_bundle)
   $(t usage_opt_dir)
@@ -121,6 +125,7 @@ Environment:
   AWG_GUI_INSTALL_DIR   Каталог установки (по умолчанию: ${INSTALL_DIR})
   AWG_GUI_LANG          Язык установщика ru|en (по умолчанию: ru)
   AWG_GUI_SKIP_KERNEL=1 То же, что --no-awg-kernel
+  AWG_GUI_DEBUG=1       То же, что --debug
 EOF
   fi
 }
@@ -132,6 +137,7 @@ for arg in "$@"; do
   case "$arg" in
     --yes|-y) YES=1 ;;
     --no-awg-kernel) SKIP_KERNEL=1 ;;
+    --debug) DEBUG=1 ;;
     --lang=*) set_awg_gui_lang "${arg#*=}" ;;
     --bundle=*) BUNDLE_LOCAL="${arg#*=}" ;;
     --dir=*) INSTALL_DIR="${arg#*=}" ;;
@@ -145,6 +151,9 @@ export AWG_GUI_LANG
 
 if [[ "${AWG_GUI_SKIP_KERNEL:-0}" == "1" ]]; then
   SKIP_KERNEL=1
+fi
+if [[ "${AWG_GUI_DEBUG:-0}" == "1" ]]; then
+  DEBUG=1
 fi
 
 [[ "$(id -u)" -eq 0 ]] || die "$(t err_run_as_root_install_curl)"
@@ -490,9 +499,11 @@ main() {
   args=(--dir="${INSTALL_DIR}")
   [[ "${YES}" -eq 1 ]] && args+=(--yes)
   [[ "${SKIP_KERNEL}" -eq 1 ]] && args+=(--no-awg-kernel)
+  [[ "${DEBUG}" -eq 1 ]] && args+=(--debug)
   args+=(--lang="${AWG_GUI_LANG}")
   log "$(t log_running_release)"
   export AWG_GUI_LANG
+  [[ "${DEBUG}" -eq 1 ]] && export AWG_GUI_DEBUG=1
   "${bundle}" "${args[@]}"
   # Bundle finished: download/extract traps may still run on EXIT; clear leftovers + old images now.
   DOWNLOAD_TMP_DIR=""

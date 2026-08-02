@@ -5,6 +5,7 @@ set -euo pipefail
 INSTALL_DIR="${AWG_GUI_INSTALL_DIR:-/opt/awg-gui}"
 YES=0
 SKIP_KERNEL=0
+DEBUG=0
 
 # Minimal i18n inline until bundle extracts (or source from env already set by parent).
 if [[ -z "${_AWG_GUI_I18N_LOADED:-}" ]]; then
@@ -50,22 +51,24 @@ fi
 usage() {
   if [[ "${AWG_GUI_LANG}" == "en" ]]; then
     cat <<EOF
-Usage: $0 [--yes] [--no-awg-kernel] [--lang=ru|en] [--dir=/opt/awg-gui]
+Usage: $0 [--yes] [--no-awg-kernel] [--debug] [--lang=ru|en] [--dir=/opt/awg-gui]
 
 Extracts the release bundle and runs the production installer.
 
   --yes              Non-interactive (defaults; installs kernel module unless skipped)
   --no-awg-kernel    Skip AmneziaWG kernel module install
+  --debug            Show container logs on install failure
   --lang=ru|en       Installer language (default: ru; also AWG_GUI_LANG)
 EOF
   else
     cat <<EOF
-Usage: $0 [--yes] [--no-awg-kernel] [--lang=ru|en] [--dir=/opt/awg-gui]
+Usage: $0 [--yes] [--no-awg-kernel] [--debug] [--lang=ru|en] [--dir=/opt/awg-gui]
 
 Извлекает release-бандл и запускает production-установщик.
 
   --yes              Без интерактива (значения по умолчанию; kernel-модуль ставится, если не отключён)
   --no-awg-kernel    Пропустить установку модуля ядра AmneziaWG
+  --debug            Показать логи контейнеров при ошибке установки
   --lang=ru|en       Язык установщика (по умолчанию: ru; также AWG_GUI_LANG)
 EOF
   fi
@@ -75,6 +78,7 @@ for arg in "$@"; do
   case "$arg" in
     --yes|-y) YES=1 ;;
     --no-awg-kernel) SKIP_KERNEL=1 ;;
+    --debug) DEBUG=1 ;;
     --lang=*)
       AWG_GUI_LANG="${arg#*=}"
       case "$(printf '%s' "${AWG_GUI_LANG}" | tr '[:upper:]' '[:lower:]')" in
@@ -91,6 +95,9 @@ done
 
 if [[ "${AWG_GUI_SKIP_KERNEL:-0}" == "1" ]]; then
   SKIP_KERNEL=1
+fi
+if [[ "${AWG_GUI_DEBUG:-0}" == "1" ]]; then
+  DEBUG=1
 fi
 
 [[ "$(id -u)" -eq 0 ]] || { echo "[error] $(_run_t err_run_as_root)" >&2; exit 1; }
@@ -123,10 +130,12 @@ fi
 ARGS=()
 [[ "${YES}" -eq 1 ]] && ARGS+=(--yes)
 [[ "${SKIP_KERNEL}" -eq 1 ]] && ARGS+=(--no-awg-kernel)
+[[ "${DEBUG}" -eq 1 ]] && ARGS+=(--debug)
 ARGS+=(--lang="${AWG_GUI_LANG}")
 
 echo "[run] $(_run_t log_starting_installer "${INSTALL_DIR}")"
 export AWG_GUI_LANG
+[[ "${DEBUG}" -eq 1 ]] && export AWG_GUI_DEBUG=1
 "${INSTALL_DIR}/bundle-install.sh" "${ARGS[@]}"
 exit 0
 #__PAYLOAD__
