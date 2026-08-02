@@ -177,6 +177,64 @@ cleanup() {
   rm -rf "${BUILD_LOCK}" 2>/dev/null || true
 }
 
+# Drop awggui-*:OLD_VERSION tags left by previous builds (compose :latest stays for cache).
+prune_old_version_images() {
+  local img tag removed=0
+  while IFS= read -r img; do
+    [[ -n "${img}" ]] || continue
+    tag="${img#*:}"
+    [[ "${tag}" == "<none>" ]] && continue
+    [[ "${tag}" == "latest" ]] && continue
+    [[ "${tag}" == "${VERSION}" ]] && continue
+    if docker rmi "${img}" >/dev/null 2>&1; then
+      removed=$((removed + 1))
+      log "Removed old image ${img}"
+    fi
+  done < <(docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep -E '^awggui-(caddy|app|awg|panel-ops):' || true)
+
+  # Layers orphaned when compose retagged :latest / version tags
+  docker image prune -f >/dev/null 2>&1 || true
+
+  if [[ "${removed}" -gt 0 ]]; then
+    log "Pruned ${removed} old versioned image tag(s)"
+  fi
+}
+
+# Keep only the just-built .run (+ checksum); remove prior version/arch bundles.
+prune_old_dist_bundles() {
+  local f keep="awg-gui-${VERSION}-${ARCH}.run" removed=0
+  shopt -s nullglob
+  for f in "${DIST}"/awg-gui-*-*.run "${DIST}"/awg-gui-*-*.run.sha256; do
+    [[ -f "${f}" ]] || continue
+    case "$(basename "${f}")" in
+      "${keep}"|"${keep}.sha256") continue ;;
+    esac
+    rm -f "${f}"
+    removed=$((removed + 1))
+    log "Removed old bundle $(basename "${f}")"
+  done
+  # Stale staging dirs from interrupted builds
+  for f in "${DIST}"/.staging.*; do
+    [[ -e "${f}" ]] || continue
+    [[ "${f}" == "${STAGING}" ]] && continue
+    rm -rf "${f}"
+    log "Removed stale staging $(basename "${f}")"
+  done
+  shopt -u nullglob
+  if [[ "${removed}" -gt 0 ]]; then
+    log "Pruned ${removed} old dist bundle file(s)"
+  fi
+}
+
+prune_build_disk() {
+  local include_dist="${1:-0}"
+  prune_old_version_images
+  if [[ "${include_dist}" == "1" ]]; then
+    prune_old_dist_bundles
+  fi
+  docker builder prune -af >/dev/null 2>&1 || true
+}
+
 main() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -204,6 +262,10 @@ main() {
 
   trap cleanup EXIT
 
+  # Free Docker layers from previous versions before checking disk budget
+  log "Pruning old build images ..."
+  prune_build_disk 0
+
   require_free_gb 3
   ensure_sing_box_vendor
   compose_build
@@ -211,8 +273,10 @@ main() {
   assemble_runtime
   export_images
   make_run_bundle
-  # staging cleaned by EXIT trap; prune again after heavy export
-  docker builder prune -af >/dev/null 2>&1 || true
+
+  # After success: drop other version tags, old .run files, dangling layers, build cache
+  log "Reclaiming disk after export ..."
+  prune_build_disk 1
 
   log "Done. Publish dist/awg-gui-${VERSION}-${ARCH}.run to GitHub Releases."
   log "Users install with: curl -fsSL .../dist/install.sh | sudo bash"
