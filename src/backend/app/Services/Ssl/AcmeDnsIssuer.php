@@ -56,20 +56,32 @@ class AcmeDnsIssuer
      */
     public function readPendingChallenge(): ?array
     {
-        $dir = $this->challengeDir();
-        $ready = $dir.'/ready';
-        $validation = $dir.'/validation';
-        $domainFile = $dir.'/domain';
+        $fromFiles = $this->readChallengeFiles();
+        if ($fromFiles !== null) {
+            $this->backfillTxtValueInOrder($fromFiles['domain'], $fromFiles['txt_value']);
 
-        if (! is_file($ready) || ! is_readable($validation) || ! is_readable($domainFile)) {
+            return $fromFiles;
+        }
+
+        // Fallback: order.json keeps txt_value so UI survives a missing ready/validation file.
+        if (! is_readable($this->acmeDir().'/pending/order.json')) {
             return null;
         }
 
-        $domain = trim((string) file_get_contents($domainFile));
-        $value = trim((string) file_get_contents($validation));
+        try {
+            $pending = $this->loadPending();
+        } catch (RuntimeException) {
+            return null;
+        }
+
+        $domain = strtolower(trim((string) ($pending['domain'] ?? '')));
+        $value = trim((string) ($pending['txt_value'] ?? ''));
         if ($domain === '' || $value === '') {
             return null;
         }
+
+        // Re-materialize challenge files for older pending orders / partial writes.
+        $this->writeChallengeFiles($domain, $value);
 
         return [
             'domain' => $domain,
@@ -80,12 +92,39 @@ class AcmeDnsIssuer
 
     public function hasPendingOrder(): bool
     {
-        return is_readable($this->acmeDir().'/pending/order.json')
-            && $this->readPendingChallenge() !== null;
+        if (! is_readable($this->acmeDir().'/pending/order.json')) {
+            return false;
+        }
+        if (! is_readable($this->acmeDir().'/pending/domain.pem')) {
+            return false;
+        }
+
+        return $this->readPendingChallenge() !== null;
+    }
+
+    /**
+     * Pending challenge for a specific domain, if an order can still be completed.
+     *
+     * @return array{txt_name:string,txt_value:string,domain:string}|null
+     */
+    public function reusableChallengeFor(string $domain): ?array
+    {
+        $domain = strtolower(trim($domain));
+        if ($domain === '' || ! $this->hasPendingOrder()) {
+            return null;
+        }
+
+        $existing = $this->readPendingChallenge();
+        if ($existing === null || ($existing['domain'] ?? '') !== $domain) {
+            return null;
+        }
+
+        return $existing;
     }
 
     /**
      * Start (or reuse) a DNS-01 order. Returns TXT challenge for the UI.
+     * Same domain always reuses the existing TXT until abort/complete unless $forceNew.
      *
      * @return array{txt_name:string,txt_value:string,domain:string}
      */
@@ -100,12 +139,9 @@ class AcmeDnsIssuer
         $this->ensureLayout();
 
         if (! $forceNew) {
-            $existing = $this->readPendingChallenge();
-            if ($existing !== null && $this->hasPendingOrder()) {
-                $pending = $this->loadPending();
-                if (($pending['domain'] ?? '') === $domain) {
-                    return $existing;
-                }
+            $existing = $this->reusableChallengeFor($domain);
+            if ($existing !== null) {
+                return $existing;
             }
         }
 
@@ -151,6 +187,7 @@ class AcmeDnsIssuer
 
         $token = (string) $dnsChallenge['token'];
         $txtValue = $client->dnsTxtValue($token);
+        $txtName = '_acme-challenge.'.$domain;
 
         $domainKeyPem = $this->generateRsaPrivateKeyPem();
         file_put_contents($this->acmeDir().'/pending/domain.pem', $domainKeyPem);
@@ -164,6 +201,8 @@ class AcmeDnsIssuer
             'authz_url' => $authzUrl,
             'challenge_url' => (string) $dnsChallenge['url'],
             'challenge_token' => $token,
+            'txt_name' => $txtName,
+            'txt_value' => $txtValue,
             'account_url' => $client->accountUrl(),
             'created_at' => gmdate('c'),
         ];
@@ -176,7 +215,7 @@ class AcmeDnsIssuer
 
         return [
             'domain' => $domain,
-            'txt_name' => '_acme-challenge.'.$domain,
+            'txt_name' => $txtName,
             'txt_value' => $txtValue,
         ];
     }
@@ -295,6 +334,33 @@ class AcmeDnsIssuer
         $this->clearPendingFiles();
     }
 
+    /**
+     * @return array{txt_name:string,txt_value:string,domain:string}|null
+     */
+    private function readChallengeFiles(): ?array
+    {
+        $dir = $this->challengeDir();
+        $ready = $dir.'/ready';
+        $validation = $dir.'/validation';
+        $domainFile = $dir.'/domain';
+
+        if (! is_file($ready) || ! is_readable($validation) || ! is_readable($domainFile)) {
+            return null;
+        }
+
+        $domain = strtolower(trim((string) file_get_contents($domainFile)));
+        $value = trim((string) file_get_contents($validation));
+        if ($domain === '' || $value === '') {
+            return null;
+        }
+
+        return [
+            'domain' => $domain,
+            'txt_name' => '_acme-challenge.'.$domain,
+            'txt_value' => $value,
+        ];
+    }
+
     private function writeChallengeFiles(string $domain, string $txtValue): void
     {
         $dir = $this->challengeDir();
@@ -306,6 +372,29 @@ class AcmeDnsIssuer
         @unlink($dir.'/done');
         @unlink($dir.'/abort');
         touch($dir.'/ready');
+    }
+
+    private function backfillTxtValueInOrder(string $domain, string $txtValue): void
+    {
+        $path = $this->acmeDir().'/pending/order.json';
+        if (! is_readable($path)) {
+            return;
+        }
+        try {
+            $pending = $this->loadPending();
+        } catch (RuntimeException) {
+            return;
+        }
+        if (($pending['domain'] ?? '') !== $domain) {
+            return;
+        }
+        if (trim((string) ($pending['txt_value'] ?? '')) === $txtValue
+            && trim((string) ($pending['txt_name'] ?? '')) !== '') {
+            return;
+        }
+        $pending['txt_value'] = $txtValue;
+        $pending['txt_name'] = '_acme-challenge.'.$domain;
+        file_put_contents($path, json_encode($pending, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
     }
 
     private function clearPendingFiles(): void

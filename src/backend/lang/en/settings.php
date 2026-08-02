@@ -15,7 +15,7 @@ return [
     'ssl_was_already_issued' => 'Certificate had already been issued — HTTPS enabled',
     'webhook_url_empty' => 'Webhook URL is empty',
 
-    'ssl_dns_hint' => 'An A record pointing to the panel IP is not enough to issue or renew a Let\'s Encrypt certificate. You will also need to create a TXT record for _acme-challenge in the domain DNS (name and value will be shown after you click «Issue» / «Renew»). After adding the record, confirm issuance in the panel.',
+    'ssl_dns_hint' => 'An A record pointing to the panel IP is not enough to issue or renew a Let\'s Encrypt certificate. You will also need to create a TXT record for _acme-challenge in the domain DNS (name and value will be shown after you click «Issue» / «Renew»). Global DNS propagation can take up to an hour — the TXT value is kept for this domain until you abort or finish issuance. After adding the record, confirm issuance in the panel.',
     'caddyfile_write_failed' => 'Failed to write Caddyfile',
     'panel_domain_required' => 'First set and save the panel domain.',
     'le_email_required' => 'Enter a valid email for Let\'s Encrypt.',
@@ -37,6 +37,7 @@ return [
 
     'domain_check_need_public_ipv4' => 'To verify the domain, set a specific public IPv4 for the server (not auto).',
     'public_ip_must_be_ipv4' => 'The server public IP must be an IPv4 address to match against the domain.',
+    'public_ip_detect_failed' => 'Could not detect the server public IPv4.',
     'domain_no_a_record' => 'Domain «:domain» does not resolve to an A record (IPv4).',
     'domain_points_elsewhere' => 'Domain «:domain» points to :got, not the panel public IP :host.',
     'port_must_be_number' => 'Port :label must be a number.',

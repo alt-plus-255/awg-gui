@@ -88,6 +88,78 @@ class AcmeDnsIssuerTest extends TestCase
         $this->assertSame($challenge, $issuer->readPendingChallenge());
     }
 
+    public function test_start_reuses_same_txt_for_domain(): void
+    {
+        $orderCalls = 0;
+        Http::fake(function ($request) use (&$orderCalls) {
+            $url = (string) $request->url();
+            $method = $request->method();
+
+            if ($method === 'GET' && str_contains($url, 'directory')) {
+                return Http::response([
+                    'newNonce' => 'https://acme.test/new-nonce',
+                    'newAccount' => 'https://acme.test/new-account',
+                    'newOrder' => 'https://acme.test/new-order',
+                ], 200);
+            }
+            if ($method === 'HEAD') {
+                return Http::response('', 200, ['Replay-Nonce' => 'n1']);
+            }
+            if (str_contains($url, 'new-account')) {
+                return Http::response(['status' => 'valid'], 201, [
+                    'Location' => 'https://acme.test/acct/1',
+                    'Replay-Nonce' => 'n2',
+                ]);
+            }
+            if (str_contains($url, 'new-order')) {
+                $orderCalls++;
+
+                return Http::response([
+                    'status' => 'pending',
+                    'finalize' => 'https://acme.test/finalize/1',
+                    'authorizations' => ['https://acme.test/authz/1'],
+                ], 201, [
+                    'Location' => 'https://acme.test/order/1',
+                    'Replay-Nonce' => 'n3',
+                ]);
+            }
+            if (str_contains($url, 'authz/1')) {
+                return Http::response([
+                    'status' => 'pending',
+                    'identifier' => ['type' => 'dns', 'value' => 'panel.example.com'],
+                    'challenges' => [[
+                        'type' => 'dns-01',
+                        'url' => 'https://acme.test/chal/1',
+                        'token' => 'stable-token',
+                        'status' => 'pending',
+                    ]],
+                ], 200, ['Replay-Nonce' => 'n4']);
+            }
+
+            return Http::response(['detail' => 'unexpected'], 500);
+        });
+
+        $issuer = new AcmeDnsIssuer($this->root, 'https://acme.test/directory');
+        $first = $issuer->start('panel.example.com', 'admin@example.com');
+        $second = $issuer->start('panel.example.com', 'admin@example.com');
+
+        $this->assertSame(1, $orderCalls);
+        $this->assertSame($first['txt_value'], $second['txt_value']);
+        $this->assertSame($first, $second);
+
+        $pending = json_decode((string) file_get_contents($this->root.'/acme/pending/order.json'), true);
+        $this->assertIsArray($pending);
+        $this->assertSame($first['txt_value'], $pending['txt_value']);
+
+        // Simulate page reload: challenge files gone, order.json still has txt_value.
+        @unlink($this->root.'/acme/challenge/ready');
+        @unlink($this->root.'/acme/challenge/validation');
+        @unlink($this->root.'/acme/challenge/domain');
+        $restored = $issuer->readPendingChallenge();
+        $this->assertNotNull($restored);
+        $this->assertSame($first['txt_value'], $restored['txt_value']);
+    }
+
     public function test_abort_clears_pending_challenge(): void
     {
         Http::fake(function ($request) {

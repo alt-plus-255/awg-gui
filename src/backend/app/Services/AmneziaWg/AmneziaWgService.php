@@ -11,6 +11,7 @@ use App\Services\Docker\DockerRuntime;
 use App\Services\AmneziaWg\Versions\AwgVersionProfile;
 use App\Services\AmneziaWg\Versions\AwgVersionRegistry;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
@@ -210,6 +211,7 @@ class AmneziaWgService
             'ssl_status' => 'disabled',
             'ssl_error' => '',
             'ssl_expires_at' => '',
+            'ssl_pending_challenge' => '',
             'failure_webhook_url' => '',
             'timezone' => (string) env('TZ', 'UTC'),
             'telegram_bot_token' => '',
@@ -354,6 +356,36 @@ class AmneziaWgService
         }
 
         return (string) $endpointHost;
+    }
+
+    /**
+     * Detect the server's current public IPv4 (same sources as the host installer).
+     */
+    public function detectPublicIpv4(): string
+    {
+        foreach (['https://ifconfig.me', 'https://api.ipify.org'] as $url) {
+            try {
+                $response = Http::timeout(5)
+                    ->withHeaders(['Accept' => 'text/plain'])
+                    ->get($url);
+                if (! $response->successful()) {
+                    continue;
+                }
+                $ip = trim((string) $response->body());
+                if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+                    return $ip;
+                }
+            } catch (\Throwable) {
+                // try next source
+            }
+        }
+
+        $host = trim((string) (request()?->getHost() ?: ''));
+        if (filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+            return $host;
+        }
+
+        return '';
     }
 
     /**

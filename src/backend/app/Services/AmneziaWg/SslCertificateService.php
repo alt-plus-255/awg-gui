@@ -68,7 +68,7 @@ class SslCertificateService
         $domain = $this->awg->resolvePanelDomain();
         $httpsPort = (string) Setting::getValue('panel_https_port', env('PANEL_HTTPS_PORT', '7443'));
 
-        $challenge = $this->readPendingChallenge();
+        $challenge = $this->resolvePendingChallenge();
         if ($challenge !== null && in_array($status, ['disabled', 'active', 'error'], true)) {
             $status = 'pending';
         }
@@ -124,7 +124,7 @@ class SslCertificateService
      */
     public function readPendingChallenge(): ?array
     {
-        return $this->issuer()->readPendingChallenge();
+        return $this->resolvePendingChallenge();
     }
 
     public function ensureHttpCaddyfile(): void
@@ -147,6 +147,8 @@ class SslCertificateService
 
     /**
      * Start DNS-01 issuance (or renew). Returns TXT challenge for the user.
+     * Reuses the same TXT for the current domain until abort/complete so DNS
+     * propagation (up to ~1h) is not reset by page reloads or repeated Issue clicks.
      *
      * @return array{txt_name:string,txt_value:string,domain:string,email:string}
      */
@@ -165,15 +167,18 @@ class SslCertificateService
         $endpoint = trim((string) Setting::getValue('server_endpoint', env('SERVER_ENDPOINT', 'auto')));
         $this->awg->assertDomainPointsToPublicIp($domain, $endpoint);
 
-        $existing = $this->readPendingChallenge();
-        if ($existing !== null && $this->issuer()->hasPendingOrder() && ! $forceRenew) {
+        // Keep the same TXT for this domain — do not open a new ACME order while pending exists.
+        $existing = $this->issuer()->reusableChallengeFor($domain);
+        if ($existing !== null) {
             Setting::setValue('ssl_email', $email);
             Setting::setValue('ssl_status', 'pending');
             Setting::setValue('ssl_error', '');
+            $this->storeChallenge($existing);
 
             return array_merge($existing, ['email' => $email]);
         }
 
+        // forceRenew only matters when there is no reusable pending challenge.
         $this->abortChallenge(quiet: true);
         $this->ensureHostLayout();
 
@@ -183,7 +188,9 @@ class SslCertificateService
 
         try {
             $challenge = $this->issuer()->start($domain, $email, forceNew: $forceRenew);
+            $this->storeChallenge($challenge);
         } catch (\Throwable $e) {
+            $this->clearStoredChallenge();
             Setting::setValue('ssl_status', 'error');
             $err = trim($e->getMessage()) !== '' ? $e->getMessage() : __('settings.acme_start_failed');
             Setting::setValue('ssl_error', $err);
@@ -241,6 +248,7 @@ class SslCertificateService
      */
     public function activateInstalledCertificate(): array
     {
+        $this->clearStoredChallenge();
         $this->installPanelCertsFromLetsEncrypt();
         $expiresAt = $this->readCertExpiresAt($this->certsPanelDir().'/fullchain.pem') ?? '';
 
@@ -276,6 +284,7 @@ class SslCertificateService
     public function abortChallenge(bool $quiet = false): void
     {
         $this->issuer()->abort();
+        $this->clearStoredChallenge();
 
         if (! $quiet && Setting::getValue('ssl_status') === 'pending' && ! $this->isSslEnabled()) {
             Setting::setValue('ssl_status', 'disabled');
@@ -386,6 +395,103 @@ class SslCertificateService
                 @mkdir($dir, 0755, true);
             }
         }
+    }
+
+    /**
+     * Challenge from ACME files, mirrored into Settings for page-reload survival.
+     *
+     * @return array{txt_name:string,txt_value:string,domain:string}|null
+     */
+    private function resolvePendingChallenge(): ?array
+    {
+        $domain = strtolower(trim($this->awg->resolvePanelDomain()));
+        $fromFiles = $this->issuer()->readPendingChallenge();
+        if ($fromFiles !== null) {
+            if ($domain !== '' && ($fromFiles['domain'] ?? '') !== $domain) {
+                // Stale challenge for a previous panel domain.
+                return null;
+            }
+            $this->storeChallenge($fromFiles);
+
+            return $fromFiles;
+        }
+
+        $stored = $this->readStoredChallenge();
+        if ($stored === null) {
+            return null;
+        }
+        if ($domain !== '' && ($stored['domain'] ?? '') !== $domain) {
+            $this->clearStoredChallenge();
+
+            return null;
+        }
+
+        // Prefer not to show a DB-only challenge that can no longer be completed.
+        if (! $this->issuer()->hasPendingOrder()) {
+            $this->clearStoredChallenge();
+
+            return null;
+        }
+
+        return $stored;
+    }
+
+    /**
+     * @param  array{txt_name?:string,txt_value?:string,domain?:string}  $challenge
+     */
+    private function storeChallenge(array $challenge): void
+    {
+        $domain = strtolower(trim((string) ($challenge['domain'] ?? '')));
+        $txtName = trim((string) ($challenge['txt_name'] ?? ''));
+        $txtValue = trim((string) ($challenge['txt_value'] ?? ''));
+        if ($domain === '' || $txtValue === '') {
+            return;
+        }
+        if ($txtName === '') {
+            $txtName = '_acme-challenge.'.$domain;
+        }
+
+        Setting::setValue('ssl_pending_challenge', json_encode([
+            'domain' => $domain,
+            'txt_name' => $txtName,
+            'txt_value' => $txtValue,
+            'saved_at' => gmdate('c'),
+        ], JSON_UNESCAPED_SLASHES));
+    }
+
+    /**
+     * @return array{txt_name:string,txt_value:string,domain:string}|null
+     */
+    private function readStoredChallenge(): ?array
+    {
+        $raw = trim((string) Setting::getValue('ssl_pending_challenge', ''));
+        if ($raw === '') {
+            return null;
+        }
+        $data = json_decode($raw, true);
+        if (! is_array($data)) {
+            return null;
+        }
+        $domain = strtolower(trim((string) ($data['domain'] ?? '')));
+        $txtValue = trim((string) ($data['txt_value'] ?? ''));
+        $txtName = trim((string) ($data['txt_name'] ?? ''));
+        if ($domain === '' || $txtValue === '') {
+            return null;
+        }
+        if ($txtName === '') {
+            $txtName = '_acme-challenge.'.$domain;
+        }
+
+        return [
+            'domain' => $domain,
+            'txt_name' => $txtName,
+            'txt_value' => $txtValue,
+        ];
+    }
+
+    private function clearStoredChallenge(): void
+    {
+        Setting::setValue('ssl_pending_challenge', '');
     }
 
     private function buildHttpCaddyfile(): string

@@ -15,6 +15,25 @@ if [[ -d /awg ]]; then
   chown -R www-data:www-data /awg 2>/dev/null || chmod -R g+rwX /awg 2>/dev/null || true
 fi
 
+# Host bind-mount (/etc/awg-gui → /host-awg-gui) is created as root by the installer.
+# App writes ACME keys, certs, Caddyfile, webhook.conf and update state as www-data.
+if [[ -d /host-awg-gui ]]; then
+  mkdir -p \
+    /host-awg-gui/acme/account \
+    /host-awg-gui/acme/pending \
+    /host-awg-gui/acme/challenge \
+    /host-awg-gui/certs/panel \
+    /host-awg-gui/certs/live/panel
+  if ! chown -R www-data:www-data /host-awg-gui/acme /host-awg-gui/certs 2>/dev/null; then
+    chmod -R a+rwX /host-awg-gui/acme /host-awg-gui/certs 2>/dev/null || true
+  fi
+  for f in Caddyfile webhook.conf update.state update.log; do
+    if [[ -e "/host-awg-gui/${f}" ]]; then
+      chown www-data:www-data "/host-awg-gui/${f}" 2>/dev/null || chmod a+rw "/host-awg-gui/${f}" 2>/dev/null || true
+    fi
+  done
+fi
+
 run_www_data() {
   su -s /bin/bash www-data -c "$*"
 }

@@ -130,11 +130,23 @@
                 <div class="col-12 col-md-6">
                   <q-input
                     v-model="form.server_endpoint"
-                    :label="t('settings.publicIp')"
+                    :label="publicIpLabel"
                     :hint="t('settings.publicIpHint')"
-
                     filled
-                  />
+                  >
+                    <template #append>
+                      <q-btn
+                        flat
+                        dense
+                        round
+                        icon="public"
+                        color="primary"
+                        :loading="detectingPublicIp"
+                        :title="t('settings.publicIpDetect')"
+                        @click="fillDetectedPublicIp"
+                      />
+                    </template>
+                  </q-input>
                 </div>
                 <div class="col-12 col-md-6">
                   <q-input
@@ -247,6 +259,7 @@
               </div>
               <div class="row q-gutter-sm">
                 <q-btn
+                  v-if="!awgKernelInstalled"
                   color="primary"
                   :label="t('settings.awgKernelInstall')"
                   :loading="awgKernel.starting || awgKernel.running"
@@ -254,6 +267,7 @@
                   @click="onAwgKernelInstall"
                 />
                 <q-btn
+                  v-if="awgKernelInstalled"
                   outline
                   color="negative"
                   :label="t('settings.awgKernelUninstall')"
@@ -309,7 +323,8 @@
                 <div class="text-caption text-grey-5 q-mb-xs">{{ t('settings.txtName') }}</div>
                 <div class="mono q-mb-sm">{{ activeChallenge.txt_name }}</div>
                 <div class="text-caption text-grey-5 q-mb-xs">{{ t('settings.txtValue') }}</div>
-                <div class="mono q-mb-md" style="word-break: break-all;">{{ activeChallenge.txt_value }}</div>
+                <div class="mono q-mb-sm" style="word-break: break-all;">{{ activeChallenge.txt_value }}</div>
+                <div class="text-caption text-grey-5 q-mb-md">{{ t('settings.txtKeepHint') }}</div>
                 <div class="row q-gutter-sm">
                   <q-btn
                     color="primary"
@@ -979,11 +994,52 @@ const sslStatusLabel = computed(() => {
   return map[ssl.value.status] || ssl.value.status || '—'
 })
 
+const lastDetectedPublicIp = ref('')
+const detectingPublicIp = ref(false)
+
 const endpointHostPreview = computed(() => {
   const domain = String(form.panel_domain || '').trim()
   if (form.endpoint_use_domain && domain) return domain
-  return String(form.server_endpoint || '').trim() || '—'
+  const ep = String(form.server_endpoint || '').trim()
+  if (!ep || ep === 'auto') return settingsStore.displayEndpoint || lastDetectedPublicIp.value || '—'
+  return ep
 })
+
+const detectedPublicIp = computed(() => {
+  if (lastDetectedPublicIp.value) return lastDetectedPublicIp.value
+  const fromStore = String(settingsStore.displayEndpoint || '').trim()
+  if (/^(?:\d{1,3}\.){3}\d{1,3}$/.test(fromStore)) return fromStore
+  const host = typeof window !== 'undefined' ? String(window.location.hostname || '').trim() : ''
+  if (/^(?:\d{1,3}\.){3}\d{1,3}$/.test(host)) return host
+  return fromStore && fromStore !== 'auto' ? fromStore : ''
+})
+
+const publicIpLabel = computed(() => {
+  const val = String(form.server_endpoint || '').trim()
+  if (val === 'auto') {
+    const ip = detectedPublicIp.value
+    if (ip) return t('settings.publicIpAutoLabel', { ip })
+  }
+  return t('settings.publicIp')
+})
+
+async function fillDetectedPublicIp () {
+  detectingPublicIp.value = true
+  try {
+    const { data } = await api.get('/api/settings/detect-public-ip')
+    const ip = String(data?.public_ip || '').trim()
+    if (!ip) throw new Error('empty')
+    lastDetectedPublicIp.value = ip
+    form.server_endpoint = ip
+  } catch (e) {
+    $q.notify({
+      type: 'negative',
+      message: e?.response?.data?.message || t('settings.publicIpDetectError')
+    })
+  } finally {
+    detectingPublicIp.value = false
+  }
+}
 
 const updateStatusBusy = computed(() => projectUpdate.busy)
 
@@ -1625,6 +1681,10 @@ watch(activeTab, (tab) => {
   if (tab === 'panel') void awgKernel.fetchStatus({ silent: true })
 })
 
+const awgKernelInstalled = computed(() =>
+  !!awgKernel.package_installed || !!awgKernel.module_loaded
+)
+
 const awgKernelStatusLabel = computed(() => {
   if (awgKernel.running) return t('settings.awgKernelRunning')
   const map = {
@@ -1660,9 +1720,9 @@ function onAwgKernelUninstall () {
   $q.dialog({
     title: t('settings.awgKernelUninstallConfirmTitle'),
     message: t('settings.awgKernelUninstallConfirmText'),
-    cancel: true,
-    persistent: true,
-    ok: { label: t('settings.awgKernelUninstall'), color: 'negative' }
+    cancel: { label: t('common.cancel'), flat: true },
+    ok: { label: t('settings.confirm'), color: 'negative' },
+    persistent: true
   }).onOk(async () => {
     try {
       await awgKernel.startUninstall()

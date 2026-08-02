@@ -119,6 +119,7 @@ Route::delete('/resolver/connections/{connection}', [ResolverConnectionControlle
 
 Route::get('/settings', [SettingsController::class, 'show']);
 Route::put('/settings', [SettingsController::class, 'update']);
+Route::get('/settings/detect-public-ip', [SettingsController::class, 'detectPublicIp']);
 Route::post('/settings/restart-awg', [SettingsController::class, 'restartAwg']);
 Route::get('/settings/update-status', [SettingsController::class, 'updateStatus']);
 Route::post('/settings/check-updates', [SettingsController::class, 'checkProjectUpdates']);

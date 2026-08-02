@@ -51,6 +51,20 @@ class SettingsController extends Controller
         ]);
     }
 
+    public function detectPublicIp()
+    {
+        $ip = $this->awg->detectPublicIpv4();
+        if ($ip === '') {
+            return response()->json([
+                'message' => __('settings.public_ip_detect_failed'),
+            ], 422);
+        }
+
+        return response()->json([
+            'public_ip' => $ip,
+        ]);
+    }
+
     public function update(Request $request)
     {
         $data = $request->validate([
@@ -241,8 +255,12 @@ class SettingsController extends Controller
         }
 
         $domainClearedOrChanged = $panelDomain === '' || ($oldDomain !== '' && strcasecmp($oldDomain, $panelDomain) !== 0);
-        if ($domainClearedOrChanged && $this->ssl->isSslEnabled()) {
-            $this->ssl->disable();
+        if ($domainClearedOrChanged) {
+            if ($this->ssl->isSslEnabled()) {
+                $this->ssl->disable();
+            } else {
+                $this->ssl->abortChallenge(quiet: true);
+            }
         }
 
         $this->awg->writeWebhookConf();

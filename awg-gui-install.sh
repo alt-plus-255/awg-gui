@@ -551,8 +551,13 @@ write_env_from_example() {
 seed_host_ssl_files() {
   mkdir -p /etc/awg-gui/certs/panel /etc/awg-gui/certs/live/panel \
     /etc/awg-gui/acme/account /etc/awg-gui/acme/pending /etc/awg-gui/acme/challenge
+  # App container writes these as www-data (UID/GID 33 on Debian php images).
+  chown -R 33:33 /etc/awg-gui/acme /etc/awg-gui/certs 2>/dev/null || true
+  chmod -R a+rwX /etc/awg-gui/acme /etc/awg-gui/certs
   if [[ -f "${SRC_DIR}/caddy/Caddyfile" ]]; then
     cp "${SRC_DIR}/caddy/Caddyfile" /etc/awg-gui/Caddyfile
+    chown 33:33 /etc/awg-gui/Caddyfile 2>/dev/null || true
+    chmod a+rw /etc/awg-gui/Caddyfile
   fi
 }
 
@@ -566,7 +571,9 @@ ENV_FILE=${ENV_FILE}
 PROJECT_NAME=${PROJECT_NAME}
 EOF
   touch /etc/awg-gui/webhook.conf
-  chmod 644 /etc/awg-gui/awg-gui.conf /etc/awg-gui/webhook.conf
+  chmod 644 /etc/awg-gui/awg-gui.conf
+  chown 33:33 /etc/awg-gui/webhook.conf 2>/dev/null || true
+  chmod a+rw /etc/awg-gui/webhook.conf
   install -m 0644 "${SRC_DIR}/systemd/awg-gui.service" /etc/systemd/system/awg-gui.service
   systemctl daemon-reload
   systemctl enable --now awg-gui.service
