@@ -5,8 +5,6 @@ namespace App\Http\Middleware;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Pipeline\Pipeline;
-use Illuminate\Support\Str;
-use Laravel\Sanctum\Sanctum;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
@@ -18,24 +16,14 @@ class EnsureSpaStateful
 {
     public function handle(Request $request, Closure $next): Response
     {
+        // Prefer the real request host for matching, even if browser sent another Origin.
         $host = $request->getHttpHost();
         $origin = $request->getScheme().'://'.$host;
-
-        // Prefer the real request host for matching, even if browser sent another Origin.
         $request->headers->set('Origin', $origin);
         if (! $request->headers->get('referer')) {
             $request->headers->set('Referer', $origin.'/');
         }
-
-        $stateful = array_values(array_unique(array_filter(array_merge(
-            config('sanctum.stateful', []),
-            [
-                $host,
-                Str::before($host, ':'),
-                Sanctum::$currentRequestHostPlaceholder,
-            ]
-        ))));
-        config(['sanctum.stateful' => $stateful]);
+        EnsureSanctumRequestHost::align($request);
 
         // Always run the SPA cookie stack (do not depend on fromFrontend heuristics).
         return (new Pipeline(app()))->send($request)->through([

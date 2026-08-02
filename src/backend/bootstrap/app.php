@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\EnsureApiAuthenticated;
+use App\Http\Middleware\EnsureSanctumRequestHost;
 use App\Http\Middleware\EnsureSpaStateful;
 use App\Http\Middleware\SetLocale;
 use App\Support\ApiHttpErrorMessage;
@@ -34,6 +35,8 @@ return Application::configure(basePath: dirname(__DIR__))
         );
         // Global: locale for unmatched routes (404) and early exception rendering
         $middleware->prepend(SetLocale::class);
+        // Align Sanctum stateful hosts for /sanctum/csrf-cookie (web) and /api/* alike.
+        $middleware->prepend(EnsureSanctumRequestHost::class);
         $middleware->api(prepend: [
             EnsureSpaStateful::class,
             SetLocale::class,

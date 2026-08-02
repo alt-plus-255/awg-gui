@@ -426,18 +426,30 @@ resolve_endpoint_host() {
 
 sync_panel_access_env() {
   local endpoint="$1" panel_port="$2" file="$3"
-  local host existing_app_url
+  local host existing_app_url panel_domain https_port domains app_host
   host="$(resolve_endpoint_host "${endpoint}")"
   existing_app_url="$(env_get APP_URL "${file}" 2>/dev/null || true)"
+  panel_domain="$(env_get PANEL_DOMAIN /etc/awg-gui/webhook.conf 2>/dev/null || true)"
+  https_port="$(env_get PANEL_HTTPS_PORT /etc/awg-gui/webhook.conf 2>/dev/null || true)"
+  https_port="${https_port:-7443}"
   # Do not clobber an existing HTTPS/domain APP_URL (panel SSL / custom domain).
   if [[ -z "${existing_app_url}" \
      || "${existing_app_url}" == "http://localhost:${panel_port}" \
      || "${existing_app_url}" =~ ^http://[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+:[0-9]+$ ]]; then
     env_set "APP_URL" "http://${host}:${panel_port}" "${file}"
+    existing_app_url="http://${host}:${panel_port}"
   fi
-  env_set "SANCTUM_STATEFUL_DOMAINS" \
-    "${host},${host}:${panel_port},${host}:7443,localhost,localhost:${panel_port},127.0.0.1,127.0.0.1:${panel_port}" \
-    "${file}"
+  domains="${host},${host}:${panel_port},${host}:${https_port},localhost,localhost:${panel_port},localhost:${https_port},127.0.0.1,127.0.0.1:${panel_port},127.0.0.1:${https_port}"
+  if [[ -n "${panel_domain}" ]]; then
+    domains="${panel_domain},${panel_domain}:${panel_port},${panel_domain}:${https_port},${domains}"
+  fi
+  if [[ "${existing_app_url}" =~ ^https://([^/:]+) ]]; then
+    app_host="${BASH_REMATCH[1]}"
+    if [[ -n "${app_host}" && "${domains}" != *"${app_host}:${https_port}"* ]]; then
+      domains="${app_host},${app_host}:${panel_port},${app_host}:${https_port},${domains}"
+    fi
+  fi
+  env_set "SANCTUM_STATEFUL_DOMAINS" "${domains}" "${file}"
 }
 
 rand_secret() {

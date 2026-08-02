@@ -907,7 +907,21 @@ class AmneziaWgService
     public function bootstrapRuntime(): void
     {
         $this->writeWebhookConf();
-        app(SslCertificateService::class)->ensureHttpCaddyfile();
+        $ssl = app(SslCertificateService::class);
+        // After package updates the installer may seed a default HTTP Caddyfile.
+        // Re-apply the SSL site block when the panel still has SSL enabled so
+        // Caddy picks it up on start (bind-mount) or after a best-effort reload.
+        if ($ssl->isSslEnabled()) {
+            $ssl->writeCaddyfile(true);
+            try {
+                $ssl->reloadOrRecreateCaddy();
+            } catch (\Throwable) {
+                // Caddy often is not up yet during app entrypoint; file is enough.
+            }
+        } else {
+            $ssl->ensureHttpCaddyfile();
+        }
+        $this->syncPanelUrlToHostEnv();
         $this->applyConfig();
     }
 
@@ -1549,11 +1563,27 @@ class AmneziaWgService
         // Secure cookies only when IP is forced onto HTTPS domain; otherwise HTTP-by-IP login must work.
         $secureCookie = $sslEnabled && $this->shouldRedirectIpToDomain();
 
+        $statefulDomains = array_values(array_filter(
+            $this->resolveSanctumStatefulDomains(),
+            static function (string $domain): bool {
+                if ($domain === '') {
+                    return false;
+                }
+                if (class_exists(\Laravel\Sanctum\Sanctum::class)
+                    && $domain === \Laravel\Sanctum\Sanctum::$currentRequestHostPlaceholder) {
+                    return false;
+                }
+
+                return true;
+            }
+        ));
+
         $values = array_merge([
             'PANEL_PORT' => $httpPort,
             'PANEL_HTTPS_PORT' => $httpsPort,
             'APP_URL' => $appUrl,
             'SESSION_SECURE_COOKIE' => $secureCookie ? 'true' : 'false',
+            'SANCTUM_STATEFUL_DOMAINS' => implode(',', $statefulDomains),
         ], $extra);
 
         $candidates = [];

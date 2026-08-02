@@ -55,6 +55,7 @@ sync_env_endpoint() {
   local panel_port="${2:-8877}"
   local host="${endpoint}"
   local existing_app_url=""
+  local panel_domain="" https_port="7443" domains="" app_host=""
   if [[ "${endpoint}" == "auto" || -z "${endpoint}" ]]; then
     host="$(detect_public_ip)"
   fi
@@ -66,14 +67,28 @@ sync_env_endpoint() {
       existing_app_url="${BASH_REMATCH[1]}"
     fi
   fi
+  if [[ -f /etc/awg-gui/webhook.conf ]]; then
+    panel_domain="$(grep -E '^PANEL_DOMAIN=' /etc/awg-gui/webhook.conf 2>/dev/null | tail -1 | cut -d= -f2- || true)"
+    https_port="$(grep -E '^PANEL_HTTPS_PORT=' /etc/awg-gui/webhook.conf 2>/dev/null | tail -1 | cut -d= -f2- || true)"
+    https_port="${https_port:-7443}"
+  fi
   if [[ -z "${existing_app_url}" \
      || "${existing_app_url}" == "http://localhost:${panel_port}" \
      || "${existing_app_url}" =~ ^http://[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+:[0-9]+$ ]]; then
     env_set "APP_URL" "http://${host}:${panel_port}" "${ENV_FILE}"
+    existing_app_url="http://${host}:${panel_port}"
   fi
-  env_set "SANCTUM_STATEFUL_DOMAINS" \
-    "${host},${host}:${panel_port},localhost,localhost:${panel_port},127.0.0.1,127.0.0.1:${panel_port}" \
-    "${ENV_FILE}"
+  domains="${host},${host}:${panel_port},${host}:${https_port},localhost,localhost:${panel_port},localhost:${https_port},127.0.0.1,127.0.0.1:${panel_port},127.0.0.1:${https_port}"
+  if [[ -n "${panel_domain}" ]]; then
+    domains="${panel_domain},${panel_domain}:${panel_port},${panel_domain}:${https_port},${domains}"
+  fi
+  if [[ "${existing_app_url}" =~ ^https://([^/:]+) ]]; then
+    app_host="${BASH_REMATCH[1]}"
+    if [[ -n "${app_host}" && "${domains}" != *"${app_host}:${https_port}"* ]]; then
+      domains="${app_host},${app_host}:${panel_port},${app_host}:${https_port},${domains}"
+    fi
+  fi
+  env_set "SANCTUM_STATEFUL_DOMAINS" "${domains}" "${ENV_FILE}"
 }
 
 detect_public_ip() {
