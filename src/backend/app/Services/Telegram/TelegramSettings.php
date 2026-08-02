@@ -34,6 +34,7 @@ class TelegramSettings
      *   proxies: list<array<string, mixed>>,
      *   proxy_strategy: string,
      *   notifications_enabled: bool,
+     *   daily_report_enabled: bool,
      *   webhook_secret: string
      * }
      */
@@ -47,6 +48,7 @@ class TelegramSettings
             'proxies' => $this->proxies(),
             'proxy_strategy' => $this->proxyStrategy(),
             'notifications_enabled' => $this->notificationsEnabled(),
+            'daily_report_enabled' => $this->dailyReportEnabled(),
             'webhook_secret' => $this->webhookSecret(),
         ];
     }
@@ -91,6 +93,11 @@ class TelegramSettings
     public function notificationsEnabled(): bool
     {
         return filter_var(Setting::getValue('telegram_notifications_enabled', '1'), FILTER_VALIDATE_BOOLEAN);
+    }
+
+    public function dailyReportEnabled(): bool
+    {
+        return filter_var(Setting::getValue('telegram_daily_report_enabled', '1'), FILTER_VALIDATE_BOOLEAN);
     }
 
     public function webhookSecret(): string
@@ -297,6 +304,7 @@ class TelegramSettings
             'telegram_proxies' => $proxies,
             'telegram_proxy_strategy' => $this->proxyStrategy(),
             'telegram_notifications_enabled' => $this->notificationsEnabled() ? '1' : '0',
+            'telegram_daily_report_enabled' => $this->dailyReportEnabled() ? '1' : '0',
             // Never expose the real webhook secret to the browser.
             'telegram_webhook_secret' => $webhookSet ? '********' : '',
             'telegram_webhook_secret_set' => $webhookSet,

@@ -40,6 +40,7 @@ return [
     'public_ip_detect_failed' => 'Could not detect the server public IPv4.',
     'domain_no_a_record' => 'Domain «:domain» does not resolve to an A record (IPv4).',
     'domain_points_elsewhere' => 'Domain «:domain» points to :got, not the panel public IP :host.',
+    'domain_points_private' => 'Domain «:domain» resolves to a private/reserved address (:got). Use a public A record pointing at this server.',
     'port_must_be_number' => 'Port :label must be a number.',
     'port_out_of_range' => 'Port :label must be in the range 1–65535.',
     'http_https_ports_must_differ' => 'Panel HTTP and HTTPS ports must be different.',

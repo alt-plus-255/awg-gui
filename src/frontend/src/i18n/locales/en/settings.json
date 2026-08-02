@@ -16,6 +16,8 @@
   "telegramModePollingShort": "Long polling",
   "telegramModeWebhookShort": "Webhook",
   "telegramNotifications": "Peer online/offline notifications",
+  "telegramDailyReport": "Daily status report",
+  "telegramDailyReportHint": "Sent to Telegram every day at 09:00 (panel timezone)",
   "telegramProxies": "Proxy pool",
   "telegramProxiesHint": "Add SOCKS5/HTTP proxies and/or resolver connections. The bot picks an available one (or the fastest).",
   "telegramProxyStrategy": "Selection strategy",

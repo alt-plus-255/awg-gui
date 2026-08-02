@@ -86,6 +86,7 @@ class SettingsController extends Controller
             'telegram_proxies.*.enabled' => ['sometimes', 'boolean'],
             'telegram_proxy_strategy' => ['sometimes', 'string', Rule::in(['fastest', 'first_ok'])],
             'telegram_notifications_enabled' => ['sometimes', 'boolean'],
+            'telegram_daily_report_enabled' => ['sometimes', 'boolean'],
             'telegram_language' => ['sometimes', 'string', Rule::in(['en', 'ru'])],
             'singbox_egress_interface' => ['sometimes', 'string', 'max:32'],
         ]);
@@ -167,6 +168,15 @@ class SettingsController extends Controller
             unset($data['telegram_notifications_enabled']);
         }
 
+        if (array_key_exists('telegram_daily_report_enabled', $data)) {
+            $enabled = filter_var($data['telegram_daily_report_enabled'], FILTER_VALIDATE_BOOLEAN) ? '1' : '0';
+            if ($enabled !== (string) Setting::getValue('telegram_daily_report_enabled', '1')) {
+                Setting::setValue('telegram_daily_report_enabled', $enabled);
+                $telegramChanged = true;
+            }
+            unset($data['telegram_daily_report_enabled']);
+        }
+
         if (array_key_exists('telegram_language', $data)) {
             $language = (string) $data['telegram_language'];
             if ($language !== (string) Setting::getValue('telegram_language', TelegramSettings::LANG_EN)) {
@@ -227,7 +237,9 @@ class SettingsController extends Controller
                 $data['panel_domain'] = '';
             } else {
                 try {
-                    $this->awg->assertDomainPointsToPublicIp($panelDomain, $serverEndpoint);
+                    // Compare DNS to the real public IPv4, not WireGuard endpoint
+                    // (endpoint may be a LAN address on home/NAT installs).
+                    $this->awg->assertPanelDomainDns($panelDomain);
                 } catch (\InvalidArgumentException $e) {
                     return response()->json([
                         'message' => $e->getMessage(),
@@ -254,7 +266,13 @@ class SettingsController extends Controller
             $this->awg->syncTimezoneToHostEnv($tz);
         }
 
-        $domainClearedOrChanged = $panelDomain === '' || ($oldDomain !== '' && strcasecmp($oldDomain, $panelDomain) !== 0);
+        // Only touch SSL when the domain field itself changed in this request.
+        // An empty domain on unrelated saves must not wipe an active certificate.
+        $domainTouched = array_key_exists('panel_domain', $data);
+        $domainClearedOrChanged = $domainTouched && (
+            $panelDomain === ''
+            || ($oldDomain !== '' && strcasecmp($oldDomain, $panelDomain) !== 0)
+        );
         if ($domainClearedOrChanged) {
             if ($this->ssl->isSslEnabled()) {
                 $this->ssl->disable();

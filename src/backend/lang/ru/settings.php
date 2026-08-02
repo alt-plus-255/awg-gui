@@ -40,6 +40,7 @@ return [
     'public_ip_detect_failed' => 'Не удалось определить публичный IPv4 сервера.',
     'domain_no_a_record' => 'Домен «:domain» не резолвится в A-запись (IPv4).',
     'domain_points_elsewhere' => 'Домен «:domain» указывает на :got, а не на публичный IP панели :host.',
+    'domain_points_private' => 'Домен «:domain» резолвится в частный/зарезервированный адрес (:got). Укажите публичную A-запись на этот сервер.',
     'port_must_be_number' => 'Порт :label должен быть числом.',
     'port_out_of_range' => 'Порт :label должен быть в диапазоне 1–65535.',
     'http_https_ports_must_differ' => 'Порты HTTP и HTTPS панели должны отличаться.',

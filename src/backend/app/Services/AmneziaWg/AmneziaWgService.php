@@ -220,6 +220,7 @@ class AmneziaWgService
             'telegram_proxies' => '[]',
             'telegram_proxy_strategy' => 'fastest',
             'telegram_notifications_enabled' => '1',
+            'telegram_daily_report_enabled' => '1',
             'telegram_webhook_secret' => '',
             'telegram_mixed_auth_user' => '',
             'telegram_mixed_auth_pass' => '',
@@ -483,6 +484,83 @@ class AmneziaWgService
                 __('settings.domain_points_elsewhere', ['domain' => $domain, 'got' => $got, 'host' => $publicHost])
             );
         }
+    }
+
+    /**
+     * Validate panel domain against the server's real public IPv4.
+     * WireGuard SERVER_ENDPOINT may be a LAN address on NAT/home installs —
+     * that must not be used for DNS matching.
+     *
+     * Intentionally does NOT probe http://{domain} (would be SSRF).
+     *
+     * @throws \InvalidArgumentException
+     */
+    public function assertPanelDomainDns(string $domain): void
+    {
+        $domain = trim($domain);
+        if ($domain === '') {
+            return;
+        }
+
+        $resolved = $this->resolveIpv4Addresses($domain);
+        if ($resolved === []) {
+            throw new \InvalidArgumentException(
+                __('settings.domain_no_a_record', ['domain' => $domain])
+            );
+        }
+
+        // Reject private/reserved targets — domain must point at a public address.
+        foreach ($resolved as $ip) {
+            if (! $this->isPublicIpv4($ip)) {
+                throw new \InvalidArgumentException(
+                    __('settings.domain_points_private', [
+                        'domain' => $domain,
+                        'got' => implode(', ', $resolved),
+                    ])
+                );
+            }
+        }
+
+        $candidates = [];
+        $detected = $this->detectPublicIpv4();
+        if ($detected !== '' && $this->isPublicIpv4($detected)) {
+            $candidates[] = $detected;
+        }
+        $endpoint = $this->resolveServerEndpointHost();
+        if ($this->isPublicIpv4($endpoint)) {
+            $candidates[] = $endpoint;
+        }
+        $candidates = array_values(array_unique($candidates));
+
+        if ($candidates === []) {
+            throw new \InvalidArgumentException(__('settings.public_ip_detect_failed'));
+        }
+
+        foreach ($candidates as $ip) {
+            if (in_array($ip, $resolved, true)) {
+                return;
+            }
+        }
+
+        $got = implode(', ', $resolved);
+        throw new \InvalidArgumentException(
+            __('settings.domain_points_elsewhere', [
+                'domain' => $domain,
+                'got' => $got,
+                'host' => $candidates[0],
+            ])
+        );
+    }
+
+    public function isPublicIpv4(string $ip): bool
+    {
+        $ip = trim($ip);
+
+        return (bool) filter_var(
+            $ip,
+            FILTER_VALIDATE_IP,
+            FILTER_FLAG_IPV4 | FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE
+        );
     }
 
     /** @return list<string> */
@@ -1452,11 +1530,14 @@ class AmneziaWgService
         $httpPort = (string) Setting::getValue('panel_port', env('PANEL_PORT', '8877'));
         $httpsPort = $this->resolvePanelHttpsPort();
         $appUrl = $this->resolvePanelUrl();
+        $sslEnabled = filter_var(Setting::getValue('ssl_enabled', '0'), FILTER_VALIDATE_BOOLEAN);
 
         $values = array_merge([
             'PANEL_PORT' => $httpPort,
             'PANEL_HTTPS_PORT' => $httpsPort,
             'APP_URL' => $appUrl,
+            // Keep cookie Secure flag aligned with the live panel scheme.
+            'SESSION_SECURE_COOKIE' => $sslEnabled ? 'true' : 'false',
         ], $extra);
 
         $candidates = [];
@@ -1480,6 +1561,11 @@ class AmneziaWgService
                 continue;
             }
             foreach ($values as $key => $value) {
+                // Prevent .env injection via unexpected newlines in values.
+                $value = str_replace(["\r", "\n"], '', (string) $value);
+                if (! preg_match('/^[A-Z][A-Z0-9_]*$/', (string) $key)) {
+                    continue;
+                }
                 if (preg_match('/^'.preg_quote($key, '/').'=.*/m', $raw)) {
                     $raw = preg_replace('/^'.preg_quote($key, '/').'=.*/m', $key.'='.$value, $raw, 1);
                 } else {

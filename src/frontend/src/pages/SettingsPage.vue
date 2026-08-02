@@ -420,6 +420,13 @@
                 class="q-mb-md"
               />
 
+              <q-toggle
+                v-model="form.telegram_daily_report_enabled"
+                :label="t('settings.telegramDailyReport')"
+                color="primary"
+                class="q-mb-md"
+              />
+              <div class="text-caption text-grey-5 q-mb-md">{{ t('settings.telegramDailyReportHint') }}</div>
               <div v-if="form.telegram_mode === 'polling'">
                 <q-separator class="q-mb-md" />
                 <div class="text-subtitle2 q-mb-sm">{{ t('settings.telegramProxies') }}</div>
@@ -878,6 +885,7 @@ const form = reactive({
   telegram_proxies: [],
   telegram_proxy_strategy: 'fastest',
   telegram_notifications_enabled: true,
+  telegram_daily_report_enabled: true,
   singbox_egress_interface: 'auto'
 })
 
@@ -1087,6 +1095,7 @@ function snapshotForm () {
     telegram_proxies: form.telegram_proxies,
     telegram_proxy_strategy: form.telegram_proxy_strategy || 'fastest',
     telegram_notifications_enabled: !!form.telegram_notifications_enabled,
+    telegram_daily_report_enabled: !!form.telegram_daily_report_enabled,
     singbox_egress_interface: String(form.singbox_egress_interface || 'auto').trim() || 'auto'
   })
 }
@@ -1151,6 +1160,9 @@ function applySettings (s) {
   if (s.telegram_proxy_strategy !== undefined) form.telegram_proxy_strategy = String(s.telegram_proxy_strategy || 'fastest')
   if (s.telegram_notifications_enabled !== undefined) {
     form.telegram_notifications_enabled = asBool(s.telegram_notifications_enabled)
+  }
+  if (s.telegram_daily_report_enabled !== undefined) {
+    form.telegram_daily_report_enabled = asBool(s.telegram_daily_report_enabled)
   }
   if (s.singbox_egress_interface !== undefined) {
     form.singbox_egress_interface = String(s.singbox_egress_interface || 'auto').trim() || 'auto'
@@ -1478,6 +1490,7 @@ async function save () {
       telegram_language: form.telegram_language || 'en',
       telegram_proxy_strategy: form.telegram_proxy_strategy || 'fastest',
       telegram_notifications_enabled: !!form.telegram_notifications_enabled,
+      telegram_daily_report_enabled: !!form.telegram_daily_report_enabled,
       singbox_egress_interface: String(form.singbox_egress_interface || 'auto').trim() || 'auto',
       telegram_proxies: form.telegram_proxies
         .filter((p) => p.type === 'url' ? String(p.url || '').trim() !== '' : !!p.connection_id)
@@ -1503,9 +1516,8 @@ async function save () {
     const errors = e?.response?.data?.errors
     const panelDomainMsg = errors?.panel_domain?.[0]
     if (panelDomainMsg) {
+      // Keep the typed domain so a DNS/IP mismatch does not wipe SSL on the next save.
       domainError.value = panelDomainMsg
-      form.panel_domain = ''
-      form.endpoint_use_domain = false
     }
     const firstError = errors && Object.values(errors).flat().find(Boolean)
     $q.notify({

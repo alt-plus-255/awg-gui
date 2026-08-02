@@ -82,4 +82,13 @@ class TelegramSettingsTest extends TestCase
         $this->assertSame($user, Setting::getValue('telegram_mixed_auth_user'));
         $this->assertSame($pass, Setting::getValue('telegram_mixed_auth_pass'));
     }
+
+    public function test_daily_report_defaults_enabled(): void
+    {
+        $settings = app(TelegramSettings::class);
+        $this->assertTrue($settings->dailyReportEnabled());
+
+        Setting::setValue('telegram_daily_report_enabled', '0');
+        $this->assertFalse($settings->dailyReportEnabled());
+    }
 }

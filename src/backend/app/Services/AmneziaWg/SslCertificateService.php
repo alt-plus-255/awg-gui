@@ -164,8 +164,7 @@ class SslCertificateService
             throw new \InvalidArgumentException(__('settings.le_email_required'));
         }
 
-        $endpoint = trim((string) Setting::getValue('server_endpoint', env('SERVER_ENDPOINT', 'auto')));
-        $this->awg->assertDomainPointsToPublicIp($domain, $endpoint);
+        $this->awg->assertPanelDomainDns($domain);
 
         // Keep the same TXT for this domain — do not open a new ACME order while pending exists.
         $existing = $this->issuer()->reusableChallengeFor($domain);
@@ -507,7 +506,7 @@ class SslCertificateService
         if ($domain !== '') {
             $redirect = <<<CADDY
 	@panel host {$domain}
-	redir @panel https://{$domain}:{$httpsPort}{uri} permanent
+	redir @panel https://{$domain}:{$httpsPort}{uri} temporary
 
 CADDY;
         }

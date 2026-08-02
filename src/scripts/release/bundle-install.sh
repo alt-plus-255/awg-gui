@@ -398,9 +398,14 @@ resolve_endpoint_host() {
 
 sync_panel_access_env() {
   local endpoint="$1" panel_port="$2" file="$3"
-  local host existing_app_url
+  local host existing_app_url ssl_enabled
   host="$(resolve_endpoint_host "${endpoint}")"
   existing_app_url="$(env_get APP_URL "${file}" 2>/dev/null || true)"
+  ssl_enabled="$(env_get SSL_ENABLED /etc/awg-gui/webhook.conf 2>/dev/null || true)"
+  # Drop stale https APP_URL left after a failed/disabled SSL attempt.
+  if [[ "${ssl_enabled}" != "1" && "${existing_app_url}" =~ ^https:// ]]; then
+    existing_app_url=""
+  fi
   if [[ -z "${existing_app_url}" \
      || "${existing_app_url}" == "http://localhost:${panel_port}" \
      || "${existing_app_url}" =~ ^http://[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+:[0-9]+$ ]]; then
@@ -409,6 +414,7 @@ sync_panel_access_env() {
   env_set "SANCTUM_STATEFUL_DOMAINS" \
     "${host},${host}:${panel_port},${host}:7443,localhost,localhost:${panel_port},127.0.0.1,127.0.0.1:${panel_port}" \
     "${file}"
+  env_set "SESSION_SECURE_COOKIE" "false" "${file}"
 }
 
 rand_secret() {

@@ -299,7 +299,13 @@ class TelegramUpdateRouter
             return;
         }
 
-        if (preg_match('#^res:tog:(\d+)$#', $data, $m)) {
+        if (preg_match('#^res:en:(\d+)$#', $data, $m)) {
+            $this->showResolverEnableConfirm($chatId, $messageId, (int) $m[1]);
+
+            return;
+        }
+
+        if (preg_match('#^res:enok:(\d+)$#', $data, $m)) {
             $this->toggleResolver($chatId, $messageId, (int) $m[1]);
 
             return;
@@ -348,8 +354,26 @@ class TelegramUpdateRouter
             return;
         }
 
-        if ($data === 'notif:toggle') {
+        if ($data === 'notif:en') {
+            $this->showNotificationsEnableConfirm($chatId, $messageId);
+
+            return;
+        }
+
+        if ($data === 'notif:enok') {
             $this->toggleNotifications($chatId, $messageId);
+
+            return;
+        }
+
+        if ($data === 'notif:daily:en') {
+            $this->showDailyReportEnableConfirm($chatId, $messageId);
+
+            return;
+        }
+
+        if ($data === 'notif:daily:enok') {
+            $this->toggleDailyReport($chatId, $messageId);
         }
     }
 
@@ -1045,7 +1069,10 @@ class TelegramUpdateRouter
         ]);
 
         $buttons = [
-            TelegramKeyboard::btn(__('telegram.resolver_toggle'), 'res:tog:'.$configId),
+            TelegramKeyboard::btn(
+                $config->resolver_enabled ? __('telegram.config_disable') : __('telegram.config_enable'),
+                'res:en:'.$configId
+            ),
             TelegramKeyboard::btn(__('telegram.resolver_pick_connection'), 'res:conn:'.$configId.':0'),
         ];
 
@@ -1057,6 +1084,29 @@ class TelegramUpdateRouter
         $buttons[] = TelegramKeyboard::btn(__('telegram.menu_back'), 'm:res');
 
         $this->show($chatId, $messageId, $text, TelegramKeyboard::inline(TelegramKeyboard::chunk($buttons, 1)));
+    }
+
+    private function showResolverEnableConfirm(int|string $chatId, int $messageId, int $configId): void
+    {
+        $config = $this->findConfig($configId);
+        if (! $config || $config->type !== 'server') {
+            $this->showError($chatId, $messageId, __('telegram.config_not_found'));
+
+            return;
+        }
+
+        $key = $config->resolver_enabled
+            ? 'telegram.resolver_disable_confirm'
+            : 'telegram.resolver_enable_confirm';
+        $text = __($key, ['name' => $this->esc($config->name)]);
+        $rows = [
+            [
+                TelegramKeyboard::btn(__('telegram.yes'), 'res:enok:'.$configId),
+                TelegramKeyboard::btn(__('telegram.no'), 'res:'.$configId),
+            ],
+        ];
+
+        $this->show($chatId, $messageId, $text, TelegramKeyboard::inline($rows));
     }
 
     private function toggleResolver(int|string $chatId, int $messageId, int $configId): void
@@ -1291,14 +1341,46 @@ class TelegramUpdateRouter
 
     private function showNotifications(int|string $chatId, int $messageId): void
     {
-        $enabled = $this->settings->notificationsEnabled();
-        $text = __('telegram.notifications_title')."\n\n".__('telegram.notifications_status', [
-            'status' => $this->statusLabel($enabled),
-        ]);
+        $peerEnabled = $this->settings->notificationsEnabled();
+        $dailyEnabled = $this->settings->dailyReportEnabled();
+        $text = __('telegram.notifications_title')."\n\n"
+            .__('telegram.notifications_status', [
+                'status' => $this->statusLabel($peerEnabled),
+            ])."\n"
+            .__('telegram.daily_report_status', [
+                'status' => $this->statusLabel($dailyEnabled),
+            ]);
 
         $rows = [
-            [TelegramKeyboard::btn(__('telegram.notifications_toggle'), 'notif:toggle')],
+            [TelegramKeyboard::btn(
+                $peerEnabled
+                    ? __('telegram.notifications_peer_disable')
+                    : __('telegram.notifications_peer_enable'),
+                'notif:en'
+            )],
+            [TelegramKeyboard::btn(
+                $dailyEnabled
+                    ? __('telegram.daily_report_disable')
+                    : __('telegram.daily_report_enable'),
+                'notif:daily:en'
+            )],
             [TelegramKeyboard::btn(__('telegram.menu_home'), 'm:home')],
+        ];
+
+        $this->show($chatId, $messageId, $text, TelegramKeyboard::inline($rows));
+    }
+
+    private function showNotificationsEnableConfirm(int|string $chatId, int $messageId): void
+    {
+        $key = $this->settings->notificationsEnabled()
+            ? 'telegram.notifications_disable_confirm'
+            : 'telegram.notifications_enable_confirm';
+        $text = __($key);
+        $rows = [
+            [
+                TelegramKeyboard::btn(__('telegram.yes'), 'notif:enok'),
+                TelegramKeyboard::btn(__('telegram.no'), 'm:notif'),
+            ],
         ];
 
         $this->show($chatId, $messageId, $text, TelegramKeyboard::inline($rows));
@@ -1308,6 +1390,29 @@ class TelegramUpdateRouter
     {
         $next = ! $this->settings->notificationsEnabled();
         Setting::setValue('telegram_notifications_enabled', $next ? '1' : '0');
+        $this->showNotifications($chatId, $messageId);
+    }
+
+    private function showDailyReportEnableConfirm(int|string $chatId, int $messageId): void
+    {
+        $key = $this->settings->dailyReportEnabled()
+            ? 'telegram.daily_report_disable_confirm'
+            : 'telegram.daily_report_enable_confirm';
+        $text = __($key);
+        $rows = [
+            [
+                TelegramKeyboard::btn(__('telegram.yes'), 'notif:daily:enok'),
+                TelegramKeyboard::btn(__('telegram.no'), 'm:notif'),
+            ],
+        ];
+
+        $this->show($chatId, $messageId, $text, TelegramKeyboard::inline($rows));
+    }
+
+    private function toggleDailyReport(int|string $chatId, int $messageId): void
+    {
+        $next = ! $this->settings->dailyReportEnabled();
+        Setting::setValue('telegram_daily_report_enabled', $next ? '1' : '0');
         $this->showNotifications($chatId, $messageId);
     }
 

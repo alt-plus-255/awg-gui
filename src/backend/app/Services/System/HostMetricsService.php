@@ -33,7 +33,9 @@ class HostMetricsService
      * @return array{
      *     cpu: array{percent: float|null},
      *     memory: array{used: int|null, total: int|null, percent: float|null},
-     *     disk: array{used: int|null, total: int|null, percent: float|null}
+     *     disk: array{used: int|null, total: int|null, percent: float|null},
+     *     uptime_seconds: int|null,
+     *     loadavg: array{1: float|null, 5: float|null, 15: float|null}
      * }
      */
     public function collect(): array
@@ -42,6 +44,8 @@ class HostMetricsService
             'cpu' => $this->cpu(),
             'memory' => $this->memory(),
             'disk' => $this->disk(),
+            'uptime_seconds' => $this->uptimeSeconds(),
+            'loadavg' => $this->loadavg(),
         ];
     }
 
@@ -204,6 +208,44 @@ class HostMetricsService
             'used' => $used,
             'total' => (int) $total,
             'percent' => $percent,
+        ];
+    }
+
+    private function uptimeSeconds(): ?int
+    {
+        $raw = $this->readProcFile('uptime');
+        if ($raw === null) {
+            return null;
+        }
+
+        $parts = preg_split('/\s+/', trim($raw)) ?: [];
+        if ($parts === [] || ! is_numeric($parts[0])) {
+            return null;
+        }
+
+        return max(0, (int) floor((float) $parts[0]));
+    }
+
+    /**
+     * @return array{1: float|null, 5: float|null, 15: float|null}
+     */
+    private function loadavg(): array
+    {
+        $empty = [1 => null, 5 => null, 15 => null];
+        $raw = $this->readProcFile('loadavg');
+        if ($raw === null) {
+            return $empty;
+        }
+
+        $parts = preg_split('/\s+/', trim($raw)) ?: [];
+        if (count($parts) < 3) {
+            return $empty;
+        }
+
+        return [
+            1 => is_numeric($parts[0]) ? round((float) $parts[0], 2) : null,
+            5 => is_numeric($parts[1]) ? round((float) $parts[1], 2) : null,
+            15 => is_numeric($parts[2]) ? round((float) $parts[2], 2) : null,
         ];
     }
 

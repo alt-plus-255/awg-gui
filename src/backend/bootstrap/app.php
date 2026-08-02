@@ -20,6 +20,18 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        // App is only reachable from the Docker network (Caddy). Trust private
+        // proxy hops for X-Forwarded-Proto/For/Port so HTTPS sessions work.
+        // Do NOT trust X-Forwarded-Host (host header attacks) and do NOT use '*'.
+        $middleware->trustProxies(
+            at: array_values(array_filter(array_map('trim', explode(',', (string) env(
+                'TRUSTED_PROXIES',
+                '10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,127.0.0.1,::1'
+            ))))),
+            headers: Request::HEADER_X_FORWARDED_FOR
+                | Request::HEADER_X_FORWARDED_PORT
+                | Request::HEADER_X_FORWARDED_PROTO
+        );
         // Global: locale for unmatched routes (404) and early exception rendering
         $middleware->prepend(SetLocale::class);
         $middleware->api(prepend: [
