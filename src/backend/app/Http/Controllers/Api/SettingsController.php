@@ -71,6 +71,7 @@ class SettingsController extends Controller
             'server_endpoint' => ['sometimes', 'string', 'max:255'],
             'panel_domain' => ['sometimes', 'nullable', 'string', 'max:255', 'regex:/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/i'],
             'endpoint_use_domain' => ['sometimes', 'boolean'],
+            'redirect_ip_to_domain' => ['sometimes', 'boolean'],
             'panel_port' => ['sometimes', 'string', 'max:10'],
             'panel_https_port' => ['sometimes', 'string', 'max:10'],
             'failure_webhook_url' => ['nullable', 'string', 'max:2048'],
@@ -202,9 +203,14 @@ class SettingsController extends Controller
             ? (bool) $data['endpoint_use_domain']
             : filter_var(Setting::getValue('endpoint_use_domain', '0'), FILTER_VALIDATE_BOOLEAN);
 
+        $redirectIp = array_key_exists('redirect_ip_to_domain', $data)
+            ? (bool) $data['redirect_ip_to_domain']
+            : filter_var(Setting::getValue('redirect_ip_to_domain', '0'), FILTER_VALIDATE_BOOLEAN);
+
         $oldHttpPort = (string) Setting::getValue('panel_port', env('PANEL_PORT', '8877'));
         $oldHttpsPort = (string) Setting::getValue('panel_https_port', env('PANEL_HTTPS_PORT', '7443'));
         $oldDomain = trim((string) Setting::getValue('panel_domain', ''));
+        $oldRedirectIp = filter_var(Setting::getValue('redirect_ip_to_domain', '0'), FILTER_VALIDATE_BOOLEAN);
 
         $httpPort = array_key_exists('panel_port', $data)
             ? trim((string) $data['panel_port'])
@@ -230,10 +236,12 @@ class SettingsController extends Controller
             $data['panel_https_port'] = $httpsPort;
         }
 
-        if (array_key_exists('panel_domain', $data) || array_key_exists('endpoint_use_domain', $data) || array_key_exists('server_endpoint', $data)) {
+        if (array_key_exists('panel_domain', $data) || array_key_exists('endpoint_use_domain', $data) || array_key_exists('redirect_ip_to_domain', $data) || array_key_exists('server_endpoint', $data)) {
             if ($panelDomain === '') {
                 $useDomain = false;
+                $redirectIp = false;
                 $data['endpoint_use_domain'] = false;
+                $data['redirect_ip_to_domain'] = false;
                 $data['panel_domain'] = '';
             } else {
                 try {
@@ -251,10 +259,13 @@ class SettingsController extends Controller
             if (array_key_exists('endpoint_use_domain', $data) || $panelDomain === '') {
                 $data['endpoint_use_domain'] = $useDomain ? '1' : '0';
             }
+            if (array_key_exists('redirect_ip_to_domain', $data) || $panelDomain === '') {
+                $data['redirect_ip_to_domain'] = $redirectIp ? '1' : '0';
+            }
         }
 
         foreach ($data as $key => $value) {
-            if ($key === 'endpoint_use_domain') {
+            if ($key === 'endpoint_use_domain' || $key === 'redirect_ip_to_domain') {
                 Setting::setValue($key, filter_var($value, FILTER_VALIDATE_BOOLEAN) ? '1' : '0');
                 continue;
             }
@@ -284,9 +295,13 @@ class SettingsController extends Controller
         $this->awg->writeWebhookConf();
 
         $portsChanged = $oldHttpPort !== $httpPort || $oldHttpsPort !== $httpsPort;
+        $redirectChanged = $oldRedirectIp !== filter_var(Setting::getValue('redirect_ip_to_domain', '0'), FILTER_VALIDATE_BOOLEAN);
         if ($portsChanged) {
             $this->awg->syncPanelUrlToHostEnv();
             try {
+                if ($this->ssl->isSslEnabled()) {
+                    $this->ssl->writeCaddyfile(true);
+                }
                 $this->ssl->recreateCaddy();
             } catch (\Throwable $e) {
                 return response()->json([
@@ -300,6 +315,20 @@ class SettingsController extends Controller
             }
         } else {
             $this->awg->syncPanelUrlToHostEnv();
+            if ($redirectChanged) {
+                try {
+                    $this->ssl->refreshSslCaddyfileIfEnabled();
+                } catch (\Throwable $e) {
+                    return response()->json([
+                        'message' => __('settings.caddy_reload_failed').': '.$e->getMessage(),
+                        'settings' => $this->settingsPayload(),
+                        'display_endpoint' => $this->awg->resolveEndpointHost(),
+                        'panel_url' => $this->awg->resolvePanelUrl(),
+                        'ssl' => $this->ssl->status(),
+                        'timezones' => $this->timezoneOptions(),
+                    ], 500);
+                }
+            }
         }
 
         $telegramSync = null;

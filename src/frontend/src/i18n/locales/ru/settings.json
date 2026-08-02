@@ -71,6 +71,8 @@
   "egressInterfaceAuto": "Авто ({iface})",
   "egressInterfaceHint": "Используется sing-box и MASQUERADE внутри контейнера AWG. Сейчас: {iface}",
   "useDomainInEndpoint": "В Endpoint VPN-конфигов подставлять домен вместо IP",
+  "redirectIpToDomain": "Редиректить вход по IP на домен",
+  "redirectIpToDomainHint": "По умолчанию выкл.: панель доступна и по IP, и по домену. Если включить (при активном HTTPS) — заход по IP перенаправит на https://домен.",
   "inClientConfigs": "В клиентских конфигах:",
   "panelUrl": "URL панели:",
   "awgConfigsHint": "AWG-конфиги, ключи сервера и подсети настраиваются на странице «Конфиги».",

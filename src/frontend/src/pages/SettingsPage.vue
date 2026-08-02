@@ -219,6 +219,16 @@
                     <span class="mono">Endpoint = {{ endpointHostPreview }}:&lt;listen_port&gt;</span>
                   </div>
                 </div>
+                <div v-if="hasDomain" class="col-12">
+                  <q-toggle
+                    v-model="form.redirect_ip_to_domain"
+                    :label="t('settings.redirectIpToDomain')"
+                    color="primary"
+                  />
+                  <div class="text-caption text-grey-5 q-mt-xs">
+                    {{ t('settings.redirectIpToDomainHint') }}
+                  </div>
+                </div>
               </div>
               <div class="text-caption text-grey-5 q-mt-sm">
                 {{ t('settings.panelUrl') }} <span class="mono">{{ panelUrl || '—' }}</span>
@@ -873,6 +883,7 @@ const form = reactive({
   server_endpoint: '',
   panel_domain: '',
   endpoint_use_domain: false,
+  redirect_ip_to_domain: false,
   panel_port: '',
   panel_https_port: '7443',
   failure_webhook_url: '',
@@ -1084,6 +1095,7 @@ function snapshotForm () {
     server_endpoint: String(form.server_endpoint || '').trim(),
     panel_domain: String(form.panel_domain || '').trim(),
     endpoint_use_domain: hasDomain.value ? !!form.endpoint_use_domain : false,
+    redirect_ip_to_domain: hasDomain.value ? !!form.redirect_ip_to_domain : false,
     panel_port: String(form.panel_port || '').trim(),
     panel_https_port: String(form.panel_https_port || '').trim(),
     failure_webhook_url: String(form.failure_webhook_url || '').trim(),
@@ -1148,6 +1160,7 @@ function applySettings (s) {
   if (s.server_endpoint !== undefined) form.server_endpoint = String(s.server_endpoint)
   if (s.panel_domain !== undefined) form.panel_domain = String(s.panel_domain ?? '')
   if (s.endpoint_use_domain !== undefined) form.endpoint_use_domain = asBool(s.endpoint_use_domain)
+  if (s.redirect_ip_to_domain !== undefined) form.redirect_ip_to_domain = asBool(s.redirect_ip_to_domain)
   if (s.panel_port !== undefined) form.panel_port = String(s.panel_port)
   if (s.panel_https_port !== undefined) form.panel_https_port = String(s.panel_https_port || '7443')
   if (s.failure_webhook_url !== undefined) form.failure_webhook_url = String(s.failure_webhook_url ?? '')
@@ -1188,7 +1201,10 @@ function applySettings (s) {
   } else if (!Array.isArray(form.telegram_proxies)) {
     form.telegram_proxies = []
   }
-  if (!String(form.panel_domain || '').trim()) form.endpoint_use_domain = false
+  if (!String(form.panel_domain || '').trim()) {
+    form.endpoint_use_domain = false
+    form.redirect_ip_to_domain = false
+  }
   if (!form.panel_https_port) form.panel_https_port = '7443'
   timezoneOptions.value = buildTimezoneOptions(settingsStore.timezones)
   markBaseline()
@@ -1205,7 +1221,10 @@ watch(
 watch(
   () => form.panel_domain,
   (value) => {
-    if (!String(value || '').trim()) form.endpoint_use_domain = false
+    if (!String(value || '').trim()) {
+      form.endpoint_use_domain = false
+      form.redirect_ip_to_domain = false
+    }
   }
 )
 
@@ -1482,6 +1501,7 @@ async function save () {
       ...form,
       panel_domain: String(form.panel_domain || '').trim() || null,
       endpoint_use_domain: hasDomain.value ? !!form.endpoint_use_domain : false,
+      redirect_ip_to_domain: hasDomain.value ? !!form.redirect_ip_to_domain : false,
       panel_https_port: String(form.panel_https_port || '7443').trim() || '7443',
       timezone: String(form.timezone || 'UTC').trim() || 'UTC',
       telegram_bot_token: String(form.telegram_bot_token || '').trim(),

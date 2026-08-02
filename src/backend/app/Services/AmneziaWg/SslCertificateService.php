@@ -139,10 +139,29 @@ class SslCertificateService
     public function writeCaddyfile(bool $ssl): void
     {
         $this->ensureHostLayout();
-        $content = $ssl ? $this->buildSslCaddyfile() : $this->buildHttpCaddyfile();
+        $content = $this->caddyfileContents($ssl);
         if (file_put_contents($this->caddyfilePath(), $content) === false) {
             throw new RuntimeException(__('settings.caddyfile_write_failed'));
         }
+    }
+
+    /** Public for unit tests and callers that only need the rendered config. */
+    public function caddyfileContents(bool $ssl): string
+    {
+        return $ssl ? $this->buildSslCaddyfile() : $this->buildHttpCaddyfile();
+    }
+
+    /**
+     * Re-render SSL Caddyfile when redirect / domain options change (no-op if SSL off).
+     */
+    public function refreshSslCaddyfileIfEnabled(): void
+    {
+        if (! $this->isSslEnabled()) {
+            return;
+        }
+
+        $this->writeCaddyfile(true);
+        $this->reloadOrRecreateCaddy();
     }
 
     /**
@@ -502,18 +521,30 @@ class SslCertificateService
     {
         $domain = $this->awg->resolvePanelDomain();
         $httpsPort = (string) Setting::getValue('panel_https_port', env('PANEL_HTTPS_PORT', '7443'));
-        $redirect = '';
+        $httpRedirect = '';
+        $httpsRedirect = '';
         if ($domain !== '') {
-            $redirect = <<<CADDY
+            // Always upgrade domain HTTP → HTTPS.
+            $httpRedirect = <<<CADDY
 	@panel host {$domain}
 	redir @panel https://{$domain}:{$httpsPort}{uri} temporary
 
 CADDY;
+            // Optional: also send IP / other Host values to the canonical HTTPS domain.
+            if ($this->awg->shouldRedirectIpToDomain()) {
+                $forceDomain = <<<CADDY
+	@not_panel not host {$domain}
+	redir @not_panel https://{$domain}:{$httpsPort}{uri} temporary
+
+CADDY;
+                $httpRedirect .= $forceDomain;
+                $httpsRedirect = $forceDomain;
+            }
         }
 
         return "{\n\tauto_https off\n}\n\n"
-            .$this->siteBlock(':443', true)."\n"
-            .$this->siteBlock(':80', false, $redirect);
+            .$this->siteBlock(':443', true, $httpsRedirect)."\n"
+            .$this->siteBlock(':80', false, $httpRedirect);
     }
 
     private function siteBlock(string $listen, bool $tls, string $extra = ''): string

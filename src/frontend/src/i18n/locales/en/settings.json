@@ -71,6 +71,8 @@
   "egressInterfaceAuto": "Auto ({iface})",
   "egressInterfaceHint": "Used by sing-box and MASQUERADE inside the AWG container. Currently: {iface}",
   "useDomainInEndpoint": "Use domain instead of IP in VPN config Endpoint",
+  "redirectIpToDomain": "Redirect IP access to domain",
+  "redirectIpToDomainHint": "Off by default: open the panel by IP or by domain. When on (and HTTPS is active), access via IP redirects to https://domain.",
   "inClientConfigs": "In client configs:",
   "panelUrl": "Panel URL:",
   "awgConfigsHint": "AWG configs, server keys, and subnets are configured on the Configs page.",

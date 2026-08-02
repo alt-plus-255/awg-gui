@@ -204,6 +204,8 @@ class AmneziaWgService
             'server_endpoint' => env('SERVER_ENDPOINT', 'auto'),
             'panel_domain' => '',
             'endpoint_use_domain' => '0',
+            // Off by default: keep panel reachable by IP and by domain after SSL.
+            'redirect_ip_to_domain' => '0',
             'panel_port' => (string) env('PANEL_PORT', '8877'),
             'panel_https_port' => (string) env('PANEL_HTTPS_PORT', '7443'),
             'ssl_email' => '',
@@ -405,6 +407,19 @@ class AmneziaWgService
     public function resolvePanelDomain(): string
     {
         return trim((string) Setting::getValue('panel_domain', ''));
+    }
+
+    /**
+     * When SSL is on and this is true, Caddy sends IP (non-domain) hosts to https://domain.
+     * Default false — panel stays reachable by IP and by domain.
+     */
+    public function shouldRedirectIpToDomain(): bool
+    {
+        if ($this->resolvePanelDomain() === '') {
+            return false;
+        }
+
+        return filter_var(Setting::getValue('redirect_ip_to_domain', '0'), FILTER_VALIDATE_BOOLEAN);
     }
 
     public function resolvePanelHost(): string
@@ -1531,13 +1546,14 @@ class AmneziaWgService
         $httpsPort = $this->resolvePanelHttpsPort();
         $appUrl = $this->resolvePanelUrl();
         $sslEnabled = filter_var(Setting::getValue('ssl_enabled', '0'), FILTER_VALIDATE_BOOLEAN);
+        // Secure cookies only when IP is forced onto HTTPS domain; otherwise HTTP-by-IP login must work.
+        $secureCookie = $sslEnabled && $this->shouldRedirectIpToDomain();
 
         $values = array_merge([
             'PANEL_PORT' => $httpPort,
             'PANEL_HTTPS_PORT' => $httpsPort,
             'APP_URL' => $appUrl,
-            // Keep cookie Secure flag aligned with the live panel scheme.
-            'SESSION_SECURE_COOKIE' => $sslEnabled ? 'true' : 'false',
+            'SESSION_SECURE_COOKIE' => $secureCookie ? 'true' : 'false',
         ], $extra);
 
         $candidates = [];
