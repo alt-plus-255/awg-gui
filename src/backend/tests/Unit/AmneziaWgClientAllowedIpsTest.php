@@ -152,4 +152,49 @@ class AmneziaWgClientAllowedIpsTest extends TestCase
         $this->assertSame('192.168.1.13/32', $service->canonicalNetworkCidr('192.168.1.13/32'));
         $this->assertSame('10.0.0.0/8', $service->canonicalNetworkCidr('10.1.2.3/8'));
     }
+
+    public function test_server_peer_allowed_ips_exclude_extras_on_server_type(): void
+    {
+        $service = $this->service();
+        $config = new AwgConfig([
+            'type' => 'server',
+            'resolver_enabled' => false,
+            'internal_subnet' => '10.66.66.0/24',
+        ]);
+        $membership = new AwgConfigPeer([
+            'address' => '10.66.66.2/32',
+            'extra_allowed_ips' => ['192.168.10.5/32', '10.0.0.0/8'],
+        ]);
+        $membership->setRelation('config', $config);
+
+        $this->assertSame(
+            ['10.66.66.2/32'],
+            $service->serverPeerAllowedIps($membership)
+        );
+        $this->assertSame(
+            ['10.66.66.0/24', '192.168.10.5/32', '10.0.0.0/8'],
+            $service->clientAllowedIps($config, $membership)
+        );
+    }
+
+    public function test_server_peer_allowed_ips_include_extras_on_virtual_network(): void
+    {
+        $service = $this->service();
+        $config = new AwgConfig([
+            'type' => 'virtual_network',
+            'vn_policy' => 'allow_all',
+            'internal_subnet' => '10.66.66.0/24',
+        ]);
+        $membership = new AwgConfigPeer([
+            'id' => 1,
+            'address' => '10.66.66.2/32',
+            'extra_allowed_ips' => ['192.168.10.0/24'],
+        ]);
+        $membership->setRelation('config', $config);
+
+        $this->assertSame(
+            ['10.66.66.2/32', '192.168.10.0/24'],
+            $service->serverPeerAllowedIps($membership)
+        );
+    }
 }

@@ -627,6 +627,17 @@ class AmneziaWgService
     public function serverPeerAllowedIps(AwgConfigPeer $membership): array
     {
         $ips = [$membership->address];
+
+        // Server configs: extra_allowed_ips are client-side split-tunnel routes
+        // (resources behind/near the server). Putting them on the server [Peer]
+        // steals the route into awgN (cryptokey loop). VN keeps LAN-behind-peer.
+        if (! $membership->relationLoaded('config') && $membership->awg_config_id) {
+            $membership->loadMissing('config');
+        }
+        if ($membership->relationLoaded('config') && $membership->getRelation('config')?->type === 'server') {
+            return array_values(array_unique(array_filter($ips)));
+        }
+
         $extras = $membership->extra_allowed_ips ?? [];
         if (! is_array($extras)) {
             $extras = [];

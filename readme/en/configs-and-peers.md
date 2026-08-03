@@ -50,26 +50,28 @@ Unattached peers are shown separately and can be linked to any config later.
 
 ## AllowedIPs for Server configs
 
-In the peer dialog, **AllowedIPs (server → peer)** is a list of CIDRs (`extra_allowed_ips`).
+On a peer, **“Client routes via VPN”** (`extra_allowed_ips`) lists CIDRs the client sends into the tunnel (resources behind or near the server).
 
-| Situation | Server `.conf` | Client `.conf` / QR |
-|-----------|----------------|---------------------|
-| No CIDRs | Peer `Address` | Config `client_allowed_ips` (usually `0.0.0.0/0, ::/0`) |
-| CIDRs set, **resolver off** | Peer `Address` + CIDRs | **Tunnel subnet** (`internal_subnet`, network-aligned) + those CIDRs — not full tunnel |
-| **Resolver on** | as above | always `0.0.0.0/0, ::/0` (resolver needs full tunnel) |
+| Situation | Server `.conf` `[Peer]` | Client `.conf` / QR |
+|-----------|-------------------------|---------------------|
+| No CIDRs | peer `Address` only | Config `client_allowed_ips` (usually `0.0.0.0/0, ::/0`) |
+| CIDRs set, **resolver off** | peer `Address` **only** (no extras) | **Tunnel subnet** (`internal_subnet`) + those CIDRs |
+| **Resolver on** | peer `Address` only | always `0.0.0.0/0, ::/0` |
 
-Example: subnet `10.66.66.0/24`, peer CIDR `192.168.1.13/32` → client config:
+Extras are **not** written to the server Peer AllowedIPs: otherwise WireGuard installs `CIDR → peer` (cryptokey loop) and packets never leave toward the LAN/network behind the server.
 
-```
-AllowedIPs = 10.66.66.0/24, 192.168.1.13/32
-DNS = 1.1.1.1
-```
+Example: subnet `10.66.66.0/24`, peer CIDR `192.168.10.5/32`:
 
-General internet and DNS stay **off-tunnel** (ISP); the AWG subnet and listed CIDRs go via the VPN. Do not put `10.66.66.1/24` (host bits set) in AllowedIPs — Android WireGuard rejects it (Error 1000).
+- client: `AllowedIPs = 10.66.66.0/24, 192.168.10.5/32`, `DNS = 1.1.1.1` — general internet off-VPN, that host via the tunnel;
+- server: `AllowedIPs = 10.66.66.2/32` — without the client CIDRs.
 
-`0.0.0.0/0` and `::/0` cannot be set as peer CIDRs. For virtual networks, extra AllowedIPs mean something else — see [virtual-networks.md](virtual-networks.md).
+The target must be reachable from the `awggui-awg` container (forward + MASQUERADE on egress). Do not put non-canonical `x.x.x.1/24` in AllowedIPs — Android rejects it (Error 1000).
 
-After changing peer CIDRs, re-download / re-import `.conf` / QR on the device.
+`0.0.0.0/0` and `::/0` cannot be set as peer CIDRs.
+
+**Unlike VN:** in a virtual network, `extra_allowed_ips` is the LAN **behind that peer** and *does* go into the server Peer AllowedIPs — see [virtual-networks.md](virtual-networks.md).
+
+After changing peer CIDRs: the server conf reapplies on save; re-import client `.conf` / QR only if client AllowedIPs changed.
 
 ## Export configuration
 

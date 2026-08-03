@@ -485,12 +485,18 @@
             </q-banner>
           </template>
           <template v-else>
-            <div class="text-subtitle2 q-mb-sm">{{ t('configs.serverToPeerAllowedIps') }}</div>
+            <div class="text-subtitle2 q-mb-sm">{{ t('configs.clientVpnRoutes') }}</div>
             <div
               v-if="!activeConfig?.resolver_enabled"
               class="text-caption text-grey-5 q-mb-sm"
             >
-              {{ t('configs.serverToPeerSplitTunnelHint') }}
+              {{ t('configs.clientVpnRoutesHint') }}
+            </div>
+            <div
+              v-else
+              class="text-caption text-grey-5 q-mb-sm"
+            >
+              {{ t('configs.clientVpnRoutesResolverHint') }}
             </div>
             <div v-for="(ip, idx) in peerForm.extra_allowed_ips" :key="idx" class="row q-gutter-sm q-mb-sm items-center">
               <q-input v-model="peerForm.extra_allowed_ips[idx]" label="CIDR" filled dense class="col" />

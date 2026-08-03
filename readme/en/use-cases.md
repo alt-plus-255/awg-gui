@@ -36,14 +36,14 @@ flowchart LR
 
 ### Variant: access only selected CIDRs (split-tunnel)
 
-Resolver **off**. In the peer dialog set CIDRs under **AllowedIPs (server → peer)** (e.g. `192.168.1.13/32`). The client `.conf` will use the tunnel subnet + those CIDRs, **without** `0.0.0.0/0`:
+Resolver **off**. In the peer dialog set CIDRs under **“Client routes via VPN”** (any host/subnet behind or near the server). The client `.conf` will use the tunnel subnet + those CIDRs, **without** `0.0.0.0/0`:
 
 ```
-AllowedIPs = 10.66.66.0/24, 192.168.1.13/32
+AllowedIPs = 10.66.66.0/24, 192.168.10.5/32
 DNS = 1.1.1.1
 ```
 
-Listed resources and the AWG subnet go via VPN; general internet and DNS stay off-tunnel (ISP). Details — [configs & peers](configs-and-peers.md#allowedips-for-server-configs).
+On the **server**, the peer AllowedIPs stay the peer tunnel IP only — otherwise the route to the target loops back into the tunnel. Listed resources and the AWG subnet go via VPN; general internet and DNS stay off-tunnel. The target must be reachable from the `awggui-awg` container. Details — [configs & peers](configs-and-peers.md#allowedips-for-server-configs).
 
 → [Configs & peers](configs-and-peers.md)
 
