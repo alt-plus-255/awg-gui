@@ -101,6 +101,7 @@
 
       <div class="row justify-end q-mb-sm">
         <q-btn
+          class="resolver-select-config-btn"
           color="primary"
           unelevated
           :label="t('resolver.selectConfig')"
@@ -863,19 +864,19 @@ onMounted(load)
   }
 
   .resolver-header__actions {
-    flex-direction: row;
+    flex-direction: column;
+    align-items: stretch;
     width: 100%;
+    gap: 4px;
   }
 
   .resolver-header__actions > .q-btn {
-    flex: 1 1 0;
-    min-width: 0;
+    width: 100%;
+    justify-content: flex-start;
   }
 
-  .resolver-header__actions > .q-btn :deep(.q-btn__content) {
-    flex-direction: row;
-    flex-wrap: nowrap;
-    white-space: nowrap;
+  .resolver-select-config-btn {
+    width: 100%;
   }
 }
 

@@ -16,6 +16,7 @@ import { useThemeStore } from '@/stores/theme'
 import { useLocaleStore, setI18nInstance } from '@/stores/locale'
 import { useAuthStore } from '@/stores/auth'
 import { useSoundStore } from '@/sounds/store'
+import { useUiChromeStore } from '@/stores/uiChrome'
 import { installUiSounds } from '@/sounds/install'
 import './css/app.scss'
 
@@ -62,6 +63,7 @@ app.use(Quasar, {
 useLocaleStore(pinia).init()
 useThemeStore(pinia).init()
 useSoundStore(pinia).init()
+useUiChromeStore(pinia).init()
 installUiSounds({ router, Notify, app })
 useAuthStore(pinia).fetchMe()
 app.mount('#q-app')

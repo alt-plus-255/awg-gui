@@ -181,10 +181,18 @@
           <q-tooltip>{{ liveStatus.hint }}</q-tooltip>
         </q-badge>
 
-        <LanguageSwitcher class="q-mr-sm" :compact="$q.screen.lt.md" />
-        <ThemeSwitcher class="q-mr-sm" :compact="$q.screen.lt.md" />
+        <LanguageSwitcher
+          v-if="uiChrome.prefs.showLanguage"
+          class="q-mr-sm"
+          :compact="$q.screen.lt.md"
+        />
+        <ThemeSwitcher
+          v-if="uiChrome.prefs.showTheme"
+          class="q-mr-sm"
+          :compact="$q.screen.lt.md"
+        />
         <q-btn
-          v-if="canInstallPwa"
+          v-if="canInstallPwa && uiChrome.prefs.showInstallApp"
           flat
           dense
           no-caps
@@ -196,7 +204,7 @@
           <q-tooltip>{{ t('nav.installAppTooltip') }}</q-tooltip>
         </q-btn>
         <q-btn
-          v-if="canInstallPwa"
+          v-if="canInstallPwa && uiChrome.prefs.showInstallApp"
           flat
           dense
           round
@@ -207,8 +215,10 @@
         >
           <q-tooltip>{{ t('nav.installAppTooltip') }}</q-tooltip>
         </q-btn>
-        <div class="q-mr-md text-caption text-grey-5 gt-sm">{{ auth.user?.username }}</div>
-        <q-btn flat dense icon="logout" :label="t('nav.logout')" class="gt-sm" @click="onLogout" />
+        <template v-if="uiChrome.prefs.showUserMenu">
+          <div class="q-mr-md text-caption text-grey-5 gt-sm">{{ auth.user?.username }}</div>
+          <q-btn flat dense icon="logout" :label="t('nav.logout')" class="gt-sm" @click="onLogout" />
+        </template>
       </q-toolbar>
     </q-header>
 
@@ -259,10 +269,13 @@
           </q-item-section>
         </q-item>
 
-        <q-separator class="q-my-sm" />
+        <q-separator
+          v-if="(canInstallPwa && uiChrome.prefs.showInstallApp) || uiChrome.prefs.showUserMenu"
+          class="q-my-sm"
+        />
 
         <q-item
-          v-if="canInstallPwa"
+          v-if="canInstallPwa && uiChrome.prefs.showInstallApp"
           clickable
           v-ripple
           @click="onInstallPwaFromDrawer"
@@ -276,7 +289,12 @@
           </q-item-section>
         </q-item>
 
-        <q-item clickable v-ripple @click="onLogout">
+        <q-item
+          v-if="uiChrome.prefs.showUserMenu"
+          clickable
+          v-ripple
+          @click="onLogout"
+        >
           <q-item-section avatar>
             <q-icon name="logout" />
           </q-item-section>
@@ -309,6 +327,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useSettingsStore } from '@/stores/settings'
 import { useProjectUpdateStore } from '@/stores/projectUpdate'
 import { useSystemStore } from '@/stores/system'
+import { useUiChromeStore } from '@/stores/uiChrome'
 import { useAppBootstrap } from '@/composables/useAppBootstrap'
 import { usePwaInstall } from '@/composables/usePwaInstall'
 import {
@@ -325,6 +344,7 @@ const auth = useAuthStore()
 const settingsStore = useSettingsStore()
 const projectUpdate = useProjectUpdateStore()
 const systemStore = useSystemStore()
+const uiChrome = useUiChromeStore()
 const liveState = useLiveStatsState()
 const router = useRouter()
 const route = useRoute()

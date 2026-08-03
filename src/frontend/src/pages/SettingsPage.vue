@@ -99,6 +99,38 @@
 
               <q-separator class="q-my-md" />
 
+              <div class="text-subtitle2 q-mb-sm">{{ t('settings.navChrome') }}</div>
+              <div class="text-caption text-grey-5 q-mb-sm">{{ t('settings.navChromeHint') }}</div>
+              <q-toggle
+                :model-value="uiChrome.prefs.showLanguage"
+                :label="t('settings.showLanguageSwitcher')"
+                color="primary"
+                class="q-mb-xs"
+                @update:model-value="v => uiChrome.setPref('showLanguage', v)"
+              />
+              <q-toggle
+                :model-value="uiChrome.prefs.showTheme"
+                :label="t('settings.showThemeSwitcher')"
+                color="primary"
+                class="q-mb-xs"
+                @update:model-value="v => uiChrome.setPref('showTheme', v)"
+              />
+              <q-toggle
+                :model-value="uiChrome.prefs.showInstallApp"
+                :label="t('settings.showInstallApp')"
+                color="primary"
+                class="q-mb-xs"
+                @update:model-value="v => uiChrome.setPref('showInstallApp', v)"
+              />
+              <q-toggle
+                :model-value="uiChrome.prefs.showUserMenu"
+                :label="t('settings.showUserMenu')"
+                color="primary"
+                @update:model-value="v => uiChrome.setPref('showUserMenu', v)"
+              />
+
+              <q-separator class="q-my-md" />
+
               <div class="text-subtitle2 q-mb-sm">{{ t('settings.sounds') }}</div>
               <q-toggle
                 :model-value="sounds.enabled"
@@ -829,6 +861,7 @@ import { useSettingsStore } from '@/stores/settings'
 import { useProjectUpdateStore } from '@/stores/projectUpdate'
 import { useAwgKernelStore } from '@/stores/awgKernel'
 import { useSoundStore } from '@/sounds/store'
+import { useUiChromeStore } from '@/stores/uiChrome'
 import { useMobileDialog } from '@/composables/useMobileDialog'
 import DialogHeader from '@/components/DialogHeader.vue'
 import { COLOR_MODES } from '@/themes/themes'
@@ -841,6 +874,7 @@ const mobileDialog = useMobileDialog()
 const theme = useThemeStore()
 const localeStore = useLocaleStore()
 const sounds = useSoundStore()
+const uiChrome = useUiChromeStore()
 
 const colorModeOptions = computed(() =>
   COLOR_MODES.map((value) => ({ value, label: t(`theme.${value}`) }))
