@@ -10,6 +10,10 @@ _AWG_GUI_INSTALL_PORTS_LOADED=1
 # Space-separated "tcp:8877" / "udp:51820" reserved during this install run.
 _INSTALL_PORTS_RESERVED=""
 
+reset_install_ports_reserved() {
+  _INSTALL_PORTS_RESERVED=""
+}
+
 # Drop non-entry lines left by a corrupted multiline .env write.
 cleanup_env_file_orphans() {
   local file="$1" tmp
