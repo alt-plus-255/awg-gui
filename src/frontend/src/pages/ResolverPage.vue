@@ -663,6 +663,24 @@ async function confirmConfigPick () {
 
   const cfg = serverConfigs.value.find(c => c.id === id)
   if (!cfg) return
+
+  if (cfg.has_peer_extra_allowed_ips) {
+    $q.dialog({
+      title: t('resolver.splitTunnelEnableTitle'),
+      message: t('resolver.splitTunnelEnableConfirm'),
+      cancel: true,
+      persistent: true
+    }).onOk(() => {
+      enableResolverForConfig(cfg, connectionId)
+    })
+    return
+  }
+
+  await enableResolverForConfig(cfg, connectionId)
+}
+
+async function enableResolverForConfig (cfg, connectionId) {
+  const id = cfg.id
   if (!forms[id]) syncForm(cfg)
 
   const form = forms[id]

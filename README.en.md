@@ -72,6 +72,8 @@ When creating a config, choose **1.0**, **1.5**, or **2.0** (default: latest). V
 
 A peer (`vpn_client`) is a separate entity. **Attach** to a config, **detach** (peer stays in the panel), **rebind** to another config. Export **`.conf`**, **QR**, and **`vpn://`** for clients.
 
+For **Server** configs with the resolver off: if a peer has AllowedIPs CIDRs, the client `.conf` uses the server interface address + those CIDRs (split-tunnel) instead of full tunnel. Enabling the resolver asks for confirmation and switches to `0.0.0.0/0`.
+
 → [Details: configs & peers](readme/en/configs-and-peers.md)
 
 ### Virtual LANs
@@ -101,7 +103,7 @@ Use when you want a classic “full VPN via server”, with blocked resources ex
 
 For ABR video (YouTube/Instagram) you need **kernel AmneziaWG** on the VDS host plus working QUIC (Block QUIC off + UDP-capable outbound) or a solid TCP path. Delivery: FakeIP/list TCP via **NAT REDIRECT** `:1602`, FakeIP UDP via **TPROXY** `:1603` (sing-box **1.13.x**).
 
-**After enabling or disabling:** delete the server in AmneziaWG and **re-import** QR/`.conf` — lists will not work without re-import.
+**After enabling or disabling:** delete the server in AmneziaWG and **re-import** QR/`.conf` — lists will not work without re-import. If peers had custom AllowedIPs, enabling the resolver shows a dialog: full tunnel replaces split-tunnel.
 
 → [Details: resolver, diagnostics, re-import](readme/en/resolver.md)
 

@@ -14,6 +14,7 @@ return [
     'peer_cannot_be_src_and_dest' => 'A peer cannot be both source and destination in the same rule',
     'invalid_cidr' => 'Invalid CIDR: :cidr',
     'invalid_ip_in_cidr' => 'Invalid IP in CIDR: :cidr',
+    'full_tunnel_cidr_forbidden' => 'Cannot use :cidr in peer AllowedIPs — full tunnel is set at config level or by the resolver',
     'invalid_internal_subnet' => 'Invalid internal_subnet',
     'subnet_taken' => 'Subnet is already used by another config',
     'no_free_addresses' => 'No free addresses in the subnet',

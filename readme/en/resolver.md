@@ -72,6 +72,8 @@ Typical layouts (foreign VDS + `russia_inside`, Russia VDS cascade + `russia_out
    - click **Save**.
 4. On the phone, **delete** the old AmneziaWG server and **re-import** the QR / `.conf`.
 
+If peers on the config have custom AllowedIPs (split-tunnel with resolver off), enabling the resolver shows a **confirmation dialog**: client AllowedIPs become `0.0.0.0/0, ::/0`, CIDR restrictions stop applying while the resolver is on, and peers must re-import. Without custom peer CIDRs the dialog is skipped.
+
 Without re-import, the client may keep old `DNS` / `AllowedIPs` — lists will not work.
 
 ## Lists

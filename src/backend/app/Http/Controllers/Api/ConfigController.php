@@ -871,6 +871,11 @@ class ConfigController extends Controller
                     'extra_allowed_ips' => [__('configs.invalid_ip_in_cidr', ['cidr' => $cidr])],
                 ]);
             }
+            if ($cidr === '0.0.0.0/0' || $cidr === '::/0') {
+                throw ValidationException::withMessages([
+                    'extra_allowed_ips' => [__('configs.full_tunnel_cidr_forbidden', ['cidr' => $cidr])],
+                ]);
+            }
             $out[] = $cidr;
         }
 

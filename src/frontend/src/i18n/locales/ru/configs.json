@@ -112,6 +112,7 @@
   "mutualExclusionHint": "Вкл: исключённые узлы тоже не получат подсеть этого peer. Выкл: исключение только в одну сторону.",
   "peerIsolationHint": "Конфиг в режиме изоляции: доступы этого peer настраиваются правилами под таблицей пиров.",
   "serverToPeerAllowedIps": "AllowedIPs (сервер → peer)",
+  "serverToPeerSplitTunnelHint": "Если указать CIDR — в клиентском .conf будет адрес интерфейса сервера + эти CIDR (без 0.0.0.0/0). Без CIDR — полный туннель из настроек конфига.",
   "addCidr": "Добавить CIDR",
   "clientConfAllowedIps": "Разрешённые IP-адреса (в клиентском .conf)",
   "restartAwgTitle": "Перезапустить AWG",

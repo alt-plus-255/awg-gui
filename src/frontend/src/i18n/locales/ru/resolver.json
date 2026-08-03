@@ -73,6 +73,8 @@
   "optionalWhenDisabled": "Необязательно, пока резолвер выключен",
   "loadError": "Не удалось загрузить резолвер",
   "selectConnectionPoint": "Выберите подключение (точку VPN)",
+  "splitTunnelEnableTitle": "Включить резолвер?",
+  "splitTunnelEnableConfirm": "У пиров этого конфига заданы свои AllowedIPs (split-tunnel). После включения резолвера клиентские AllowedIPs станут 0.0.0.0/0, ::/0 (полный туннель). Ограничение по указанным CIDR перестанет действовать, пока резолвер включён. Пирам нужно заново скачать и импортировать .conf / QR.",
   "progressSaveResolver": "Сохранение резолвера",
   "progressSavingSettings": "Сохранение настроек…",
   "progressUpdateAwg": "Обновление AWG-конфига…",

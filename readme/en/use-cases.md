@@ -34,6 +34,16 @@ flowchart LR
 
 **When to use:** full-tunnel exit from a foreign server IP, no domain lists and no second hop.
 
+### Variant: access only selected CIDRs (split-tunnel)
+
+Resolver **off**. In the peer dialog set CIDRs under **AllowedIPs (server → peer)** (e.g. `192.168.1.13/32`). The client `.conf` will use the server interface address + those CIDRs, **without** `0.0.0.0/0`:
+
+```
+AllowedIPs = 10.66.66.1/24, 192.168.1.13/32
+```
+
+Only those destinations go through the VPN; other traffic stays off-tunnel. Details — [configs & peers](configs-and-peers.md#allowedips-for-server-configs).
+
 → [Configs & peers](configs-and-peers.md)
 
 ---
@@ -63,6 +73,8 @@ flowchart LR
 
 **After enabling** — re-import QR / `.conf` on the client (`DNS = gateway`, full tunnel).
 
+If peers already had custom CIDRs (split-tunnel), the panel shows a **confirmation dialog**: after enabling the resolver, client AllowedIPs become `0.0.0.0/0, ::/0`, and CIDR restrictions stop applying while the resolver is on.
+
 → [Resolver](resolver.md) · [WG/AWG connections](resolver.md#connections)
 
 ---
@@ -89,6 +101,8 @@ flowchart LR
 | RU segment | Sites outside lists → Russia VDS IP (banks/gov without an extra hop) |
 
 **Why cascade:** one AmneziaWG entry for the client (Russia VDS), while blocked/heavy traffic uses a foreign outbound. For ABR video prefer [kernel AmneziaWG](install.md) on the host and a UDP-capable Connection.
+
+Enabling the resolver on a config where peers already had custom AllowedIPs shows the same **confirmation dialog** as in [case 2](#2-server--client--resolver-ru-access): full tunnel + re-import.
 
 → [Resolver](resolver.md) (diagnostics and re-import)
 
@@ -161,6 +175,7 @@ Resolver is configured **per** server config (own lists and Connection). VN does
 | Goal | Case |
 |------|------|
 | Just get a foreign IP | **1** |
+| Access only selected IPs/subnets (no full tunnel) | **1** (split-tunnel) |
 | Live on a foreign VDS, but RU banks/services via Russia | **2** (`russia_inside`) |
 | Live on a Russia VDS, blocked traffic via a foreign hop | **3** (`russia_outside` + services) |
 | Link several LANs / routers without VPN internet | **4** |

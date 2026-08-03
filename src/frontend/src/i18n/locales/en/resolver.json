@@ -73,6 +73,8 @@
   "optionalWhenDisabled": "Optional while the resolver is disabled",
   "loadError": "Failed to load resolver",
   "selectConnectionPoint": "Select a connection (VPN endpoint)",
+  "splitTunnelEnableTitle": "Enable resolver?",
+  "splitTunnelEnableConfirm": "Peers on this config have custom AllowedIPs (split-tunnel). After enabling the resolver, client AllowedIPs will become 0.0.0.0/0, ::/0 (full tunnel). CIDR restrictions will not apply while the resolver is on. Peers must re-download and import .conf / QR.",
   "progressSaveResolver": "Saving resolver",
   "progressSavingSettings": "Saving settings…",
   "progressUpdateAwg": "Updating AWG config…",

@@ -3,6 +3,7 @@
 namespace App\Services\Resolver;
 
 use App\Models\AwgConfig;
+use App\Models\AwgConfigPeer;
 use App\Models\ResolverConnection;
 use App\Services\AmneziaWg\AmneziaWgService;
 use App\Services\Docker\DockerRuntime;
@@ -1465,7 +1466,7 @@ class ResolverService
 
         $configs = AwgConfig::query()
             ->where('type', 'server')
-            ->with('resolverConnection')
+            ->with(['resolverConnection', 'peers:id,awg_config_id,extra_allowed_ips'])
             ->orderBy('id')
             ->get();
 
@@ -1502,6 +1503,19 @@ class ResolverService
             'connections' => $connections,
             'configs' => $configs->map(function (AwgConfig $c) {
                 $conn = $c->resolverConnection;
+                $hasPeerExtras = $c->peers->contains(function (AwgConfigPeer $peer): bool {
+                    $extras = $peer->extra_allowed_ips ?? [];
+                    if (! is_array($extras)) {
+                        return false;
+                    }
+                    foreach ($extras as $cidr) {
+                        if (trim((string) $cidr) !== '') {
+                            return true;
+                        }
+                    }
+
+                    return false;
+                });
 
                 return [
                     'id' => $c->id,
@@ -1523,6 +1537,7 @@ class ResolverService
                     'resolver_dns' => $c->resolver_dns ?: '1.1.1.1',
                     'client_dns' => $c->resolver_enabled ? $this->gatewayIp($c) : $c->peer_dns,
                     'client_allowed_ips_preview' => $this->clientAllowedIpsPreview($c),
+                    'has_peer_extra_allowed_ips' => $hasPeerExtras,
                 ];
             })->values()->all(),
         ];

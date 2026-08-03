@@ -48,6 +48,26 @@ A **peer** (`vpn_client`) is a separate entity with keys and a name. A peer is *
 
 Unattached peers are shown separately and can be linked to any config later.
 
+## AllowedIPs for Server configs
+
+In the peer dialog, **AllowedIPs (server → peer)** is a list of CIDRs (`extra_allowed_ips`).
+
+| Situation | Server `.conf` | Client `.conf` / QR |
+|-----------|----------------|---------------------|
+| No CIDRs | Peer `Address` | Config `client_allowed_ips` (usually `0.0.0.0/0, ::/0`) |
+| CIDRs set, **resolver off** | Peer `Address` + CIDRs | **Server interface address** (`server_address`) + those CIDRs — not full tunnel |
+| **Resolver on** | as above | always `0.0.0.0/0, ::/0` (resolver needs full tunnel) |
+
+Example: interface `10.66.66.1/24`, peer CIDR `192.168.1.13/32` → client config:
+
+```
+AllowedIPs = 10.66.66.1/24, 192.168.1.13/32
+```
+
+`0.0.0.0/0` and `::/0` cannot be set as peer CIDRs. For virtual networks, extra AllowedIPs mean something else — see [virtual-networks.md](virtual-networks.md).
+
+After changing peer CIDRs, re-download / re-import `.conf` / QR on the device.
+
 ## Export configuration
 
 For each attached peer you can:

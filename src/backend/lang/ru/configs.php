@@ -14,6 +14,7 @@ return [
     'peer_cannot_be_src_and_dest' => 'Пир не может быть одновременно источником и назначением в одном правиле',
     'invalid_cidr' => 'Неверный CIDR: :cidr',
     'invalid_ip_in_cidr' => 'Неверный IP в CIDR: :cidr',
+    'full_tunnel_cidr_forbidden' => 'Нельзя указать :cidr в AllowedIPs пира — полный туннель задаётся на уровне конфига или резолвером',
     'invalid_internal_subnet' => 'Неверный internal_subnet',
     'subnet_taken' => 'Подсеть уже занята другим конфигом',
     'no_free_addresses' => 'Нет свободных адресов в подсети',

@@ -772,6 +772,34 @@ class AmneziaWgService
             return ['0.0.0.0/0', '::/0'];
         }
 
+        // Server without resolver: peer extras → split-tunnel (interface address + CIDRs).
+        $extras = $membership->extra_allowed_ips ?? [];
+        if (! is_array($extras)) {
+            $extras = [];
+        }
+        $splitCidrs = [];
+        foreach ($extras as $cidr) {
+            $cidr = trim((string) $cidr);
+            if ($cidr === '' || $cidr === '0.0.0.0/0' || $cidr === '::/0') {
+                continue;
+            }
+            $splitCidrs[] = $cidr;
+        }
+        if ($splitCidrs !== []) {
+            $ips = [];
+            $serverAddress = trim((string) ($config->server_address ?? ''));
+            if ($serverAddress !== '' && $serverAddress !== '0.0.0.0/0' && $serverAddress !== '::/0') {
+                $ips[] = $serverAddress;
+            }
+            foreach ($splitCidrs as $cidr) {
+                if (! in_array($cidr, $ips, true)) {
+                    $ips[] = $cidr;
+                }
+            }
+
+            return array_values($ips);
+        }
+
         $raw = $config->client_allowed_ips ?: '0.0.0.0/0, ::/0';
 
         return array_values(array_filter(array_map('trim', explode(',', $raw))));

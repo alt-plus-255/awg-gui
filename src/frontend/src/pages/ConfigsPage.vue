@@ -486,6 +486,12 @@
           </template>
           <template v-else>
             <div class="text-subtitle2 q-mb-sm">{{ t('configs.serverToPeerAllowedIps') }}</div>
+            <div
+              v-if="!activeConfig?.resolver_enabled"
+              class="text-caption text-grey-5 q-mb-sm"
+            >
+              {{ t('configs.serverToPeerSplitTunnelHint') }}
+            </div>
             <div v-for="(ip, idx) in peerForm.extra_allowed_ips" :key="idx" class="row q-gutter-sm q-mb-sm items-center">
               <q-input v-model="peerForm.extra_allowed_ips[idx]" label="CIDR" filled dense class="col" />
               <q-btn flat dense icon="close" color="negative" @click="peerForm.extra_allowed_ips.splice(idx, 1)" />
@@ -867,7 +873,26 @@ function ruleDirection (rules, ownId, otherId) {
 }
 
 const peerPreview = computed(() => {
-  if (!activeConfig.value || activeConfig.value.type !== 'virtual_network') return ''
+  if (!activeConfig.value) return ''
+
+  // Server without resolver: split-tunnel preview when peer CIDRs are set
+  if (activeConfig.value.type === 'server' && !activeConfig.value.resolver_enabled) {
+    const cidrs = (peerForm.extra_allowed_ips || [])
+      .map((x) => String(x || '').trim())
+      .filter((x) => x && x !== '0.0.0.0/0' && x !== '::/0')
+    if (!cidrs.length) return ''
+    const ips = []
+    const serverAddress = String(activeConfig.value.server_address || '').trim()
+    if (serverAddress && serverAddress !== '0.0.0.0/0' && serverAddress !== '::/0') {
+      ips.push(serverAddress)
+    }
+    cidrs.forEach((cidr) => {
+      if (!ips.includes(cidr)) ips.push(cidr)
+    })
+    return ips.join(', ')
+  }
+
+  if (activeConfig.value.type !== 'virtual_network') return ''
   const denyAll = activeConfig.value.vn_policy === 'deny_all'
   const rules = denyAll ? configRules(activeConfig.value) : null
   const ips = []
