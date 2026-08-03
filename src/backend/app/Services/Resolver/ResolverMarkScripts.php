@@ -208,6 +208,8 @@ CACHE_FILE=/config/sing-box-cache.db
 LOG_FILE=/config/sing-box.log
 # Soft cap: bbolt does not shrink; drop oversized cache so disk cannot fill unbounded.
 CACHE_MAX_BYTES=$((32 * 1024 * 1024))
+# Cap stdout/stderr log; keep one rotated backup (~10MB + 10MB).
+LOG_MAX_BYTES=$((10 * 1024 * 1024))
 
 prune_cache_if_huge() {
   if [[ ! -f "${CACHE_FILE}" ]]; then
@@ -219,6 +221,18 @@ prune_cache_if_huge() {
   if [[ "${size}" =~ ^[0-9]+$ ]] && [ "${size}" -gt "${CACHE_MAX_BYTES}" ]; then
     echo "[sing-box] pruning oversized cache ${CACHE_FILE} (${size} bytes > ${CACHE_MAX_BYTES})"
     rm -f "${CACHE_FILE}"
+  fi
+}
+
+rotate_log_if_huge() {
+  local file="${1:-}"
+  [[ -n "${file}" && -f "${file}" ]] || return 0
+  local size
+  size="$(wc -c < "${file}" | tr -d '[:space:]')"
+  if [[ "${size}" =~ ^[0-9]+$ ]] && [ "${size}" -gt "${LOG_MAX_BYTES}" ]; then
+    echo "[sing-box] rotating oversized log ${file} (${size} bytes > ${LOG_MAX_BYTES})"
+    rm -f "${file}.1"
+    mv -f "${file}" "${file}.1"
   fi
 }
 
@@ -265,6 +279,7 @@ start_singbox() {
   prune_cache_if_huge
   stop_singbox
   cleanup_legacy_tun
+  rotate_log_if_huge "${LOG_FILE}"
 
   # setsid: survive parent exit (docker exec from panel kills the session otherwise).
   # Redirect stdio so a closed exec tty cannot SIGPIPE the daemon.

@@ -140,6 +140,8 @@ remove_project_logs() {
   rm -f /etc/awg-gui/update.log /etc/awg-gui/update.state 2>/dev/null || true
   rm -f /etc/awg-gui/awg-kernel.log /etc/awg-gui/awg-kernel.state 2>/dev/null || true
   rm -f /etc/awg-gui/awg-kernel-host.sh 2>/dev/null || true
+  rm -f /etc/logrotate.d/awg-gui /etc/cron.hourly/awg-gui-logrotate 2>/dev/null || true
+  rm -f /etc/awg-gui/*.log /etc/awg-gui/*.log.1 /etc/awg-gui/*.log.1.gz 2>/dev/null || true
   find /tmp -maxdepth 1 -type d -name 'awg-gui-extract.*' -exec rm -rf {} + 2>/dev/null || true
   find /tmp -maxdepth 1 -type f \( -name 'awg-gui*.log' -o -name 'awg-gui-*.log' \) -delete 2>/dev/null || true
 

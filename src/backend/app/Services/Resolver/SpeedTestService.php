@@ -276,6 +276,7 @@ class SpeedTestService
         $php = PHP_BINARY !== '' ? PHP_BINARY : 'php';
         $artisan = base_path('artisan');
         $log = storage_path('logs/speed-test-job.log');
+        $this->rotateLogIfHuge($log);
         $cmd = sprintf(
             'nohup %s %s resolver:speed-test-job %s >> %s 2>&1 < /dev/null &',
             escapeshellarg($php),
@@ -546,7 +547,15 @@ CONFIG=/config/sing-box-speed.json
 PIDFILE=/run/sing-box-speed.pid
 BIN=/usr/local/bin/sing-box
 LOG=/config/sing-box-speed.log
+LOG_MAX_BYTES=$((10 * 1024 * 1024))
 "$BIN" check -c "$CONFIG"
+if [ -f "$LOG" ]; then
+  size=$(wc -c < "$LOG" | tr -d '[:space:]')
+  if [ -n "$size" ] && [ "$size" -gt "$LOG_MAX_BYTES" ] 2>/dev/null; then
+    rm -f "$LOG.1"
+    mv -f "$LOG" "$LOG.1"
+  fi
+fi
 : >>"$LOG"
 setsid "$BIN" run -c "$CONFIG" >>"$LOG" 2>&1 </dev/null &
 echo $! > "$PIDFILE"
@@ -736,5 +745,19 @@ SH;
                 'error' => $e->getMessage(),
             ];
         }
+    }
+
+    private function rotateLogIfHuge(string $path, int $maxBytes = 10 * 1024 * 1024): void
+    {
+        if (! is_file($path)) {
+            return;
+        }
+        $size = @filesize($path);
+        if ($size === false || $size <= $maxBytes) {
+            return;
+        }
+        @unlink($path.'.1');
+        @rename($path, $path.'.1');
+        @file_put_contents($path, '');
     }
 }

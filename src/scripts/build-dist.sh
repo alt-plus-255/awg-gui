@@ -127,10 +127,13 @@ assemble_runtime() {
   cp "${SRC}/.env.example" "${runtime}/.env.example"
   cp -a "${SRC}/bin" "${runtime}/"
   cp -a "${SRC}/systemd" "${runtime}/"
-  mkdir -p "${runtime}/caddy"
+  mkdir -p "${runtime}/caddy" "${runtime}/logrotate"
   cp "${SRC}/caddy/Caddyfile" "${runtime}/caddy/"
   if [[ -d "${SRC}/caddy/host-files" ]]; then
     cp -a "${SRC}/caddy/host-files" "${runtime}/caddy/"
+  fi
+  if [[ -d "${SRC}/logrotate" ]]; then
+    cp -a "${SRC}/logrotate/." "${runtime}/logrotate/"
   fi
 
   cp "${RELEASE}/bundle-install.sh" "${bundle_dir}/bundle-install.sh"

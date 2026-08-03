@@ -1,0 +1,5 @@
+#!/bin/sh
+# Hourly size-based rotation for awg-gui logs (10MB cap).
+[ -x /usr/sbin/logrotate ] || exit 0
+[ -f /etc/logrotate.d/awg-gui ] || exit 0
+/usr/sbin/logrotate /etc/logrotate.d/awg-gui >/dev/null 2>&1 || true

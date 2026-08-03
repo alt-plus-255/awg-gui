@@ -12,6 +12,20 @@ function runnerLogPath(): string
     return getenv('AWG_GUI_UPDATE_LOG_PATH') ?: '/host-awg-gui/update.log';
 }
 
+function rotateLogIfHuge(string $path, int $maxBytes = 10 * 1024 * 1024): void
+{
+    if (! is_file($path)) {
+        return;
+    }
+    $size = @filesize($path);
+    if ($size === false || $size <= $maxBytes) {
+        return;
+    }
+    @unlink($path.'.1');
+    @rename($path, $path.'.1');
+    @file_put_contents($path, '');
+}
+
 function isoNow(): string
 {
     return gmdate('Y-m-d\TH:i:s\Z');
@@ -124,6 +138,8 @@ $state = [
 writeRunnerState($state);
 
 $logPath = runnerLogPath();
+// Fresh update run: truncate current log; keep one oversized backup if needed.
+rotateLogIfHuge($logPath);
 @file_put_contents($logPath, '['.isoNow()."] update started\n");
 @chmod($logPath, 0666);
 

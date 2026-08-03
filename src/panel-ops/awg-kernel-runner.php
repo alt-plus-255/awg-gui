@@ -17,6 +17,20 @@ function kernelLogPath(): string
     return getenv('AWG_GUI_KERNEL_LOG_PATH') ?: '/host-awg-gui/awg-kernel.log';
 }
 
+function rotateKernelLogIfHuge(string $path, int $maxBytes = 10 * 1024 * 1024): void
+{
+    if (! is_file($path)) {
+        return;
+    }
+    $size = @filesize($path);
+    if ($size === false || $size <= $maxBytes) {
+        return;
+    }
+    @unlink($path.'.1');
+    @rename($path, $path.'.1');
+    @file_put_contents($path, '');
+}
+
 function kernelHostScript(): string
 {
     return '/etc/awg-gui/awg-kernel-host.sh';
@@ -123,6 +137,7 @@ $state = [
 writeKernelState($state);
 
 $logPath = kernelLogPath();
+rotateKernelLogIfHuge($logPath);
 @file_put_contents($logPath, '['.isoNowKernel()."] {$op} started\n", FILE_APPEND);
 
 try {

@@ -637,6 +637,12 @@ EOF
   chown 33:33 /etc/awg-gui/webhook.conf 2>/dev/null || true
   chmod a+rw /etc/awg-gui/webhook.conf
   install -m 0644 "${RUNTIME_DIR}/systemd/awg-gui.service" /etc/systemd/system/awg-gui.service
+  if [[ -f "${RUNTIME_DIR}/logrotate/awg-gui" ]]; then
+    install -m 0644 "${RUNTIME_DIR}/logrotate/awg-gui" /etc/logrotate.d/awg-gui
+  fi
+  if [[ -f "${RUNTIME_DIR}/logrotate/awg-gui-hourly" ]]; then
+    install -m 0755 "${RUNTIME_DIR}/logrotate/awg-gui-hourly" /etc/cron.hourly/awg-gui-logrotate
+  fi
   systemctl daemon-reload
   systemctl enable --now awg-gui.service
   ok "$(t ok_cli_systemd)"
