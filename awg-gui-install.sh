@@ -27,9 +27,9 @@ YELLOW='\033[1;33m'
 BOLD='\033[1m'
 NC='\033[0m'
 
-log() { echo -e "${CYAN}[awg-gui-install]${NC} $*"; }
-ok() { echo -e "${GREEN}[ok]${NC} $*"; }
-warn() { echo -e "${YELLOW}[warn]${NC} $*"; }
+log() { echo -e "${CYAN}[awg-gui-install]${NC} $*" >&2; }
+ok() { echo -e "${GREEN}[ok]${NC} $*" >&2; }
+warn() { echo -e "${YELLOW}[warn]${NC} $*" >&2; }
 die() { echo -e "${RED}[error]${NC} $*" >&2; exit 1; }
 
 # shellcheck source=src/scripts/lib/install-i18n.sh
@@ -476,6 +476,9 @@ gen_app_key() {
 # Quote values that break `source .env` (e.g. ALLOWED_IPS with "0.0.0.0/0, ::/0").
 env_quote_value() {
   local val="$1"
+  # Never write multiline values — they break Docker Compose .env parsing.
+  val="${val//$'\n'/ }"
+  val="${val//$'\r'/}"
   if [[ "${val}" =~ [[:space:]\#\$\`\"\'\\\&\;\|\(\)\<\>] ]]; then
     val="${val//\\/\\\\}"
     val="${val//\"/\\\"}"
@@ -494,9 +497,17 @@ env_set() {
   rendered="$(env_quote_value "${val}")"
   tmp="$(mktemp)"
   if grep -q "^${key}=" "${file}" 2>/dev/null; then
+    # Replace key and drop orphan continuation lines from a prior multiline write.
     awk -v k="${key}" -v v="${rendered}" '
-      BEGIN { found=0 }
-      $0 ~ "^" k "=" { print k "=" v; found=1; next }
+      BEGIN { found=0; skipping=0 }
+      skipping {
+        if ($0 ~ /^[A-Za-z_][A-Za-z0-9_]*=/ || $0 ~ /^[[:space:]]*#/ || $0 ~ /^[[:space:]]*$/) {
+          skipping=0
+        } else {
+          next
+        }
+      }
+      $0 ~ "^" k "=" { print k "=" v; found=1; skipping=1; next }
       { print }
       END { if (!found) print k "=" v }
     ' "${file}" > "${tmp}"
@@ -783,6 +794,7 @@ main() {
 
   display_host="$(resolve_endpoint_host "${endpoint}")"
   sync_panel_access_env "${endpoint}" "${panel_port}" "${ENV_FILE}"
+  cleanup_env_file_orphans "${ENV_FILE}"
 
   mkdir -p /etc/awg-gui
   seed_host_ssl_files
