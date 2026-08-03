@@ -262,6 +262,9 @@ _awg_gui_msg_en() {
     prompt_internal_subnet) printf '%s' 'Internal subnet (INTERNAL_SUBNET)' ;;
     prompt_peer_dns) printf '%s' 'Peer DNS (PEER_DNS)' ;;
     prompt_allowed_ips) printf '%s' 'AllowedIPs for clients (ALLOWED_IPS)' ;;
+    warn_port_busy) printf '%s' '%s: port %s is already in use — using free port %s instead' ;;
+    warn_port_invalid) printf '%s' '%s: invalid port %s — using free port %s instead' ;;
+    err_no_free_port) printf '%s' 'Could not find a free host port for %s' ;;
     ok_created_env) printf '%s' 'Created %s' ;;
     ok_created_env_dev) printf '%s' 'Created %s from .env.example (random DB password generated)' ;;
     log_starting_containers) printf '%s' 'Starting containers ...' ;;
@@ -450,6 +453,9 @@ _awg_gui_msg_ru() {
     prompt_internal_subnet) printf '%s' 'Внутренняя подсеть (INTERNAL_SUBNET)' ;;
     prompt_peer_dns) printf '%s' 'DNS для клиентов (PEER_DNS)' ;;
     prompt_allowed_ips) printf '%s' 'AllowedIPs для клиентов (ALLOWED_IPS)' ;;
+    warn_port_busy) printf '%s' '%s: порт %s уже занят — используем свободный порт %s' ;;
+    warn_port_invalid) printf '%s' '%s: недопустимый порт %s — используем свободный порт %s' ;;
+    err_no_free_port) printf '%s' 'Не удалось найти свободный порт хоста для %s' ;;
     ok_created_env) printf '%s' 'Создан %s' ;;
     ok_created_env_dev) printf '%s' 'Создан %s из .env.example (сгенерирован случайный пароль БД)' ;;
     log_starting_containers) printf '%s' 'Запуск контейнеров ...' ;;

@@ -141,6 +141,7 @@ assemble_runtime() {
   mkdir -p "${bundle_dir}/lib" "${bundle_dir}/host"
   cp "${ROOT}/src/scripts/lib/ensure-docker.sh" "${bundle_dir}/lib/ensure-docker.sh"
   cp "${ROOT}/src/scripts/lib/install-i18n.sh" "${bundle_dir}/lib/install-i18n.sh"
+  cp "${ROOT}/src/scripts/lib/install-ports.sh" "${bundle_dir}/lib/install-ports.sh"
   cp "${ROOT}/src/scripts/host/awg-kernel-host.sh" "${bundle_dir}/host/awg-kernel-host.sh"
   chmod +x "${bundle_dir}/host/awg-kernel-host.sh"
   # Keep online installer helpers in sync for curl|bash entrypoint

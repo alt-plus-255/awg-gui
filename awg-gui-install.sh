@@ -13,6 +13,7 @@ SKIP_KERNEL=0
 UPGRADE_MODE=0
 REPAIR_MODE=0
 PANEL_PORT_DEFAULT=8877
+PANEL_HTTPS_PORT_DEFAULT=7443
 AWG_PORT_DEFAULT=51820
 INTERNAL_SUBNET_DEFAULT="10.66.66.0/24"
 PEER_DNS_DEFAULT="1.1.1.1"
@@ -33,6 +34,8 @@ die() { echo -e "${RED}[error]${NC} $*" >&2; exit 1; }
 
 # shellcheck source=src/scripts/lib/install-i18n.sh
 source "${SCRIPT_DIR}/src/scripts/lib/install-i18n.sh"
+# shellcheck source=src/scripts/lib/install-ports.sh
+source "${SCRIPT_DIR}/src/scripts/lib/install-ports.sh"
 
 usage() {
   if [[ "${AWG_GUI_LANG:-ru}" == "en" ]]; then
@@ -430,8 +433,11 @@ sync_panel_access_env() {
   host="$(resolve_endpoint_host "${endpoint}")"
   existing_app_url="$(env_get APP_URL "${file}" 2>/dev/null || true)"
   panel_domain="$(env_get PANEL_DOMAIN /etc/awg-gui/webhook.conf 2>/dev/null || true)"
-  https_port="$(env_get PANEL_HTTPS_PORT /etc/awg-gui/webhook.conf 2>/dev/null || true)"
-  https_port="${https_port:-7443}"
+  https_port="$(env_get PANEL_HTTPS_PORT "${file}" 2>/dev/null || true)"
+  if [[ -z "${https_port}" ]]; then
+    https_port="$(env_get PANEL_HTTPS_PORT /etc/awg-gui/webhook.conf 2>/dev/null || true)"
+  fi
+  https_port="${https_port:-${PANEL_HTTPS_PORT_DEFAULT}}"
   # Do not clobber an existing HTTPS/domain APP_URL (panel SSL / custom domain).
   if [[ -z "${existing_app_url}" \
      || "${existing_app_url}" == "http://localhost:${panel_port}" \
@@ -541,13 +547,14 @@ write_env_from_example() {
   local panel_port="$1" awg_port="$2" endpoint="$3"
   local internal_subnet="$4" peer_dns="$5" allowed_ips="$6"
   local admin_pass="$7" db_pass="$8" app_key="$9"
+  local panel_https_port="${10:-${PANEL_HTTPS_PORT_DEFAULT}}"
 
   [[ -f "${SRC_DIR}/.env.example" ]] || die "$(t err_missing_path "${SRC_DIR}/.env.example")"
   cp "${SRC_DIR}/.env.example" "${ENV_FILE}"
   chmod 600 "${ENV_FILE}"
 
   env_set "PANEL_PORT" "${panel_port}" "${ENV_FILE}"
-  env_set "PANEL_HTTPS_PORT" "7443" "${ENV_FILE}"
+  env_set "PANEL_HTTPS_PORT" "${panel_https_port}" "${ENV_FILE}"
   env_set "AWG_PORT" "${awg_port}" "${ENV_FILE}"
   env_set "APP_KEY" "${app_key}" "${ENV_FILE}"
   env_set "ADMIN_PASSWORD" "${admin_pass}" "${ENV_FILE}"
@@ -689,6 +696,7 @@ run_bootstrap() {
   local panel_port="$1" awg_port="$2" endpoint="$3"
   local internal_subnet="$4" peer_dns="$5" allowed_ips="$6"
   local admin_pass="$7"
+  local panel_https_port="${8:-${PANEL_HTTPS_PORT_DEFAULT}}"
 
   run_migrations
 
@@ -704,7 +712,7 @@ run_bootstrap() {
     -e SERVER_ENDPOINT="${endpoint}" \
     -e AWG_PORT="${awg_port}" \
     -e PANEL_PORT="${panel_port}" \
-    -e PANEL_HTTPS_PORT=7443 \
+    -e PANEL_HTTPS_PORT="${panel_https_port}" \
     -e INTERNAL_SUBNET="${internal_subnet}" \
     -e PEER_DNS="${peer_dns}" \
     -e ALLOWED_IPS="${allowed_ips}" \
@@ -720,13 +728,14 @@ main() {
   ensure_sing_box_vendor
   choose_install_mode
 
-  local panel_port awg_port endpoint internal_subnet peer_dns allowed_ips
+  local panel_port panel_https_port awg_port endpoint internal_subnet peer_dns allowed_ips
   local display_host admin_pass db_pass app_key
 
   if [[ "${UPGRADE_MODE}" -eq 1 ]]; then
     env_merge_missing_keys
     ok "$(t ok_using_existing_env_merged "${ENV_FILE}")"
     panel_port="$(env_get PANEL_PORT "${ENV_FILE}" "${PANEL_PORT_DEFAULT}")"
+    panel_https_port="$(env_get PANEL_HTTPS_PORT "${ENV_FILE}" "${PANEL_HTTPS_PORT_DEFAULT}")"
     awg_port="$(env_get AWG_PORT "${ENV_FILE}" "${AWG_PORT_DEFAULT}")"
     endpoint="$(env_get SERVER_ENDPOINT "${ENV_FILE}" "auto")"
     [[ -n "${endpoint}" ]] || endpoint="auto"
@@ -746,15 +755,29 @@ main() {
     prompt internal_subnet "$(t prompt_internal_subnet)" "${INTERNAL_SUBNET_DEFAULT}"
     prompt peer_dns "$(t prompt_peer_dns)" "${PEER_DNS_DEFAULT}"
     prompt allowed_ips "$(t prompt_allowed_ips)" "${ALLOWED_IPS_DEFAULT}"
+    panel_https_port="${PANEL_HTTPS_PORT_DEFAULT}"
 
     admin_pass="$(rand_secret 20)"
     db_pass="$(rand_secret 32)"
     app_key="$(gen_app_key)"
+  fi
 
+  # Avoid "address already in use" on compose up — remap busy ports and warn.
+  reset_install_ports_reserved
+  panel_port="$(ensure_host_port "${panel_port}" tcp "PANEL_PORT")"
+  panel_https_port="$(ensure_host_port "${panel_https_port}" tcp "PANEL_HTTPS_PORT")"
+  awg_port="$(ensure_host_port "${awg_port}" udp "AWG_PORT")"
+
+  if [[ "${UPGRADE_MODE}" -eq 1 ]]; then
+    env_set "PANEL_PORT" "${panel_port}" "${ENV_FILE}"
+    env_set "PANEL_HTTPS_PORT" "${panel_https_port}" "${ENV_FILE}"
+    env_set "AWG_PORT" "${awg_port}" "${ENV_FILE}"
+  else
     write_env_from_example \
       "${panel_port}" "${awg_port}" "${endpoint}" \
       "${internal_subnet}" "${peer_dns}" "${allowed_ips}" \
-      "${admin_pass}" "${db_pass}" "${app_key}"
+      "${admin_pass}" "${db_pass}" "${app_key}" \
+      "${panel_https_port}"
     ok "$(t ok_created_env_dev "${ENV_FILE}")"
   fi
 
@@ -778,19 +801,23 @@ main() {
   run_bootstrap \
     "${panel_port}" "${awg_port}" "${endpoint}" \
     "${internal_subnet}" "${peer_dns}" "${allowed_ips}" \
-    "${admin_pass:-}"
+    "${admin_pass:-}" "${panel_https_port}"
 
   if [[ "${UPGRADE_MODE}" -eq 0 || ! -f /etc/awg-gui/webhook.conf ]] || ! grep -q '^PANEL_PORT=' /etc/awg-gui/webhook.conf 2>/dev/null; then
     cat > /etc/awg-gui/webhook.conf <<EOF
 WEBHOOK_URL=
 PANEL_PORT=${panel_port}
-PANEL_HTTPS_PORT=7443
+PANEL_HTTPS_PORT=${panel_https_port}
 SERVER_ENDPOINT=${endpoint}
 PANEL_DOMAIN=
 SSL_ENABLED=0
 EOF
-  elif [[ "${REPAIR_MODE}" -eq 1 ]]; then
-    env_set "SERVER_ENDPOINT" "${endpoint}" /etc/awg-gui/webhook.conf
+  else
+    env_set "PANEL_PORT" "${panel_port}" /etc/awg-gui/webhook.conf
+    env_set "PANEL_HTTPS_PORT" "${panel_https_port}" /etc/awg-gui/webhook.conf
+    if [[ "${REPAIR_MODE}" -eq 1 ]]; then
+      env_set "SERVER_ENDPOINT" "${endpoint}" /etc/awg-gui/webhook.conf
+    fi
   fi
 
   install_cli_and_systemd
