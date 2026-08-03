@@ -55,14 +55,17 @@ In the peer dialog, **AllowedIPs (server → peer)** is a list of CIDRs (`extra_
 | Situation | Server `.conf` | Client `.conf` / QR |
 |-----------|----------------|---------------------|
 | No CIDRs | Peer `Address` | Config `client_allowed_ips` (usually `0.0.0.0/0, ::/0`) |
-| CIDRs set, **resolver off** | Peer `Address` + CIDRs | **Server interface address** (`server_address`) + those CIDRs — not full tunnel |
+| CIDRs set, **resolver off** | Peer `Address` + CIDRs | **Tunnel subnet** (`internal_subnet`, network-aligned) + those CIDRs — not full tunnel |
 | **Resolver on** | as above | always `0.0.0.0/0, ::/0` (resolver needs full tunnel) |
 
-Example: interface `10.66.66.1/24`, peer CIDR `192.168.1.13/32` → client config:
+Example: subnet `10.66.66.0/24`, peer CIDR `192.168.1.13/32` → client config:
 
 ```
-AllowedIPs = 10.66.66.1/24, 192.168.1.13/32
+AllowedIPs = 10.66.66.0/24, 192.168.1.13/32
+DNS = 1.1.1.1
 ```
+
+General internet and DNS stay **off-tunnel** (ISP); the AWG subnet and listed CIDRs go via the VPN. Do not put `10.66.66.1/24` (host bits set) in AllowedIPs — Android WireGuard rejects it (Error 1000).
 
 `0.0.0.0/0` and `::/0` cannot be set as peer CIDRs. For virtual networks, extra AllowedIPs mean something else — see [virtual-networks.md](virtual-networks.md).
 

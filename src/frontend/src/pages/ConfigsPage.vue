@@ -882,9 +882,22 @@ const peerPreview = computed(() => {
       .filter((x) => x && x !== '0.0.0.0/0' && x !== '::/0')
     if (!cidrs.length) return ''
     const ips = []
-    const serverAddress = String(activeConfig.value.server_address || '').trim()
-    if (serverAddress && serverAddress !== '0.0.0.0/0' && serverAddress !== '::/0') {
-      ips.push(serverAddress)
+    // Prefer network-aligned tunnel subnet (Android rejects 10.66.66.1/24 in AllowedIPs)
+    let tunnel = String(activeConfig.value.internal_subnet || '').trim()
+    if (!tunnel) {
+      tunnel = String(activeConfig.value.server_address || '').trim()
+      // Best-effort: x.x.x.1/24 → x.x.x.0/24 for common /24 case
+      const m = tunnel.match(/^(\d+\.\d+\.\d+)\.(\d+)\/(\d+)$/)
+      if (m) {
+        const prefix = Number(m[3])
+        if (prefix === 24) tunnel = `${m[1]}.0/24`
+        else if (prefix === 32) tunnel = `${m[1]}.${m[2]}/32`
+        else if (prefix === 16) tunnel = `${m[1].split('.').slice(0, 2).join('.')}.0.0/16`
+        else if (prefix === 8) tunnel = `${m[1].split('.')[0]}.0.0.0/8`
+      }
+    }
+    if (tunnel && tunnel !== '0.0.0.0/0' && tunnel !== '::/0') {
+      ips.push(tunnel)
     }
     cidrs.forEach((cidr) => {
       if (!ips.includes(cidr)) ips.push(cidr)

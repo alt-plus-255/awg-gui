@@ -211,6 +211,7 @@ _awg_gui_msg_en() {
     ok_kernel_installed) printf '%s' 'AmneziaWG kernel module installed' ;;
     warn_kernel_failed) printf '%s' 'Kernel module install failed — continuing with userspace amneziawg-go' ;;
     log_kernel_skipped_user) printf '%s' 'Kernel module skipped by user' ;;
+    log_kernel_skip_upgrade_not_installed) printf '%s' 'AmneziaWG kernel module is not installed — skipping forced install on upgrade' ;;
     warn_leftover_env) printf '%s' 'Leftover %s without containers — clean install with new passwords' ;;
     warn_incomplete_repair) printf '%s' 'Incomplete install detected — continuing automatic repair ...' ;;
     log_existing_upgrade_yes) printf '%s' 'Existing install detected → upgrade mode (--yes)' ;;
@@ -402,6 +403,7 @@ _awg_gui_msg_ru() {
     ok_kernel_installed) printf '%s' 'Модуль ядра AmneziaWG установлен' ;;
     warn_kernel_failed) printf '%s' 'Установка модуля ядра не удалась — продолжаем с userspace amneziawg-go' ;;
     log_kernel_skipped_user) printf '%s' 'Модуль ядра пропущен пользователем' ;;
+    log_kernel_skip_upgrade_not_installed) printf '%s' 'Модуль ядра AmneziaWG не установлен — принудительная установка при обновлении пропущена' ;;
     warn_leftover_env) printf '%s' 'Найден оставшийся %s без контейнеров — чистая установка с новыми паролями' ;;
     warn_incomplete_repair) printf '%s' 'Обнаружена незавершённая установка — продолжаем восстановление автоматически ...' ;;
     log_existing_upgrade_yes) printf '%s' 'Обнаружена установка → режим обновления (--yes)' ;;

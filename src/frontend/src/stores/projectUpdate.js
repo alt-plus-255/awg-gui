@@ -3,6 +3,9 @@ import { computed, ref } from 'vue'
 import api from '@/boot/axios'
 import { useAuthStore } from '@/stores/auth'
 
+/** Keep polling briefly after start even if one status reply looks idle (runner race). */
+const START_GRACE_MS = 20000
+
 export const useProjectUpdateStore = defineStore('projectUpdate', () => {
   const loading = ref(false)
   const checking = ref(false)
@@ -28,10 +31,15 @@ export const useProjectUpdateStore = defineStore('projectUpdate', () => {
   const log_tail = ref('')
 
   let pollTimer = null
+  let localStartMs = null
 
   const busy = computed(() =>
     loading.value || checking.value || starting.value || clearingLog.value || retryingStuck.value || running.value
   )
+
+  function inStartGrace () {
+    return localStartMs != null && (Date.now() - localStartMs) < START_GRACE_MS
+  }
 
   function applyPayload (data, opts = {}) {
     if (!data || typeof data !== 'object') return
@@ -52,8 +60,39 @@ export const useProjectUpdateStore = defineStore('projectUpdate', () => {
       : (data.release_check_error ?? null)
     installed_at.value = data.installed_at ?? null
     can_update.value = !!data.can_update
-    status.value = data.status || 'idle'
-    running.value = !!data.running
+
+    const nextStatus = data.status || 'idle'
+    const nextRunning = !!data.running
+
+    // After start, a too-early status poll can briefly report idle before update.state exists.
+    // Keep running + refresh the log so the journal appears without a page reload.
+    if (
+      inStartGrace()
+      && !nextRunning
+      && nextStatus !== 'success'
+      && nextStatus !== 'failed'
+    ) {
+      if (data.log_tail != null && data.log_tail !== '') {
+        log_tail.value = data.log_tail
+      }
+      if (data.message) {
+        message.value = data.message
+      }
+      if (data.started_at) {
+        started_at.value = data.started_at
+      }
+      running.value = true
+      status.value = 'running'
+      can_clear_log.value = false
+      return
+    }
+
+    if (nextRunning || nextStatus === 'success' || nextStatus === 'failed') {
+      localStartMs = null
+    }
+
+    status.value = nextStatus
+    running.value = nextRunning
     stuck.value = !!data.stuck
     can_retry_stuck.value = !!data.can_retry_stuck
     can_clear_log.value = data.can_clear_log !== false
@@ -63,16 +102,16 @@ export const useProjectUpdateStore = defineStore('projectUpdate', () => {
     log_tail.value = data.log_tail ?? ''
   }
 
-  function schedulePoll () {
+  function schedulePoll (delayMs = 3000) {
     if (pollTimer) clearTimeout(pollTimer)
     const auth = useAuthStore()
-    if (!auth.user || !running.value) {
+    if (!auth.user || (!running.value && !inStartGrace())) {
       pollTimer = null
       return
     }
     pollTimer = setTimeout(() => {
       void fetchStatus({ silent: true })
-    }, 3000)
+    }, delayMs)
   }
 
   function stopPoll () {
@@ -112,11 +151,13 @@ export const useProjectUpdateStore = defineStore('projectUpdate', () => {
     starting.value = true
     try {
       const { data } = await api.post('/api/settings/update')
+      localStartMs = Date.now()
       applyPayload(data)
       return data
     } finally {
       starting.value = false
-      schedulePoll()
+      // First poll sooner so the journal shows up without waiting a full 3s / refresh.
+      schedulePoll(800)
     }
   }
 
@@ -136,11 +177,12 @@ export const useProjectUpdateStore = defineStore('projectUpdate', () => {
     retryingStuck.value = true
     try {
       const { data } = await api.post('/api/settings/update/retry-stuck')
+      localStartMs = Date.now()
       applyPayload(data)
       return data
     } finally {
       retryingStuck.value = false
-      schedulePoll()
+      schedulePoll(800)
     }
   }
 

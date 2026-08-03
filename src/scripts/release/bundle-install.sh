@@ -207,6 +207,18 @@ install_awg_kernel_module() {
     return 0
   fi
 
+  # Non-interactive upgrade (GUI / --yes): never force-install kernel if it was not present.
+  # Only install when the user previously opted in (AWG_KERNEL_WANTED=1).
+  if [[ "${YES}" -eq 1 && "${UPGRADE_MODE}" -eq 1 ]]; then
+    local wanted
+    wanted="$(env_get "AWG_KERNEL_WANTED" "${ENV_FILE}" "0")"
+    if [[ "${wanted}" != "1" ]]; then
+      log "$(t log_kernel_skip_upgrade_not_installed)"
+      env_set "AWG_KERNEL_WANTED" "0" "${ENV_FILE}" 2>/dev/null || true
+      return 0
+    fi
+  fi
+
   if confirm "$(t confirm_install_kernel)" "y"; then
     env_set "AWG_KERNEL_WANTED" "1" "${ENV_FILE}" 2>/dev/null || true
     log "$(t log_installing_kernel)"

@@ -72,7 +72,7 @@ When creating a config, choose **1.0**, **1.5**, or **2.0** (default: latest). V
 
 A peer (`vpn_client`) is a separate entity. **Attach** to a config, **detach** (peer stays in the panel), **rebind** to another config. Export **`.conf`**, **QR**, and **`vpn://`** for clients.
 
-For **Server** configs with the resolver off: if a peer has AllowedIPs CIDRs, the client `.conf` uses the server interface address + those CIDRs (split-tunnel) instead of full tunnel. Enabling the resolver asks for confirmation and switches to `0.0.0.0/0`.
+For **Server** configs with the resolver off: if a peer has AllowedIPs CIDRs, the client `.conf` uses the tunnel subnet (`10.66.66.0/24`) + those CIDRs (split-tunnel) instead of full tunnel; general internet stays off-VPN. Enabling the resolver asks for confirmation and switches to `0.0.0.0/0`.
 
 → [Details: configs & peers](readme/en/configs-and-peers.md)
 

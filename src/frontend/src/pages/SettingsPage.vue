@@ -1895,7 +1895,6 @@ async function startProjectUpdate () {
       type: 'info',
       message: t('settings.updateStarted')
     })
-    await projectUpdate.fetchStatus({ silent: true })
   } catch (e) {
     const status = e?.response?.status
     const msg = e?.response?.data?.message || t('settings.updateStartError')

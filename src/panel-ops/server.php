@@ -205,10 +205,35 @@ function startUpdate(?string $version): array
     fclose($pipes[2]);
     proc_close($process);
 
+    $pidInt = ctype_digit($pid) ? (int) $pid : 0;
+    $target = $version !== null ? ltrim($version, 'v') : null;
+    $startedAt = gmdate('Y-m-d\TH:i:s\Z');
+
+    // Persist running state before HTTP 202 returns so the panel can poll
+    // immediately without racing the async runner's first write.
+    $state = [
+        'pid' => $pidInt,
+        'status' => 'running',
+        'target_version' => $target,
+        'started_at' => $startedAt,
+        'finished_at' => null,
+        'message' => $target
+            ? "Updating to {$target}..."
+            : 'Updating to the latest release...',
+    ];
+    @file_put_contents(
+        updateStatePath(),
+        json_encode($state, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES).PHP_EOL
+    );
+
+    $logPath = $env['AWG_GUI_UPDATE_LOG_PATH'];
+    @file_put_contents($logPath, '['.$startedAt."] update started\n");
+    @chmod($logPath, 0666);
+
     return [
         'ok' => true,
         'status' => 202,
-        'pid' => ctype_digit($pid) ? (int) $pid : null,
+        'pid' => $pidInt > 0 ? $pidInt : null,
         'message' => $version
             ? 'Update has started for the requested version.'
             : 'Update has started.',

@@ -24,6 +24,7 @@ class AmneziaWgClientAllowedIpsTest extends TestCase
         $config = new AwgConfig([
             'type' => 'server',
             'resolver_enabled' => false,
+            'internal_subnet' => '10.66.66.0/24',
             'server_address' => '10.66.66.1/24',
             'client_allowed_ips' => '0.0.0.0/0, ::/0',
         ]);
@@ -38,12 +39,13 @@ class AmneziaWgClientAllowedIpsTest extends TestCase
         );
     }
 
-    public function test_extras_without_resolver_use_server_address_plus_cidrs(): void
+    public function test_extras_without_resolver_use_internal_subnet_plus_cidrs(): void
     {
         $service = $this->service();
         $config = new AwgConfig([
             'type' => 'server',
             'resolver_enabled' => false,
+            'internal_subnet' => '10.66.66.0/24',
             'server_address' => '10.66.66.1/24',
             'client_allowed_ips' => '0.0.0.0/0, ::/0',
         ]);
@@ -53,7 +55,28 @@ class AmneziaWgClientAllowedIpsTest extends TestCase
         ]);
 
         $this->assertSame(
-            ['10.66.66.1/24', '192.168.1.13/32', '10.0.0.0/8'],
+            ['10.66.66.0/24', '192.168.1.13/32', '10.0.0.0/8'],
+            $service->clientAllowedIps($config, $membership)
+        );
+    }
+
+    public function test_falls_back_to_canonical_server_address_when_subnet_missing(): void
+    {
+        $service = $this->service();
+        $config = new AwgConfig([
+            'type' => 'server',
+            'resolver_enabled' => false,
+            'internal_subnet' => '',
+            'server_address' => '10.66.66.1/24',
+            'client_allowed_ips' => '0.0.0.0/0, ::/0',
+        ]);
+        $membership = new AwgConfigPeer([
+            'address' => '10.66.66.2/32',
+            'extra_allowed_ips' => ['192.168.1.13/32'],
+        ]);
+
+        $this->assertSame(
+            ['10.66.66.0/24', '192.168.1.13/32'],
             $service->clientAllowedIps($config, $membership)
         );
     }
@@ -64,6 +87,7 @@ class AmneziaWgClientAllowedIpsTest extends TestCase
         $config = new AwgConfig([
             'type' => 'server',
             'resolver_enabled' => true,
+            'internal_subnet' => '10.66.66.0/24',
             'server_address' => '10.66.66.1/24',
             'client_allowed_ips' => '0.0.0.0/0, ::/0',
         ]);
@@ -84,6 +108,7 @@ class AmneziaWgClientAllowedIpsTest extends TestCase
         $config = new AwgConfig([
             'type' => 'server',
             'resolver_enabled' => false,
+            'internal_subnet' => '10.66.66.0/24',
             'server_address' => '10.66.66.1/24',
             'client_allowed_ips' => '0.0.0.0/0, ::/0',
         ]);
@@ -93,7 +118,7 @@ class AmneziaWgClientAllowedIpsTest extends TestCase
         ]);
 
         $this->assertSame(
-            ['10.66.66.1/24', '192.168.1.13/32'],
+            ['10.66.66.0/24', '192.168.1.13/32'],
             $service->clientAllowedIps($config, $membership)
         );
     }
@@ -104,6 +129,7 @@ class AmneziaWgClientAllowedIpsTest extends TestCase
         $config = new AwgConfig([
             'type' => 'server',
             'resolver_enabled' => false,
+            'internal_subnet' => '10.66.66.0/24',
             'server_address' => '10.66.66.1/24',
             'client_allowed_ips' => '0.0.0.0/0, ::/0',
         ]);
@@ -116,5 +142,14 @@ class AmneziaWgClientAllowedIpsTest extends TestCase
             ['0.0.0.0/0', '::/0'],
             $service->clientAllowedIps($config, $membership)
         );
+    }
+
+    public function test_canonical_network_cidr_clears_host_bits(): void
+    {
+        $service = $this->service();
+
+        $this->assertSame('10.66.66.0/24', $service->canonicalNetworkCidr('10.66.66.1/24'));
+        $this->assertSame('192.168.1.13/32', $service->canonicalNetworkCidr('192.168.1.13/32'));
+        $this->assertSame('10.0.0.0/8', $service->canonicalNetworkCidr('10.1.2.3/8'));
     }
 }

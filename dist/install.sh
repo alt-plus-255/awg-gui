@@ -426,8 +426,9 @@ fetch_url_with_progress() {
 
     if (( is_tty )); then
       printf '\033[2K\r%s' "${line}" >&2
-    else
-      printf '\r%s' "${line}" >&2
+    elif (( tick % 5 == 0 )); then
+      # File/pipe (GUI update.log): newline progress every ~5s — \r makes one unreadable blob.
+      printf '%s\n' "${line}" >&2
     fi
 
     tick=$((tick + 1))
@@ -447,7 +448,7 @@ fetch_url_with_progress() {
   if (( is_tty )); then
     printf '\033[2K\r%s\n' "${line}" >&2
   else
-    printf '\r%s\n' "${line}" >&2
+    printf '%s\n' "${line}" >&2
   fi
 }
 

@@ -453,7 +453,15 @@ class ProjectUpdateService
             return '';
         }
 
-        $lines = file($path, FILE_IGNORE_NEW_LINES) ?: [];
+        $raw = (string) file_get_contents($path);
+        if ($raw === '') {
+            return '';
+        }
+
+        // Progress writers historically used \r without \n; split so the GUI
+        // shows one progress tick per line instead of a single garbled blob.
+        $raw = str_replace(["\r\n", "\r"], "\n", $raw);
+        $lines = preg_split("/\n/", $raw, -1, PREG_SPLIT_NO_EMPTY) ?: [];
         if ($lines === []) {
             return '';
         }

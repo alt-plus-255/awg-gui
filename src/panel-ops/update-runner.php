@@ -58,10 +58,25 @@ function buildHostUpdateJobScript(?string $version, string $installUrl): string
         $script .= 'export AWG_GUI_VERSION='.escapeshellarg($version)."\n";
     }
 
-    $script .= 'tmp="$(mktemp /tmp/awg-gui-install.XXXXXX)"'."\n"
+    // Do not force AmneziaWG kernel install on GUI upgrades when it was never installed.
+    // Pass --no-awg-kernel unless the package/module is present or AWG_KERNEL_WANTED=1.
+    $script .= 'install_args=(--yes)'."\n"
+        .'kernel_present=0'."\n"
+        .'if [[ -x /etc/awg-gui/awg-kernel-host.sh ]]; then'."\n"
+        .'  st="$(/etc/awg-gui/awg-kernel-host.sh status 2>/dev/null || true)"'."\n"
+        .'  if echo "$st" | grep -qE \'"package_installed":true|"module_loaded":true\'; then'."\n"
+        .'    kernel_present=1'."\n"
+        .'  fi'."\n"
+        .'fi'."\n"
+        .'wanted="$(grep -E \'^AWG_KERNEL_WANTED=\' /opt/awg-gui/runtime/.env 2>/dev/null | tail -1 | cut -d= -f2- | tr -d \'"\' || true)"'."\n"
+        .'if [[ "$kernel_present" -ne 1 && "$wanted" != "1" ]]; then'."\n"
+        .'  echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] AmneziaWG kernel not installed - skipping forced kernel install"'."\n"
+        .'  install_args+=(--no-awg-kernel)'."\n"
+        .'fi'."\n"
+        .'tmp="$(mktemp /tmp/awg-gui-install.XXXXXX)"'."\n"
         .'trap \'rm -f "$tmp"\' EXIT'."\n"
         .'curl -fsSL '.escapeshellarg($installUrl).' -o "$tmp"'."\n"
-        .'/bin/bash "$tmp" --yes'."\n";
+        .'/bin/bash "$tmp" "${install_args[@]}"'."\n";
 
     return $script;
 }

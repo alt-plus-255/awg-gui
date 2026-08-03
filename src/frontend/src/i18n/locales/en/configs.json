@@ -112,7 +112,7 @@
   "mutualExclusionHint": "On: excluded nodes also will not get this peer’s subnet. Off: exclusion is one-way only.",
   "peerIsolationHint": "Config is in isolation mode: this peer’s access is set by rules under the peers table.",
   "serverToPeerAllowedIps": "AllowedIPs (server → peer)",
-  "serverToPeerSplitTunnelHint": "If you set CIDRs, the client .conf will use the server interface address + those CIDRs (no 0.0.0.0/0). With no CIDRs, the config’s full-tunnel AllowedIPs apply.",
+  "serverToPeerSplitTunnelHint": "If you set CIDRs, the client .conf will use the tunnel subnet (e.g. 10.66.66.0/24) + those CIDRs (no 0.0.0.0/0). General internet stays off-VPN. With no CIDRs, the config’s full-tunnel AllowedIPs apply.",
   "addCidr": "Add CIDR",
   "clientConfAllowedIps": "Allowed IP addresses (in client .conf)",
   "restartAwgTitle": "Restart AWG",

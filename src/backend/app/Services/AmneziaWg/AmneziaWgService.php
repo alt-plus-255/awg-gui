@@ -772,7 +772,9 @@ class AmneziaWgService
             return ['0.0.0.0/0', '::/0'];
         }
 
-        // Server without resolver: peer extras → split-tunnel (interface address + CIDRs).
+        // Server without resolver: peer extras → split-tunnel (tunnel subnet + CIDRs).
+        // Use network-aligned CIDR (internal_subnet / canonicalized server_address).
+        // Android WireGuard rejects host addresses like 10.66.66.1/24 → Error 1000.
         $extras = $membership->extra_allowed_ips ?? [];
         if (! is_array($extras)) {
             $extras = [];
@@ -783,13 +785,22 @@ class AmneziaWgService
             if ($cidr === '' || $cidr === '0.0.0.0/0' || $cidr === '::/0') {
                 continue;
             }
-            $splitCidrs[] = $cidr;
+            $canonical = $this->canonicalNetworkCidr($cidr) ?? $cidr;
+            if ($canonical === '0.0.0.0/0' || $canonical === '::/0') {
+                continue;
+            }
+            $splitCidrs[] = $canonical;
         }
+        $splitCidrs = array_values(array_unique($splitCidrs));
         if ($splitCidrs !== []) {
             $ips = [];
-            $serverAddress = trim((string) ($config->server_address ?? ''));
-            if ($serverAddress !== '' && $serverAddress !== '0.0.0.0/0' && $serverAddress !== '::/0') {
-                $ips[] = $serverAddress;
+            $tunnel = trim((string) ($config->internal_subnet ?? ''));
+            if ($tunnel === '') {
+                $tunnel = trim((string) ($config->server_address ?? ''));
+            }
+            $tunnelCidr = $this->canonicalNetworkCidr($tunnel);
+            if ($tunnelCidr !== null && $tunnelCidr !== '0.0.0.0/0' && $tunnelCidr !== '::/0') {
+                $ips[] = $tunnelCidr;
             }
             foreach ($splitCidrs as $cidr) {
                 if (! in_array($cidr, $ips, true)) {
@@ -803,6 +814,78 @@ class AmneziaWgService
         $raw = $config->client_allowed_ips ?: '0.0.0.0/0, ::/0';
 
         return array_values(array_filter(array_map('trim', explode(',', $raw))));
+    }
+
+    /**
+     * Normalize a CIDR to network form (host bits cleared) for AllowedIPs.
+     * Android WireGuard rejects non-canonical routes like 10.66.66.1/24.
+     */
+    public function canonicalNetworkCidr(string $cidr): ?string
+    {
+        $cidr = trim($cidr);
+        if ($cidr === '' || ! str_contains($cidr, '/')) {
+            return null;
+        }
+
+        [$ip, $prefixRaw] = explode('/', $cidr, 2);
+        $ip = trim($ip);
+        if (! ctype_digit($prefixRaw)) {
+            return null;
+        }
+        $prefix = (int) $prefixRaw;
+
+        if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+            if ($prefix < 0 || $prefix > 32) {
+                return null;
+            }
+            $ipLong = ip2long($ip);
+            if ($ipLong === false) {
+                return null;
+            }
+            $mask = $prefix === 0 ? 0 : (~((1 << (32 - $prefix)) - 1) & 0xFFFFFFFF);
+            $network = long2ip($ipLong & $mask);
+            if ($network === false) {
+                return null;
+            }
+
+            return $network.'/'.$prefix;
+        }
+
+        if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)) {
+            if ($prefix < 0 || $prefix > 128) {
+                return null;
+            }
+            $binary = inet_pton($ip);
+            if ($binary === false) {
+                return null;
+            }
+            $bits = unpack('C*', $binary);
+            if (! is_array($bits)) {
+                return null;
+            }
+            $bytes = array_values($bits);
+            for ($i = 0; $i < 16; $i++) {
+                $bitStart = $i * 8;
+                if ($prefix >= $bitStart + 8) {
+                    continue;
+                }
+                if ($prefix <= $bitStart) {
+                    $bytes[$i] = 0;
+                    continue;
+                }
+                $keep = $prefix - $bitStart;
+                $bytes[$i] = $bytes[$i] & (0xFF << (8 - $keep) & 0xFF);
+            }
+            $packed = pack('C*', ...$bytes);
+            $network = inet_ntop($packed);
+            if ($network === false) {
+                return null;
+            }
+
+            return $network.'/'.$prefix;
+        }
+
+        return null;
     }
 
     public function clientAllowedIpsString(AwgConfig $config, AwgConfigPeer $membership): string
