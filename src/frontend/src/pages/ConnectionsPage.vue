@@ -109,7 +109,7 @@
                 flat
                 dense
                 round
-                :icon="props.expand ? 'expand_less' : 'expand_more'"
+                :icon="expandBtnIcon(props)"
                 @click="toggleExpand(props)"
               />
             </q-td>
@@ -224,7 +224,12 @@
             </q-td>
           </q-tr>
 
-          <q-tr v-if="props.row.kind === 'subscription' && props.expand" :props="props" :key="`e_${props.row.id}`" class="q-virtual-scroll--with-prev">
+          <q-tr
+            v-if="!$q.screen.lt.md && props.row.kind === 'subscription' && props.expand"
+            :props="props"
+            :key="`e_${props.row.id}`"
+            class="q-virtual-scroll--with-prev"
+          >
             <q-td colspan="100%" class="expanded-cell">
               <div v-if="subscriptionState[props.row.id]" class="q-pa-md">
                 <div class="row items-center q-mb-md q-gutter-sm">
@@ -290,6 +295,75 @@
         </template>
       </q-table>
     </div>
+
+    <q-dialog v-model="expandModalOpen" v-bind="mobileDialog" @hide="onExpandModalHide">
+      <q-card class="surface-panel dialog-card column no-wrap" style="width: min(960px, 95vw); max-width: 95vw;">
+        <DialogHeader
+          :title="expandModalRow ? expandModalRow.name : ''"
+          always-show-close
+        />
+        <q-card-section v-if="expandModalRow && subscriptionState[expandModalRow.id]" class="col dialog-scroll-body">
+          <div class="column q-gutter-md">
+            <q-select
+              v-model="subscriptionState[expandModalRow.id].pingIntervalMin"
+              :options="pingIntervalOptions"
+              :label="t('connections.autoPing')"
+              dense
+              outlined
+              emit-value
+              map-options
+              :disable="isConnectionPinging(expandModalRow.id)"
+              @update:model-value="() => savePingInterval(expandModalRow)"
+            />
+            <div v-if="formatLastChecked(lastCheckedAt(expandModalRow))" class="text-caption text-grey-5">
+              {{ t('connections.lastCheck') }}
+              <span class="mono text-grey-4">{{ formatLastChecked(lastCheckedAt(expandModalRow)) }}</span>
+            </div>
+            <div v-else class="text-caption text-grey-6">
+              {{ t('connections.pingNeverRun') }}
+            </div>
+            <q-badge
+              v-if="isConnectionPinging(expandModalRow.id)"
+              color="info"
+              outline
+              class="self-start"
+            >
+              {{ t('connections.checking') }}
+            </q-badge>
+            <div class="row q-gutter-sm">
+              <q-btn flat dense icon="cloud_download" :label="t('connections.refreshSubscription')"
+                :loading="subscriptionState[expandModalRow.id]?.refreshing"
+                @click="refreshSubscription(expandModalRow)" />
+              <q-btn color="primary" dense icon="save" :label="t('common.apply')"
+                :loading="subscriptionState[expandModalRow.id]?.saving"
+                :disable="!subscriptionState[expandModalRow.id]?.dirty"
+                @click="applySubscription(expandModalRow)" />
+            </div>
+
+            <div v-if="(subscriptionState[expandModalRow.id]?.nodes || []).length <= 6" class="text-caption text-warning">
+              {{ t('connections.fewNodesHint') }}
+            </div>
+
+            <SubscriptionNodesTable
+              :key="`nodes-m-${expandModalRow.id}-${(subscriptionState[expandModalRow.id]?.nodes || []).length}-${expandModalRow.subscription_fetched_at || ''}`"
+              :rows="subscriptionState[expandModalRow.id]?.nodes || []"
+              :mode="subscriptionState[expandModalRow.id]?.mode"
+              :mode-options="modeOptions"
+              :selected="subscriptionState[expandModalRow.id]?.selected"
+              :best-pick-key="activeNodeKeyForRow(expandModalRow)"
+              :active-pick-source="expandModalRow.subscription_pick_source"
+              :ping-loading="isConnectionPinging(expandModalRow.id)"
+              :ping-truncated="subscriptionState[expandModalRow.id]?.pingTruncated"
+              :ping-tested="subscriptionState[expandModalRow.id]?.pingTested"
+              @update:mode="(v) => onExpandModeUpdate(expandModalRow.id, v)"
+              @ping="(fast) => pingExpandNodes(expandModalRow, fast)"
+              @ping-node="(node) => pingExpandNode(expandModalRow, node)"
+              @select="(node) => selectExpandNode(expandModalRow.id, node)"
+            />
+          </div>
+        </q-card-section>
+      </q-card>
+    </q-dialog>
 
     <q-dialog v-model="dialogOpen" v-bind="mobileDialog" persistent>
       <q-card style="width: min(720px, 95vw); max-width: 95vw;" class="surface-panel dialog-card column no-wrap">
@@ -676,6 +750,13 @@ const editOriginalSubscriptionUrl = ref('')
 const connections = ref([])
 const subscriptionState = reactive({})
 const expandedIds = reactive(new Set())
+const expandModalOpen = ref(false)
+const expandModalId = ref(null)
+const expandModalRow = computed(() =>
+  expandModalId.value == null
+    ? null
+    : (connections.value.find(c => c.id === expandModalId.value) || null)
+)
 let parseTimer = null
 const pingTimers = new Map()
 const autoPingRunning = ref(false)
@@ -1428,8 +1509,23 @@ function updateExpandDirty (id) {
   st.dirty = st.mode !== st.baselineMode || st.selected !== st.baselineSelected
 }
 
+function expandBtnIcon (props) {
+  if ($q.screen.lt.md) {
+    return expandModalOpen.value && expandModalId.value === props.row.id ? 'close' : 'open_in_full'
+  }
+  return props.expand ? 'expand_less' : 'expand_more'
+}
+
 function toggleExpand (props) {
   const id = props.row.id
+  if ($q.screen.lt.md) {
+    expandedIds.add(id)
+    initSubscriptionState(props.row)
+    expandModalId.value = id
+    expandModalOpen.value = true
+    return
+  }
+
   if (props.expand) {
     expandedIds.delete(id)
   } else {
@@ -1437,6 +1533,13 @@ function toggleExpand (props) {
     initSubscriptionState(props.row)
   }
   props.expand = !props.expand
+}
+
+function onExpandModalHide () {
+  if (expandModalId.value != null) {
+    expandedIds.delete(expandModalId.value)
+    expandModalId.value = null
+  }
 }
 
 function onExpandModeUpdate (id, mode) {

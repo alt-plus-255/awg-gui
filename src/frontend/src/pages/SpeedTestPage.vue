@@ -1,29 +1,43 @@
 <template>
   <q-page padding>
     <div class="page-wrap">
-      <div class="row items-center q-mb-md q-col-gutter-sm">
-        <div class="col">
-          <div class="text-h5">{{ t('resolver.speedTestTitle') }}</div>
-          <div class="text-body2 text-grey-5 q-mt-xs">
-            {{ t('resolver.speedTestDesc') }}
-          </div>
+      <div class="speed-test-header q-mb-md">
+        <div class="text-h5 speed-test-header__title">{{ t('resolver.speedTestTitle') }}</div>
+        <div class="text-body2 text-grey-5 speed-test-header__desc">
+          {{ t('resolver.speedTestDesc') }}
         </div>
-        <div class="col-auto row q-gutter-sm">
-          <q-btn flat color="primary" icon="cable" :label="t('nav.connections')" :to="{ name: 'resolver-connections' }" />
-          <q-btn flat color="primary" icon="alt_route" :label="t('resolver.title')" :to="{ name: 'resolver' }" />
+        <div class="speed-test-header__actions">
+          <q-btn
+            flat
+            dense
+            no-wrap
+            color="primary"
+            icon="cable"
+            :label="t('nav.connections')"
+            :to="{ name: 'resolver-connections' }"
+          />
+          <q-btn
+            flat
+            dense
+            no-wrap
+            color="primary"
+            icon="alt_route"
+            :label="t('resolver.title')"
+            :to="{ name: 'resolver' }"
+          />
         </div>
       </div>
 
       <q-card class="q-pa-md status-card" flat bordered>
-        <div class="row items-center q-mb-md q-col-gutter-sm">
-          <div class="col">
+        <div class="speed-test-toolbar q-mb-md">
+          <div class="speed-test-toolbar__info">
             <div class="text-subtitle1">{{ t('resolver.speedTestConnections') }}</div>
             <div v-if="store.busy" class="text-caption text-primary q-mt-xs row items-center q-gutter-xs">
               <q-spinner size="14px" color="primary" />
               <span>{{ t('resolver.speedTestRunning') }}</span>
             </div>
           </div>
-          <div class="col-auto">
+          <div class="speed-test-toolbar__actions">
             <q-btn
               color="primary"
               icon="speed"
@@ -32,8 +46,6 @@
               :disable="store.busy || !enabledRows.length"
               @click="runBatch"
             />
-          </div>
-          <div class="col-auto">
             <q-btn flat icon="refresh" :label="t('common.refresh')" :loading="loading" @click="load" />
           </div>
         </div>
@@ -97,13 +109,13 @@
                   v-if="props.row.subscription_mode === 'urltest' && (props.row.subscription_nodes || []).length"
                   flat
                   dense
-                  icon="expand_more"
+                  :icon="$q.screen.lt.md ? 'open_in_full' : (expanded[props.row.id] ? 'expand_less' : 'expand_more')"
                   :label="t('resolver.speedTestNodes')"
-                  @click="toggleExpand(props.row.id)"
+                  @click="toggleExpand(props.row)"
                 />
               </q-td>
             </q-tr>
-            <q-tr v-if="expanded[props.row.id]" :props="props">
+            <q-tr v-if="!$q.screen.lt.md && expanded[props.row.id]" :props="props">
               <q-td colspan="7" class="bg-grey-10">
                 <div class="q-pa-sm">
                   <div class="text-caption text-grey-5 q-mb-sm">{{ t('resolver.speedTestNodesHint') }}</div>
@@ -153,22 +165,84 @@
         </q-table>
       </q-card>
     </div>
+
+    <q-dialog v-model="expandModalOpen" v-bind="mobileDialog" @hide="onExpandModalHide">
+      <q-card class="surface-panel dialog-card column no-wrap" style="width: min(720px, 95vw); max-width: 95vw;">
+        <DialogHeader
+          :title="expandModalRow ? expandModalRow.name : t('resolver.speedTestNodes')"
+          always-show-close
+        />
+        <q-card-section v-if="expandModalRow" class="col dialog-scroll-body">
+          <div class="text-caption text-grey-5 q-mb-sm">{{ t('resolver.speedTestNodesHint') }}</div>
+          <q-markup-table flat dense bordered class="bg-transparent">
+            <thead>
+              <tr>
+                <th class="text-left">{{ t('resolver.speedTestNode') }}</th>
+                <th class="text-left">Ping</th>
+                <th class="text-left">↓ Mbps</th>
+                <th class="text-left">↑ Mbps</th>
+                <th class="text-right" />
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="node in (expandModalRow.subscription_nodes || []).slice(0, 40)" :key="node.key">
+                <td>
+                  <div>{{ node.name || node.key }}</div>
+                  <div class="text-caption text-grey-5 mono">{{ node.key }}</div>
+                  <div
+                    v-if="nodeResult(expandModalRow.id, node.key)?.error"
+                    class="text-caption text-negative q-mt-xs"
+                  >
+                    {{ nodeResult(expandModalRow.id, node.key).error }}
+                  </div>
+                </td>
+                <td class="mono">{{ formatPing(nodeResult(expandModalRow.id, node.key)) }}</td>
+                <td class="mono">{{ formatMbps(nodeResult(expandModalRow.id, node.key)?.download_mbps) }}</td>
+                <td class="mono">{{ formatMbps(nodeResult(expandModalRow.id, node.key)?.upload_mbps) }}</td>
+                <td class="text-right">
+                  <q-btn
+                    flat
+                    dense
+                    color="primary"
+                    icon="speed"
+                    :loading="isNodeRunning(expandModalRow.id, node.key)"
+                    :disable="store.busy || !expandModalRow.enabled"
+                    @click="runNode(expandModalRow, node.key)"
+                  />
+                </td>
+              </tr>
+            </tbody>
+          </q-markup-table>
+        </q-card-section>
+      </q-card>
+    </q-dialog>
   </q-page>
 </template>
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Notify } from 'quasar'
+import { Notify, useQuasar } from 'quasar'
 import api from '@/boot/axios'
+import DialogHeader from '@/components/DialogHeader.vue'
+import { useMobileDialog } from '@/composables/useMobileDialog'
 import { useSpeedTestStore } from '@/stores/speedTest'
 
 const { t } = useI18n()
+const $q = useQuasar()
+const mobileDialog = useMobileDialog()
 const store = useSpeedTestStore()
 
 const loading = ref(false)
 const rows = ref([])
 const expanded = reactive({})
+const expandModalOpen = ref(false)
+const expandModalId = ref(null)
+const expandModalRow = computed(() =>
+  expandModalId.value == null
+    ? null
+    : (rows.value.find(r => r.id === expandModalId.value) || null)
+)
 
 const enabledRows = computed(() => rows.value.filter(r => r.enabled))
 
@@ -217,8 +291,17 @@ function formatMbps (v) {
   return Number(v).toFixed(2)
 }
 
-function toggleExpand (id) {
-  expanded[id] = !expanded[id]
+function toggleExpand (row) {
+  if ($q.screen.lt.md) {
+    expandModalId.value = row.id
+    expandModalOpen.value = true
+    return
+  }
+  expanded[row.id] = !expanded[row.id]
+}
+
+function onExpandModalHide () {
+  expandModalId.value = null
 }
 
 async function load () {
@@ -258,7 +341,93 @@ onMounted(() => {
   max-width: 1100px;
   margin: 0 auto;
 }
+
+.speed-test-header {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas:
+    'title actions'
+    'desc actions';
+  column-gap: 16px;
+  row-gap: 4px;
+  align-items: start;
+}
+
+.speed-test-header__title {
+  grid-area: title;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.speed-test-header__desc {
+  grid-area: desc;
+}
+
+.speed-test-header__actions {
+  grid-area: actions;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.speed-test-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.speed-test-toolbar__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+@media (max-width: 1023px) {
+  .speed-test-header {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      'title'
+      'desc'
+      'actions';
+    row-gap: 12px;
+  }
+
+  .speed-test-header__actions {
+    flex-direction: row;
+    width: 100%;
+  }
+
+  .speed-test-header__actions > .q-btn {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
+  .speed-test-header__actions > .q-btn :deep(.q-btn__content) {
+    flex-direction: row;
+    flex-wrap: nowrap;
+    white-space: nowrap;
+  }
+
+  .speed-test-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .speed-test-toolbar__actions {
+    width: 100%;
+  }
+
+  .speed-test-toolbar__actions > .q-btn {
+    flex: 1 1 0;
+    min-width: 0;
+  }
 }
 </style>
