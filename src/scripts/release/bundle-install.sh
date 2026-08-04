@@ -390,6 +390,9 @@ on_install_exit() {
   local ec=$?
   if [[ "${UPGRADE_MODE}" -eq 1 && "${ec}" -ne 0 ]]; then
     finalize_running_update_state "failed" "Update failed with exit code ${ec}."
+    # Free disk for a retry: drop download/extract leftovers and loaded archives.
+    cleanup_tmp_install_artifacts || true
+    cleanup_loaded_image_archives || true
   fi
 }
 
@@ -599,8 +602,20 @@ cleanup_loaded_image_archives() {
 
 # Drop previous awggui:* tags left after upgrade. In-use images stay (docker rmi refuses without -f).
 cleanup_unused_project_images() {
-  local img removed=0
+  local img cid removed=0
   log "$(t log_removing_unused_images)"
+
+  # Stopped containers from prior versions can pin old tags and block docker rmi.
+  while read -r cid; do
+    [[ -n "${cid}" ]] || continue
+    docker rm "${cid}" >/dev/null 2>&1 || true
+  done < <(
+    {
+      docker ps -aq --filter "name=awggui" --filter "status=exited" 2>/dev/null || true
+      docker ps -aq --filter "name=awggui" --filter "status=dead" 2>/dev/null || true
+    } | awk 'NF && !seen[$0]++'
+  )
+
   while read -r img; do
     [[ -n "${img}" ]] || continue
     [[ "${img}" == *":<none>" ]] && continue
@@ -619,13 +634,16 @@ cleanup_unused_project_images() {
   fi
 }
 
+# Installer download/extract dirs, helper scripts, GUI update job leftovers.
 cleanup_tmp_install_artifacts() {
   find /tmp -maxdepth 1 -type d \( -name 'awg-gui-install.*' -o -name 'awg-gui-extract.*' \) \
     -exec rm -rf {} + 2>/dev/null || true
   find /tmp -maxdepth 1 -type f \
-    \( -name 'awg-gui-install.sh' -o -name 'awg-gui-ensure-docker.*' \
+    \( -name 'awg-gui-install.sh' -o -name 'awg-gui-install.*' \
+       -o -name 'awg-gui-install-i18n.*' -o -name 'awg-gui-ensure-docker.*' \
        -o -name 'awg-gui*.log' -o -name 'awg-gui-*.log' \) \
     -delete 2>/dev/null || true
+  rm -f /etc/awg-gui/update-job.sh 2>/dev/null || true
   docker rmi alpine:3.20 >/dev/null 2>&1 || true
 }
 
@@ -984,7 +1002,7 @@ main() {
   load_images
 
   log "$(t log_starting_containers)"
-  compose up -d
+  compose up -d --remove-orphans
 
   wait_for_app || true
   wait_for_migrate_lock

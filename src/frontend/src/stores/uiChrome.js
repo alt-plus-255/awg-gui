@@ -7,7 +7,8 @@ const DEFAULTS = {
   showLanguage: true,
   showTheme: true,
   showInstallApp: true,
-  showUserMenu: true
+  showUsername: true,
+  showLogout: true
 }
 
 function readStored () {
@@ -16,11 +17,22 @@ function readStored () {
     if (!raw) return { ...DEFAULTS }
     const parsed = JSON.parse(raw)
     if (!parsed || typeof parsed !== 'object') return { ...DEFAULTS }
+
+    // Migrate legacy showUserMenu → showUsername + showLogout
+    const legacyUserMenu = parsed.showUserMenu !== false
+    const showUsername = 'showUsername' in parsed
+      ? parsed.showUsername !== false
+      : legacyUserMenu
+    const showLogout = 'showLogout' in parsed
+      ? parsed.showLogout !== false
+      : legacyUserMenu
+
     return {
       showLanguage: parsed.showLanguage !== false,
       showTheme: parsed.showTheme !== false,
       showInstallApp: parsed.showInstallApp !== false,
-      showUserMenu: parsed.showUserMenu !== false
+      showUsername,
+      showLogout
     }
   } catch {
     return { ...DEFAULTS }
@@ -33,7 +45,8 @@ function persist (prefs) {
       showLanguage: !!prefs.showLanguage,
       showTheme: !!prefs.showTheme,
       showInstallApp: !!prefs.showInstallApp,
-      showUserMenu: !!prefs.showUserMenu
+      showUsername: !!prefs.showUsername,
+      showLogout: !!prefs.showLogout
     }))
   } catch {
     // ignore

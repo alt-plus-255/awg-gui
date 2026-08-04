@@ -74,7 +74,7 @@ function buildHostUpdateJobScript(?string $version, string $installUrl): string
         .'  install_args+=(--no-awg-kernel)'."\n"
         .'fi'."\n"
         .'tmp="$(mktemp /tmp/awg-gui-install.XXXXXX)"'."\n"
-        .'trap \'rm -f "$tmp"\' EXIT'."\n"
+        .'trap \'rm -f "$tmp" /etc/awg-gui/update-job.sh; find /tmp -maxdepth 1 -type d \\( -name "awg-gui-install.*" -o -name "awg-gui-extract.*" \\) -exec rm -rf {} + 2>/dev/null || true\' EXIT'."\n"
         .'curl -fsSL '.escapeshellarg($installUrl).' -o "$tmp"'."\n"
         .'/bin/bash "$tmp" "${install_args[@]}"'."\n";
 

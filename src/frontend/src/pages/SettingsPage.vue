@@ -123,10 +123,17 @@
                 @update:model-value="v => uiChrome.setPref('showInstallApp', v)"
               />
               <q-toggle
-                :model-value="uiChrome.prefs.showUserMenu"
-                :label="t('settings.showUserMenu')"
+                :model-value="uiChrome.prefs.showUsername"
+                :label="t('settings.showUsername')"
                 color="primary"
-                @update:model-value="v => uiChrome.setPref('showUserMenu', v)"
+                class="q-mb-xs"
+                @update:model-value="v => uiChrome.setPref('showUsername', v)"
+              />
+              <q-toggle
+                :model-value="uiChrome.prefs.showLogout"
+                :label="t('settings.showLogout')"
+                color="primary"
+                @update:model-value="v => uiChrome.setPref('showLogout', v)"
               />
 
               <q-separator class="q-my-md" />

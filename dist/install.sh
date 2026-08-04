@@ -294,20 +294,35 @@ cleanup_stale_tmp_artifacts() {
 
 # After the .run returns, drop leftover tmp paths and unused previous awggui:* tags.
 cleanup_after_bundle() {
-  local img removed=0 self="${BASH_SOURCE[0]:-}"
+  local img cid removed=0 self="${BASH_SOURCE[0]:-}" self_real="" path path_real
   log "$(t log_cleanup_after_bundle)"
+  self_real="$(readlink -f "${self}" 2>/dev/null || true)"
 
   find /tmp -maxdepth 1 -type d \( -name 'awg-gui-install.*' -o -name 'awg-gui-extract.*' \) \
     -exec rm -rf {} + 2>/dev/null || true
-  find /tmp -maxdepth 1 -type f \( \
-    -name 'awg-gui-ensure-docker.*' \
-    -o -name 'awg-gui-install-i18n.*' \
-    -o -name 'awg-gui*.log' -o -name 'awg-gui-*.log' \
-  \) -delete 2>/dev/null || true
-  # Do not delete the script we may still be executing (wget one-liner path).
-  if [[ -f /tmp/awg-gui-install.sh && "$(readlink -f /tmp/awg-gui-install.sh 2>/dev/null || true)" != "$(readlink -f "${self}" 2>/dev/null || true)" ]]; then
-    rm -f /tmp/awg-gui-install.sh
-  fi
+
+  shopt -s nullglob
+  for path in /tmp/awg-gui-ensure-docker.* /tmp/awg-gui-install-i18n.* \
+              /tmp/awg-gui-install.* /tmp/awg-gui*.log /tmp/awg-gui-*.log \
+              /tmp/awg-gui-install.sh; do
+    [[ -f "${path}" ]] || continue
+    path_real="$(readlink -f "${path}" 2>/dev/null || true)"
+    # Do not delete the script we may still be executing (wget / GUI update-job path).
+    [[ -n "${self_real}" && "${path_real}" == "${self_real}" ]] && continue
+    rm -f "${path}"
+  done
+  shopt -u nullglob
+  rm -f /etc/awg-gui/update-job.sh 2>/dev/null || true
+
+  while read -r cid; do
+    [[ -n "${cid}" ]] || continue
+    docker rm "${cid}" >/dev/null 2>&1 || true
+  done < <(
+    {
+      docker ps -aq --filter "name=awggui" --filter "status=exited" 2>/dev/null || true
+      docker ps -aq --filter "name=awggui" --filter "status=dead" 2>/dev/null || true
+    } | awk 'NF && !seen[$0]++'
+  )
 
   while read -r img; do
     [[ -n "${img}" ]] || continue

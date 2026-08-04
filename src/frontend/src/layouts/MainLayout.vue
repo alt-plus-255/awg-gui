@@ -215,10 +215,19 @@
         >
           <q-tooltip>{{ t('nav.installAppTooltip') }}</q-tooltip>
         </q-btn>
-        <template v-if="uiChrome.prefs.showUserMenu">
-          <div class="q-mr-md text-caption text-grey-5 gt-sm">{{ auth.user?.username }}</div>
-          <q-btn flat dense icon="logout" :label="t('nav.logout')" class="gt-sm" @click="onLogout" />
-        </template>
+        <div
+          v-if="uiChrome.prefs.showUsername && auth.user?.username"
+          class="q-mr-md text-caption text-grey-5 gt-sm"
+        >{{ auth.user.username }}</div>
+        <q-btn
+          v-if="uiChrome.prefs.showLogout"
+          flat
+          dense
+          icon="logout"
+          :label="t('nav.logout')"
+          class="gt-sm"
+          @click="onLogout"
+        />
       </q-toolbar>
     </q-header>
 
@@ -270,7 +279,7 @@
         </q-item>
 
         <q-separator
-          v-if="(canInstallPwa && uiChrome.prefs.showInstallApp) || uiChrome.prefs.showUserMenu"
+          v-if="(canInstallPwa && uiChrome.prefs.showInstallApp) || uiChrome.prefs.showLogout || uiChrome.prefs.showUsername"
           class="q-my-sm"
         />
 
@@ -290,7 +299,19 @@
         </q-item>
 
         <q-item
-          v-if="uiChrome.prefs.showUserMenu"
+          v-if="uiChrome.prefs.showUsername && auth.user?.username && !uiChrome.prefs.showLogout"
+          dense
+        >
+          <q-item-section avatar>
+            <q-icon name="person" />
+          </q-item-section>
+          <q-item-section class="text-grey-5">
+            {{ auth.user.username }}
+          </q-item-section>
+        </q-item>
+
+        <q-item
+          v-if="uiChrome.prefs.showLogout"
           clickable
           v-ripple
           @click="onLogout"
@@ -299,7 +320,7 @@
             <q-icon name="logout" />
           </q-item-section>
           <q-item-section>
-            {{ auth.user?.username
+            {{ uiChrome.prefs.showUsername && auth.user?.username
               ? t('nav.logoutWithUser', { username: auth.user.username })
               : t('nav.logout') }}
           </q-item-section>
