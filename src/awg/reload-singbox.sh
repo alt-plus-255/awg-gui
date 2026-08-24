@@ -5,37 +5,47 @@ set -euo pipefail
 CONFIG=/config/sing-box.json
 PIDFILE=/run/sing-box.pid
 BIN=/usr/local/bin/sing-box
+CACHE_FILE=/config/sing-box-cache.db
+LOG_FILE=/config/sing-box.log
+# Soft cap: bbolt does not shrink; drop oversized cache so disk cannot fill unbounded.
+CACHE_MAX_BYTES=$((32 * 1024 * 1024))
+# Cap stdout/stderr log; keep one rotated backup (~10MB + 10MB).
+LOG_MAX_BYTES=$((10 * 1024 * 1024))
 
-ensure_tun_routing() {
-  if [[ -x /config/resolver-tun-routes.sh ]]; then
-    /config/resolver-tun-routes.sh || true
+prune_cache_if_huge() {
+  if [[ ! -f "${CACHE_FILE}" ]]; then
     return 0
   fi
-  # Fallback when volume helper is missing (older installs).
-  TUN_IFACE=sbox0
-  TUN_MARK=0x2
-  TUN_TABLE=101
-  FAKEIP=198.18.0.0/15
-  while ip rule show | grep -q "fwmark ${TUN_MARK} lookup ${TUN_TABLE}"; do
+  local size
+  size="$(wc -c < "${CACHE_FILE}" | tr -d '[:space:]')"
+  if [[ "${size}" =~ ^[0-9]+$ ]] && [ "${size}" -gt "${CACHE_MAX_BYTES}" ]; then
+    echo "[sing-box] pruning oversized cache ${CACHE_FILE} (${size} bytes > ${CACHE_MAX_BYTES})"
+    rm -f "${CACHE_FILE}"
+  fi
+}
+
+rotate_log_if_huge() {
+  local file="${1:-}"
+  [[ -n "${file}" && -f "${file}" ]] || return 0
+  local size
+  size="$(wc -c < "${file}" | tr -d '[:space:]')"
+  if [[ "${size}" =~ ^[0-9]+$ ]] && [ "${size}" -gt "${LOG_MAX_BYTES}" ]; then
+    echo "[sing-box] rotating oversized log ${file} (${size} bytes > ${LOG_MAX_BYTES})"
+    rm -f "${file}.1"
+    mv -f "${file}" "${file}.1"
+  fi
+}
+
+# Remove leftover TUN iface/routes from older resolver builds.
+cleanup_legacy_tun() {
+  local TUN_IFACE=sbox0
+  local TUN_MARK=0x2
+  local TUN_TABLE=101
+  while ip rule show 2>/dev/null | grep -q "fwmark ${TUN_MARK} lookup ${TUN_TABLE}"; do
     ip rule del fwmark "${TUN_MARK}" table "${TUN_TABLE}" 2>/dev/null || break
   done
-  ip rule add fwmark "${TUN_MARK}" table "${TUN_TABLE}" 2>/dev/null || true
-  for _ in 1 2 3 4 5 6 7 8 9 10; do
-    if ip link show "${TUN_IFACE}" >/dev/null 2>&1; then
-      break
-    fi
-    sleep 0.2
-  done
-  if ip link show "${TUN_IFACE}" >/dev/null 2>&1; then
-    ip link set "${TUN_IFACE}" up 2>/dev/null || true
-    ip route replace "${FAKEIP}" dev "${TUN_IFACE}" table "${TUN_TABLE}" 2>/dev/null \
-      || ip route add "${FAKEIP}" dev "${TUN_IFACE}" table "${TUN_TABLE}" 2>/dev/null || true
-    ip route replace "${FAKEIP}" dev "${TUN_IFACE}" 2>/dev/null \
-      || ip route add "${FAKEIP}" dev "${TUN_IFACE}" 2>/dev/null || true
-    echo "[sing-box] tun routing: mark ${TUN_MARK} → ${TUN_IFACE} (${FAKEIP})"
-  else
-    echo "[sing-box] warn: ${TUN_IFACE} not present yet" >&2
-  fi
+  ip route flush table "${TUN_TABLE}" 2>/dev/null || true
+  ip link delete "${TUN_IFACE}" 2>/dev/null || true
 }
 
 stop_singbox() {
@@ -49,12 +59,15 @@ stop_singbox() {
     fi
     rm -f "${PIDFILE}"
   fi
-  pkill -x sing-box 2>/dev/null || true
+  # Do not use pkill -x sing-box: gcompat renames process comm.
+  pkill -f "${BIN} run -c ${CONFIG}" 2>/dev/null || true
+  sleep 0.2
 }
 
 start_singbox() {
   if [[ ! -f "${CONFIG}" ]]; then
     stop_singbox
+    cleanup_legacy_tun
     return 0
   fi
 
@@ -63,17 +76,32 @@ start_singbox() {
     return 1
   fi
 
+  prune_cache_if_huge
   stop_singbox
-  "${BIN}" run -c "${CONFIG}" &
+  cleanup_legacy_tun
+  rotate_log_if_huge "${LOG_FILE}"
+
+  # setsid: survive parent exit (docker exec from panel kills the session otherwise).
+  # Redirect stdio so a closed exec tty cannot SIGPIPE the daemon.
+  : >>"${LOG_FILE}"
+  setsid "${BIN}" run -c "${CONFIG}" >>"${LOG_FILE}" 2>&1 </dev/null &
   echo $! > "${PIDFILE}"
-  echo "[sing-box] started pid=$(cat "${PIDFILE}")"
-  for _ in 1 2 3 4 5 6 7 8 9 10; do
-    if ip link show sbox0 >/dev/null 2>&1; then
-      break
+
+  local pid
+  pid="$(cat "${PIDFILE}")"
+  local i
+  for i in 1 2 3 4 5 6 7 8 9 10; do
+    if kill -0 "${pid}" 2>/dev/null; then
+      echo "[sing-box] started pid=${pid}"
+      return 0
     fi
     sleep 0.2
   done
-  ensure_tun_routing
+
+  echo "[sing-box] failed to stay running (pid=${pid}); last log:" >&2
+  tail -n 40 "${LOG_FILE}" >&2 || true
+  rm -f "${PIDFILE}"
+  return 1
 }
 
 start_singbox

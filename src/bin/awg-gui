@@ -14,17 +14,34 @@ INSTALL_ROOT="${INSTALL_ROOT:-}"
 COMPOSE_FILE="${COMPOSE_FILE:-${INSTALL_ROOT}/src/docker-compose.yml}"
 ENV_FILE="${ENV_FILE:-${INSTALL_ROOT}/src/.env}"
 PROJECT_NAME="${PROJECT_NAME:-awggui}"
+<<<<<<< HEAD
 EXPECTED_SERVICES=(caddy app db awg docker-proxy panel-ops certbot)
+=======
+EXPECTED_SERVICES=(caddy app db awg docker-proxy panel-ops)
+>>>>>>> a34ec4d81547d4963b761827020a578f3957b1c6
 
 log() { echo "[awg-gui] $*"; }
 err() { echo "[awg-gui] ERROR: $*" >&2; }
 
+# Quote values that break `source .env` (e.g. ALLOWED_IPS with "0.0.0.0/0, ::/0").
+env_quote_value() {
+  local val="$1"
+  if [[ "${val}" =~ [[:space:]\#\$\`\"\'\\\&\;\|\(\)\<\>] ]]; then
+    val="${val//\\/\\\\}"
+    val="${val//\"/\\\"}"
+    printf '"%s"' "${val}"
+  else
+    printf '%s' "${val}"
+  fi
+}
+
 env_set() {
   local key="$1" val="$2" file="$3"
-  local tmp
+  local tmp rendered
+  rendered="$(env_quote_value "${val}")"
   tmp="$(mktemp)"
   if grep -q "^${key}=" "${file}" 2>/dev/null; then
-    awk -v k="${key}" -v v="${val}" '
+    awk -v k="${key}" -v v="${rendered}" '
       BEGIN { found=0 }
       $0 ~ "^" k "=" { print k "=" v; found=1; next }
       { print }
@@ -32,7 +49,7 @@ env_set() {
     ' "${file}" > "${tmp}"
   else
     cp "${file}" "${tmp}"
-    printf '%s=%s\n' "${key}" "${val}" >> "${tmp}"
+    printf '%s=%s\n' "${key}" "${rendered}" >> "${tmp}"
   fi
   mv "${tmp}" "${file}"
 }
@@ -40,13 +57,56 @@ env_set() {
 sync_env_endpoint() {
   local endpoint="$1"
   local panel_port="${2:-8877}"
-  if [[ "${endpoint}" == "auto" ]]; then
-    return 0
+  local host="${endpoint}"
+  local existing_app_url=""
+  local panel_domain="" https_port="7443" domains="" app_host=""
+  if [[ "${endpoint}" == "auto" || -z "${endpoint}" ]]; then
+    host="$(detect_public_ip)"
   fi
-  env_set "APP_URL" "http://${endpoint}:${panel_port}" "${ENV_FILE}"
-  env_set "SANCTUM_STATEFUL_DOMAINS" \
-    "${endpoint},${endpoint}:${panel_port},localhost,localhost:${panel_port},127.0.0.1,127.0.0.1:${panel_port}" \
-    "${ENV_FILE}"
+  if [[ -f "${ENV_FILE}" ]]; then
+    existing_app_url="$(grep -E '^APP_URL=' "${ENV_FILE}" 2>/dev/null | tail -1 | cut -d= -f2- || true)"
+    if [[ "${existing_app_url}" =~ ^\"(.*)\"$ ]]; then
+      existing_app_url="${BASH_REMATCH[1]}"
+    elif [[ "${existing_app_url}" =~ ^\'(.*)\'$ ]]; then
+      existing_app_url="${BASH_REMATCH[1]}"
+    fi
+  fi
+  if [[ -f /etc/awg-gui/webhook.conf ]]; then
+    panel_domain="$(grep -E '^PANEL_DOMAIN=' /etc/awg-gui/webhook.conf 2>/dev/null | tail -1 | cut -d= -f2- || true)"
+    https_port="$(grep -E '^PANEL_HTTPS_PORT=' /etc/awg-gui/webhook.conf 2>/dev/null | tail -1 | cut -d= -f2- || true)"
+    https_port="${https_port:-7443}"
+  fi
+  if [[ -z "${existing_app_url}" \
+     || "${existing_app_url}" == "http://localhost:${panel_port}" \
+     || "${existing_app_url}" =~ ^http://[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+:[0-9]+$ ]]; then
+    env_set "APP_URL" "http://${host}:${panel_port}" "${ENV_FILE}"
+    existing_app_url="http://${host}:${panel_port}"
+  fi
+  domains="${host},${host}:${panel_port},${host}:${https_port},localhost,localhost:${panel_port},localhost:${https_port},127.0.0.1,127.0.0.1:${panel_port},127.0.0.1:${https_port}"
+  if [[ -n "${panel_domain}" ]]; then
+    domains="${panel_domain},${panel_domain}:${panel_port},${panel_domain}:${https_port},${domains}"
+  fi
+  if [[ "${existing_app_url}" =~ ^https://([^/:]+) ]]; then
+    app_host="${BASH_REMATCH[1]}"
+    if [[ -n "${app_host}" && "${domains}" != *"${app_host}:${https_port}"* ]]; then
+      domains="${app_host},${app_host}:${panel_port},${app_host}:${https_port},${domains}"
+    fi
+  fi
+  env_set "SANCTUM_STATEFUL_DOMAINS" "${domains}" "${ENV_FILE}"
+}
+
+detect_public_ip() {
+  local ip=""
+  ip="$(curl -4 -fsS --max-time 5 https://ifconfig.me 2>/dev/null || true)"
+  ip="$(printf '%s' "${ip}" | tr -d '[:space:]')"
+  if [[ ! "${ip}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    ip="$(curl -4 -fsS --max-time 5 https://api.ipify.org 2>/dev/null || true)"
+    ip="$(printf '%s' "${ip}" | tr -d '[:space:]')"
+  fi
+  if [[ ! "${ip}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
+  fi
+  echo "${ip:-127.0.0.1}"
 }
 
 require_root() {
@@ -57,7 +117,8 @@ require_root() {
 }
 
 compose() {
-  docker compose -p "${PROJECT_NAME}" --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" "$@"
+  # DOCKER_HOST in .env is for the app container (tcp://docker-proxy:2375), not the host CLI.
+  env -u DOCKER_HOST docker compose -p "${PROJECT_NAME}" --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" "$@"
 }
 
 load_webhook() {
@@ -73,7 +134,15 @@ load_webhook() {
   fi
   if [[ -f "${ENV_FILE}" ]]; then
     # shellcheck disable=SC1090
-    set -a; source "${ENV_FILE}"; set +a || true
+    # Values with spaces (ALLOWED_IPS) must be quoted in .env; keep going on parse noise.
+    set +e
+    set -a
+    # shellcheck disable=SC1090
+    source "${ENV_FILE}"
+    set +a
+    set -e
+    # Container-only; must not leak into host docker/compose.
+    unset DOCKER_HOST
   fi
 }
 
@@ -82,8 +151,7 @@ panel_url() {
   if [[ -z "${host}" ]]; then
     host="${SERVER_ENDPOINT:-}"
     if [[ -z "${host}" || "${host}" == "auto" ]]; then
-      host="$(hostname -I 2>/dev/null | awk '{print $1}')"
-      host="${host:-127.0.0.1}"
+      host="$(detect_public_ip)"
     fi
   fi
   if [[ "${SSL_ENABLED:-0}" == "1" && -n "${PANEL_DOMAIN:-}" ]]; then
@@ -230,8 +298,12 @@ cmd_info() {
     if [[ -z "${host}" ]]; then
       host="${SERVER_ENDPOINT:-}"
       if [[ -z "${host}" || "${host}" == "auto" ]]; then
+<<<<<<< HEAD
         host="$(hostname -I 2>/dev/null | awk '{print $1}')"
         host="${host:-127.0.0.1}"
+=======
+        host="$(detect_public_ip)"
+>>>>>>> a34ec4d81547d4963b761827020a578f3957b1c6
       fi
     fi
     local port="${PANEL_PORT:-8877}"
@@ -281,7 +353,11 @@ cmd_ensure_up() {
   sleep 3
   if ! services_running; then
     send_failure_webhook "service_unhealthy" "Services still not running after compose up" \
+<<<<<<< HEAD
       '{"services":["caddy","app","db","awg","docker-proxy","panel-ops","certbot"]}'
+=======
+      '{"services":["caddy","app","db","awg","docker-proxy","panel-ops"]}'
+>>>>>>> a34ec4d81547d4963b761827020a578f3957b1c6
     return 1
   fi
 
@@ -354,7 +430,21 @@ EOF
   if [[ -n "${pass_arg}" ]]; then
     artisan_args+=(--password="${pass_arg}")
   fi
-  compose "${artisan_args[@]}"
+
+  local out
+  if ! out="$(compose "${artisan_args[@]}" 2>&1)"; then
+    printf '%s\n' "${out}"
+    return 1
+  fi
+  printf '%s\n' "${out}"
+
+  # Keep .env in sync so future tooling stays aligned with the live password.
+  local new_pass=""
+  new_pass="$(printf '%s\n' "${out}" | sed -n 's/^New password: //p' | tail -n 1)"
+  if [[ -n "${new_pass}" && -f "${ENV_FILE}" ]]; then
+    env_set "ADMIN_PASSWORD" "${new_pass}" "${ENV_FILE}"
+    chmod 600 "${ENV_FILE}" 2>/dev/null || true
+  fi
 }
 
 cmd_endpoint() {

@@ -19,10 +19,34 @@ Quick one-liner — see [README](../../README.en.md#quick-install-production).
 curl -fsSL https://raw.githubusercontent.com/alt-plus-255/awg-gui/refs/heads/main/dist/install.sh | sudo bash
 ```
 
-Non-interactive (panel port **8877**, upgrade if already installed):
+In interactive mode the installer first asks for **language** (default Russian; English available). Status messages use the selected language.
+
+Non-interactive (panel port **8877**, upgrade if already installed; installs AmneziaWG kernel module by default; language **ru**):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/alt-plus-255/awg-gui/refs/heads/main/dist/install.sh | sudo bash -s -- --yes
+```
+
+English messages without prompts:
+
+```bash
+curl -fsSL .../dist/install.sh | sudo bash -s -- --yes --lang=en
+# or: AWG_GUI_LANG=en
+```
+
+Skip the AmneziaWG kernel module (keep userspace `amneziawg-go`):
+
+```bash
+curl -fsSL .../dist/install.sh | sudo bash -s -- --yes --no-awg-kernel
+# or: AWG_GUI_SKIP_KERNEL=1
+```
+
+If the module/package is already present on the host, the installer **skips** reinstall and sets `AWG_KERNEL_WANTED=1`.
+
+Failure diagnostics (container logs) only with `--debug` / `AWG_GUI_DEBUG=1`:
+
+```bash
+curl -fsSL .../dist/install.sh | sudo bash -s -- --yes --debug
 ```
 
 Specific version:
@@ -52,6 +76,7 @@ cd awg-gui
 sudo ./awg-gui-install.sh
 # or non-interactive defaults (panel port 8877, upgrade if already installed):
 sudo ./awg-gui-install.sh --yes
+# message language: --lang=en or AWG_GUI_LANG=en (default ru)
 ```
 
 The dev installer:
@@ -64,11 +89,16 @@ The dev installer:
   - internal subnet / `INTERNAL_SUBNET` (default **10.66.66.0/24**);
   - peer DNS / `PEER_DNS` (default **1.1.1.1**);
   - AllowedIPs / `ALLOWED_IPS` (default **0.0.0.0/0, ::/0**);
+  - **AmneziaWG kernel module** (default **Y**) — required for YouTube/Instagram ABR over full-tunnel + resolver (still need working QUIC or a solid TCP path; see [resolver.md](resolver.md)); on failure install continues with userspace. Already-installed module is skipped. See [amneziawg-linux-kernel-module](https://github.com/amnezia-vpn/amneziawg-linux-kernel-module). Official Amnezia packages only; the panel never accepts arbitrary host commands.
 - copies `src/.env.example` → `src/.env` and fills values including random **`DB_PASSWORD`**, **`APP_KEY`**, and admin password.
+
+Later you can install or remove the module in **Settings → Panel → AmneziaWG kernel module** (status shows module loaded, package installed, and AWG datapath kernel/userspace).
 
 ### Re-install / upgrade
 
-If `awggui-*` containers or `src/.env` with `DB_PASSWORD` already exist, the script asks:
+If only `src/.env` remains without containers (e.g. after uninstall), a **fresh install** runs with new random passwords.
+
+If `awggui-*` containers are found, the script asks:
 
 1. **Abort** — recommended before a clean install; run [uninstall](uninstall.md) first;
 2. **Upgrade** — keep `.env`, volumes, DB and AWG data; rebuild images and run migrations.
@@ -83,8 +113,8 @@ The source installer downloads the sing-box tarball automatically (version from 
 
 ```bash
 mkdir -p src/awg/vendor
-curl -fsSL -o src/awg/vendor/sing-box-1.12.12-linux-amd64.tar.gz \
-  https://github.com/SagerNet/sing-box/releases/download/v1.12.12/sing-box-1.12.12-linux-amd64.tar.gz
+curl -fsSL -o src/awg/vendor/sing-box-1.13.14-linux-amd64.tar.gz \
+  https://github.com/SagerNet/sing-box/releases/download/v1.13.14/sing-box-1.13.14-linux-amd64.tar.gz
 ```
 
 For ARM replace `amd64` with `arm64` or `armv7`.

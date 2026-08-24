@@ -21,7 +21,10 @@ class DiagnosticsService
         ['name' => 'awggui-caddy', 'label' => 'Caddy'],
         ['name' => 'awggui-docker-proxy', 'label' => 'docker_proxy'],
         ['name' => 'awggui-panel-ops', 'label' => 'panel_ops'],
+<<<<<<< HEAD
         ['name' => 'awggui-certbot', 'label' => 'certbot'],
+=======
+>>>>>>> a34ec4d81547d4963b761827020a578f3957b1c6
     ];
 
     private const MASK_JSON_KEYS = [
@@ -182,13 +185,14 @@ class DiagnosticsService
             $iface = basename($path, '.conf');
             $cfg = $dbConfigs->get($iface);
             $raw = (string) file_get_contents($path);
+            $isClientExit = (bool) preg_match('/^awgc\d+$/', $iface);
             $items[] = [
                 'iface' => $iface,
-                'name' => $cfg?->name ?? $iface,
-                'type' => $cfg?->type ?? null,
+                'name' => $cfg?->name ?? ($isClientExit ? 'connection exit '.$iface : $iface),
+                'type' => $cfg?->type ?? ($isClientExit ? 'connection_exit' : null),
                 'type_label' => $cfg
                     ? ($cfg->type === 'virtual_network' ? __('api.type_virtual_network') : __('api.type_server'))
-                    : null,
+                    : ($isClientExit ? 'AWG connection exit' : null),
                 'config_id' => $cfg?->id,
                 'content' => $this->maskAwgConfText($raw),
                 'updated_at' => date('c', (int) filemtime($path)),
@@ -232,7 +236,11 @@ class DiagnosticsService
             try {
                 $r = $this->docker->exec(
                     $this->awg->containerName(),
+<<<<<<< HEAD
                     ['sh', '-c', 'pgrep -x sing-box >/dev/null && echo yes || echo no'],
+=======
+                    ['sh', '-c', 'pid=$(cat /run/sing-box.pid 2>/dev/null); if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then echo yes; elif pgrep -f "/usr/local/bin/sing-box run -c /config/sing-box.json" >/dev/null 2>&1; then echo yes; else echo no; fi'],
+>>>>>>> a34ec4d81547d4963b761827020a578f3957b1c6
                     timeout: 10,
                 );
                 $running = trim($r->output()) === 'yes';
@@ -444,7 +452,9 @@ class DiagnosticsService
             __('system.group_resolver'),
             $checks,
             is_array($diagnose['hints'] ?? null) ? $diagnose['hints'] : []
-        );
+        ) + [
+            'details' => is_array($diagnose['details'] ?? null) ? $diagnose['details'] : null,
+        ];
     }
 
     /**

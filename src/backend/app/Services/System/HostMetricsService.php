@@ -17,17 +17,25 @@ class HostMetricsService
 
     private const PROC_ROOTS = ['/host/proc', '/proc'];
 
+    private const PROJECT_CONTAINER_PREFIX = 'awggui-';
+
+    /** @var list<string> */
+    private const PROJECT_PROCESS_NEEDLES = [
+        'awggui',
+        'awg-gui',
+        'amneziawg',
+        'awg-kernel',
+        'awg-quick',
+        '/etc/awg-gui',
+    ];
+
     /**
      * @return array{
      *     cpu: array{percent: float|null},
-     *     memory: array{
-     *         used: int|null,
-     *         total: int|null,
-     *         percent: float|null,
-     *         top_containers: list<array{name: string, used: int, percent: float|null}>,
-     *         top_processes: list<array{pid: int, command: string, used: int, percent: float|null}>
-     *     },
-     *     disk: array{used: int|null, total: int|null, percent: float|null}
+     *     memory: array{used: int|null, total: int|null, percent: float|null},
+     *     disk: array{used: int|null, total: int|null, percent: float|null},
+     *     uptime_seconds: int|null,
+     *     loadavg: array{1: float|null, 5: float|null, 15: float|null}
      * }
      */
     public function collect(): array
@@ -36,6 +44,8 @@ class HostMetricsService
             'cpu' => $this->cpu(),
             'memory' => $this->memory(),
             'disk' => $this->disk(),
+            'uptime_seconds' => $this->uptimeSeconds(),
+            'loadavg' => $this->loadavg(),
         ];
     }
 
@@ -47,8 +57,12 @@ class HostMetricsService
         $sort = $sort === 'mem' ? 'mem' : 'cpu';
         $limit = max(1, min(100, $limit));
 
-        $processes = $this->hostProcesses($limit, $sort);
-        $containers = $this->dockerStats();
+        $containerIds = $this->projectContainerIds();
+        $processes = $this->hostProcesses($limit, $sort, true, $containerIds);
+        $containers = array_values(array_filter(
+            $this->dockerStats(),
+            fn (array $row) => $this->isProjectContainerName((string) ($row['name'] ?? ''))
+        ));
 
         usort($containers, function (array $a, array $b) use ($sort) {
             if ($sort === 'mem') {
@@ -60,7 +74,7 @@ class HostMetricsService
 
         return [
             'processes' => $processes,
-            'containers' => array_slice($containers, 0, 20),
+            'containers' => $containers,
         ];
     }
 
@@ -194,6 +208,44 @@ class HostMetricsService
             'used' => $used,
             'total' => (int) $total,
             'percent' => $percent,
+        ];
+    }
+
+    private function uptimeSeconds(): ?int
+    {
+        $raw = $this->readProcFile('uptime');
+        if ($raw === null) {
+            return null;
+        }
+
+        $parts = preg_split('/\s+/', trim($raw)) ?: [];
+        if ($parts === [] || ! is_numeric($parts[0])) {
+            return null;
+        }
+
+        return max(0, (int) floor((float) $parts[0]));
+    }
+
+    /**
+     * @return array{1: float|null, 5: float|null, 15: float|null}
+     */
+    private function loadavg(): array
+    {
+        $empty = [1 => null, 5 => null, 15 => null];
+        $raw = $this->readProcFile('loadavg');
+        if ($raw === null) {
+            return $empty;
+        }
+
+        $parts = preg_split('/\s+/', trim($raw)) ?: [];
+        if (count($parts) < 3) {
+            return $empty;
+        }
+
+        return [
+            1 => is_numeric($parts[0]) ? round((float) $parts[0], 2) : null,
+            5 => is_numeric($parts[1]) ? round((float) $parts[1], 2) : null,
+            15 => is_numeric($parts[2]) ? round((float) $parts[2], 2) : null,
         ];
     }
 
@@ -336,10 +388,15 @@ class HostMetricsService
     }
 
     /**
+     * @param  list<string>  $containerIds
      * @return list<array{pid: int, command: string, used: int, mem_percent: float|null, cpu_percent: float|null}>
      */
-    public function hostProcesses(int $limit = 40, string $sort = 'cpu', bool $allowResample = true): array
-    {
+    public function hostProcesses(
+        int $limit = 40,
+        string $sort = 'cpu',
+        bool $allowResample = true,
+        array $containerIds = [],
+    ): array {
         $root = $this->procRoot();
         if ($root === null) {
             return [];
@@ -382,6 +439,12 @@ class HostMetricsService
             $jiffies = $utime + $stime;
             $currentProcs[$pid] = $jiffies;
 
+            $command = $this->readCmdline($root.'/'.$entry.'/cmdline', $m[2]);
+            $cgroup = $this->readCgroup($root.'/'.$entry.'/cgroup');
+            if (! $this->isProjectRelatedProcess($command, $cgroup, $containerIds)) {
+                continue;
+            }
+
             $rssKb = $this->readVmRss($root.'/'.$entry.'/status');
             $used = $rssKb * 1024;
             $memPercent = ($memTotal && $memTotal > 0)
@@ -400,8 +463,6 @@ class HostMetricsService
                     $cpuPercent = round(min(100 * $this->nproc(), max(0, ($procDelta / $sysDelta) * 100)), 1);
                 }
             }
-
-            $command = $this->readCmdline($root.'/'.$entry.'/cmdline', $m[2]);
 
             $rows[] = [
                 'pid' => $pid,
@@ -422,7 +483,7 @@ class HostMetricsService
         if ($allowResample && empty($prevProcs) && $sort === 'cpu') {
             usleep(120000);
 
-            return $this->hostProcesses($limit, $sort, false);
+            return $this->hostProcesses($limit, $sort, false, $containerIds);
         }
 
         usort($rows, function (array $a, array $b) use ($sort) {
@@ -439,6 +500,67 @@ class HostMetricsService
         });
 
         return array_slice($rows, 0, $limit);
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function projectContainerIds(): array
+    {
+        $result = $this->docker->run(
+            ['ps', '--filter', 'name='.self::PROJECT_CONTAINER_PREFIX, '--format', '{{.ID}}'],
+            5
+        );
+
+        if (! $result->successful()) {
+            return [];
+        }
+
+        $ids = [];
+        foreach (preg_split('/\r\n|\n|\r/', trim($result->output())) ?: [] as $line) {
+            $id = trim($line);
+            if ($id !== '') {
+                $ids[] = $id;
+            }
+        }
+
+        return $ids;
+    }
+
+    private function isProjectContainerName(string $name): bool
+    {
+        return str_starts_with(ltrim($name, '/'), self::PROJECT_CONTAINER_PREFIX);
+    }
+
+    /**
+     * @param  list<string>  $containerIds
+     */
+    private function isProjectRelatedProcess(string $command, string $cgroup, array $containerIds): bool
+    {
+        $haystack = strtolower($command);
+        foreach (self::PROJECT_PROCESS_NEEDLES as $needle) {
+            if (str_contains($haystack, $needle)) {
+                return true;
+            }
+        }
+
+        foreach ($containerIds as $id) {
+            if ($id === '') {
+                continue;
+            }
+            if (str_contains($cgroup, $id) || str_contains($command, $id)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function readCgroup(string $cgroupPath): string
+    {
+        $raw = @file_get_contents($cgroupPath);
+
+        return is_string($raw) ? $raw : '';
     }
 
     private function nproc(): int

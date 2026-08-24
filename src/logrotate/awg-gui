@@ -1,0 +1,32 @@
+# awg-gui panel logs — rotate at 10MB, keep one backup, drop older.
+# Applied hourly via /etc/cron.hourly/awg-gui-logrotate when present.
+
+/etc/awg-gui/*.log {
+    size 10M
+    rotate 1
+    missingok
+    notifempty
+    copytruncate
+    compress
+    delaycompress
+}
+
+/var/lib/docker/volumes/awggui_awg_config/_data/sing-box*.log {
+    size 10M
+    rotate 1
+    missingok
+    notifempty
+    copytruncate
+    compress
+    delaycompress
+}
+
+/var/lib/docker/volumes/awggui_app_storage/_data/logs/*.log {
+    size 10M
+    rotate 1
+    missingok
+    notifempty
+    copytruncate
+    compress
+    delaycompress
+}

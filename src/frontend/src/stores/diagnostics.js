@@ -119,6 +119,23 @@ export const useDiagnosticsStore = defineStore('diagnostics', () => {
     awgModal.value = { ...awgModal.value, open: false }
   }
 
+  const failedChecks = computed(() => {
+    const out = []
+    for (const g of result.value?.groups || []) {
+      for (const c of g.checks || []) {
+        if (c?.ok) continue
+        out.push({
+          group_id: g.id || null,
+          group: g.title || '',
+          id: c.id || null,
+          label: c.label || '',
+          detail: c.detail || ''
+        })
+      }
+    }
+    return out
+  })
+
   function dumpText () {
     const lines = []
     lines.push('=== AWG-GUI Diagnostics ===')
@@ -152,6 +169,38 @@ export const useDiagnosticsStore = defineStore('diagnostics', () => {
     return lines.join('\n')
   }
 
+  /** Compact JSON report of failures — for support / pasting to an assistant. */
+  function errorReportJson (pretty = true) {
+    const failedContainers = (status.value?.containers || []).filter((c) => !c.ok)
+    const sb = status.value?.singbox
+    const failedGroupDetails = Object.fromEntries(
+      (result.value?.groups || [])
+        .filter((g) => (g.checks || []).some((c) => !c?.ok) && g?.details)
+        .map((g) => [g.id || 'group', g.details])
+    )
+    const payload = {
+      product: 'awg-gui',
+      kind: 'diagnostics_error_report',
+      updated_at: result.value?.updated_at || status.value?.updated_at || null,
+      ok: result.value?.ok ?? null,
+      status: result.value?.status || null,
+      system: status.value?.system || {},
+      selected_config_ids: [...selectedConfigIds.value],
+      containers_failed: failedContainers.map((c) => ({
+        name: c.name,
+        label: c.label,
+        detail: c.detail
+      })),
+      singbox: sb
+        ? { ok: !!sb.ok, detail: sb.detail || '' }
+        : null,
+      failed_checks: failedChecks.value,
+      group_details: failedGroupDetails,
+      hints: result.value?.hints || []
+    }
+    return JSON.stringify(payload, null, pretty ? 2 : 0)
+  }
+
   return {
     status,
     result,
@@ -167,6 +216,7 @@ export const useDiagnosticsStore = defineStore('diagnostics', () => {
     system,
     groups,
     hints,
+    failedChecks,
     fetchStatus,
     runDiagnostic,
     toggleConfig,
@@ -176,6 +226,7 @@ export const useDiagnosticsStore = defineStore('diagnostics', () => {
     openAwgConfigs,
     closeSingBoxModal,
     closeAwgModal,
-    dumpText
+    dumpText,
+    errorReportJson
   }
 })

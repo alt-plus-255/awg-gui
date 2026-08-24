@@ -5,20 +5,31 @@ namespace App\Services\AmneziaWg;
 use App\Models\Setting;
 use App\Services\Docker\DockerRuntime;
 use App\Services\Docker\PanelOpsClient;
+<<<<<<< HEAD
+=======
+use App\Services\Ssl\AcmeDnsIssuer;
+>>>>>>> a34ec4d81547d4963b761827020a578f3957b1c6
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
 class SslCertificateService
 {
+<<<<<<< HEAD
     private const CHALLENGE_WAIT_SECONDS = 90;
 
     private const CERTBOT_FINISH_SECONDS = 180;
+=======
+    private ?AcmeDnsIssuer $issuer = null;
+>>>>>>> a34ec4d81547d4963b761827020a578f3957b1c6
 
     public function __construct(
         private AmneziaWgService $awg,
         private DockerRuntime $docker,
         private PanelOpsClient $panelOps,
+<<<<<<< HEAD
         private CertbotProcessTracker $certbot,
+=======
+>>>>>>> a34ec4d81547d4963b761827020a578f3957b1c6
     ) {}
 
     public function hostGuiDir(): string
@@ -38,12 +49,7 @@ class SslCertificateService
 
     public function challengeDir(): string
     {
-        return $this->hostGuiDir().'/certbot/challenge';
-    }
-
-    public function hooksDir(): string
-    {
-        return $this->hostGuiDir().'/certbot/hooks';
+        return $this->issuer()->challengeDir();
     }
 
     public function isSslEnabled(): bool
@@ -54,7 +60,7 @@ class SslCertificateService
     /** @return array<string, mixed> */
     public function status(): array
     {
-        // Auto-recover: certbot succeeded but UI/state still shows error.
+        // Auto-recover: issue succeeded but UI/state still shows error.
         if (! $this->isSslEnabled() && $this->hasLiveCertificate()) {
             $status = trim((string) Setting::getValue('ssl_status', 'disabled'));
             $error = trim((string) Setting::getValue('ssl_error', ''));
@@ -75,7 +81,7 @@ class SslCertificateService
         $domain = $this->awg->resolvePanelDomain();
         $httpsPort = (string) Setting::getValue('panel_https_port', env('PANEL_HTTPS_PORT', '7443'));
 
-        $challenge = $this->readPendingChallenge();
+        $challenge = $this->resolvePendingChallenge();
         if ($challenge !== null && in_array($status, ['disabled', 'active', 'error'], true)) {
             $status = 'pending';
         }
@@ -104,8 +110,12 @@ class SslCertificateService
     public function hasLiveCertificate(): bool
     {
         $live = $this->hostGuiDir().'/certs/live/panel';
+        if (is_readable($live.'/fullchain.pem') && is_readable($live.'/privkey.pem')) {
+            return true;
+        }
 
-        return is_readable($live.'/fullchain.pem') && is_readable($live.'/privkey.pem');
+        return is_readable($this->certsPanelDir().'/fullchain.pem')
+            && is_readable($this->certsPanelDir().'/privkey.pem');
     }
 
     /**
@@ -127,30 +137,7 @@ class SslCertificateService
      */
     public function readPendingChallenge(): ?array
     {
-        $dir = $this->challengeDir();
-        $ready = $dir.'/ready';
-        $validation = $dir.'/validation';
-        $domainFile = $dir.'/domain';
-
-        if (! is_file($ready) || ! is_readable($validation) || ! is_readable($domainFile)) {
-            return null;
-        }
-
-        if (is_file($dir.'/done')) {
-            return null;
-        }
-
-        $domain = trim((string) file_get_contents($domainFile));
-        $value = trim((string) file_get_contents($validation));
-        if ($domain === '' || $value === '') {
-            return null;
-        }
-
-        return [
-            'domain' => $domain,
-            'txt_name' => '_acme-challenge.'.$domain,
-            'txt_value' => $value,
-        ];
+        return $this->resolvePendingChallenge();
     }
 
     public function ensureHttpCaddyfile(): void
@@ -165,14 +152,35 @@ class SslCertificateService
     public function writeCaddyfile(bool $ssl): void
     {
         $this->ensureHostLayout();
-        $content = $ssl ? $this->buildSslCaddyfile() : $this->buildHttpCaddyfile();
+        $content = $this->caddyfileContents($ssl);
         if (file_put_contents($this->caddyfilePath(), $content) === false) {
             throw new RuntimeException(__('settings.caddyfile_write_failed'));
         }
     }
 
+    /** Public for unit tests and callers that only need the rendered config. */
+    public function caddyfileContents(bool $ssl): string
+    {
+        return $ssl ? $this->buildSslCaddyfile() : $this->buildHttpCaddyfile();
+    }
+
+    /**
+     * Re-render SSL Caddyfile when redirect / domain options change (no-op if SSL off).
+     */
+    public function refreshSslCaddyfileIfEnabled(): void
+    {
+        if (! $this->isSslEnabled()) {
+            return;
+        }
+
+        $this->writeCaddyfile(true);
+        $this->reloadOrRecreateCaddy();
+    }
+
     /**
      * Start DNS-01 issuance (or renew). Returns TXT challenge for the user.
+     * Reuses the same TXT for the current domain until abort/complete so DNS
+     * propagation (up to ~1h) is not reset by page reloads or repeated Issue clicks.
      *
      * @return array{txt_name:string,txt_value:string,domain:string,email:string}
      */
@@ -188,26 +196,33 @@ class SslCertificateService
             throw new \InvalidArgumentException(__('settings.le_email_required'));
         }
 
-        $endpoint = trim((string) Setting::getValue('server_endpoint', env('SERVER_ENDPOINT', 'auto')));
-        $this->awg->assertDomainPointsToPublicIp($domain, $endpoint);
+        $this->awg->assertPanelDomainDns($domain);
 
+<<<<<<< HEAD
         $existing = $this->readPendingChallenge();
         if ($existing !== null && $this->certbot->isRunning()) {
+=======
+        // Keep the same TXT for this domain — do not open a new ACME order while pending exists.
+        $existing = $this->issuer()->reusableChallengeFor($domain);
+        if ($existing !== null) {
+>>>>>>> a34ec4d81547d4963b761827020a578f3957b1c6
             Setting::setValue('ssl_email', $email);
             Setting::setValue('ssl_status', 'pending');
             Setting::setValue('ssl_error', '');
+            $this->storeChallenge($existing);
 
             return array_merge($existing, ['email' => $email]);
         }
 
+        // forceRenew only matters when there is no reusable pending challenge.
         $this->abortChallenge(quiet: true);
         $this->ensureHostLayout();
-        $this->ensureCertbotHooks();
 
         Setting::setValue('ssl_email', $email);
         Setting::setValue('ssl_status', 'pending');
         Setting::setValue('ssl_error', '');
 
+<<<<<<< HEAD
         $this->removeFile($this->challengeDir().'/ready');
         $this->removeFile($this->challengeDir().'/validation');
         $this->removeFile($this->challengeDir().'/domain');
@@ -245,12 +260,20 @@ class SslCertificateService
             array_merge(['/hooks/run-certbot.sh'], $certbotArgs),
         );
         if (! $start->successful()) {
+=======
+        try {
+            $challenge = $this->issuer()->start($domain, $email, forceNew: $forceRenew);
+            $this->storeChallenge($challenge);
+        } catch (\Throwable $e) {
+            $this->clearStoredChallenge();
+>>>>>>> a34ec4d81547d4963b761827020a578f3957b1c6
             Setting::setValue('ssl_status', 'error');
-            $err = trim($start->errorOutput() ?: $start->output()) ?: __('settings.certbot_start_failed');
+            $err = trim($e->getMessage()) !== '' ? $e->getMessage() : __('settings.acme_start_failed');
             Setting::setValue('ssl_error', $err);
-            throw new RuntimeException($err);
+            throw new RuntimeException($err, 0, $e);
         }
 
+<<<<<<< HEAD
         $deadline = time() + self::CHALLENGE_WAIT_SECONDS;
         while (time() < $deadline) {
             $challenge = $this->readPendingChallenge();
@@ -284,6 +307,9 @@ class SslCertificateService
         Setting::setValue('ssl_status', 'error');
         Setting::setValue('ssl_error', __('settings.certbot_challenge_timeout'));
         throw new RuntimeException(Setting::getValue('ssl_error'));
+=======
+        return array_merge($challenge, ['email' => $email]);
+>>>>>>> a34ec4d81547d4963b761827020a578f3957b1c6
     }
 
     /**
@@ -294,7 +320,11 @@ class SslCertificateService
     public function completeIssue(): array
     {
         $challenge = $this->readPendingChallenge();
+<<<<<<< HEAD
         if ($challenge === null && ! $this->certbot->isRunning()) {
+=======
+        if ($challenge === null && ! $this->issuer()->hasPendingOrder()) {
+>>>>>>> a34ec4d81547d4963b761827020a578f3957b1c6
             $recovered = $this->recoverIfCertificateExists();
             if ($recovered !== null) {
                 return $recovered;
@@ -302,6 +332,7 @@ class SslCertificateService
             throw new \InvalidArgumentException(__('settings.no_active_dns_challenge'));
         }
 
+<<<<<<< HEAD
         $done = $this->challengeDir().'/done';
         if (@file_put_contents($done, '1') === false) {
             throw new RuntimeException(__('settings.dns_challenge_confirm_failed'));
@@ -328,24 +359,27 @@ class SslCertificateService
             || str_contains($logs, 'Certificate not yet due for renewal');
 
         if ($exit !== 0 && ! $liveOk) {
+=======
+        try {
+            $this->issuer()->complete();
+        } catch (\Throwable $e) {
+            if ($this->hasLiveCertificate()) {
+                return $this->activateInstalledCertificate();
+            }
+>>>>>>> a34ec4d81547d4963b761827020a578f3957b1c6
             Setting::setValue('ssl_status', 'error');
-            Setting::setValue('ssl_error', $logs !== '' ? $logs : __('settings.certbot_exit_code', ['exit' => $exit]));
-            throw new RuntimeException(Setting::getValue('ssl_error'));
+            $err = trim($e->getMessage()) !== '' ? $e->getMessage() : __('settings.acme_complete_failed');
+            Setting::setValue('ssl_error', $err);
+            throw new RuntimeException($err, 0, $e);
         }
 
-        if (! $liveOk && ! $logsSayOk) {
-            Setting::setValue('ssl_status', 'error');
-            Setting::setValue('ssl_error', $logs !== '' ? $logs : __('settings.cert_files_not_found_after_certbot'));
-            throw new RuntimeException(Setting::getValue('ssl_error'));
-        }
-
-        if (! $liveOk) {
+        if (! $this->hasLiveCertificate()) {
             $recovered = $this->recoverIfCertificateExists();
             if ($recovered !== null) {
                 return $recovered;
             }
             Setting::setValue('ssl_status', 'error');
-            Setting::setValue('ssl_error', $logs !== '' ? $logs : __('settings.cert_files_not_found_after_certbot'));
+            Setting::setValue('ssl_error', __('settings.cert_files_not_found_after_issue'));
             throw new RuntimeException(Setting::getValue('ssl_error'));
         }
 
@@ -353,12 +387,13 @@ class SslCertificateService
     }
 
     /**
-     * Enable HTTPS using certs already present under /etc/awg-gui/certs/live/panel.
+     * Enable HTTPS using certs already present under certs/live/panel or certs/panel.
      *
      * @return array<string, mixed>
      */
     public function activateInstalledCertificate(): array
     {
+        $this->clearStoredChallenge();
         $this->installPanelCertsFromLetsEncrypt();
         $expiresAt = $this->readCertExpiresAt($this->certsPanelDir().'/fullchain.pem') ?? '';
 
@@ -370,7 +405,6 @@ class SslCertificateService
         $this->writeCaddyfile(true);
         $this->awg->writeWebhookConf();
         $this->awg->syncPanelUrlToHostEnv();
-        // Ports already published — reload config only (no image rebuild).
         $this->reloadOrRecreateCaddy();
 
         return $this->status();
@@ -394,6 +428,7 @@ class SslCertificateService
 
     public function abortChallenge(bool $quiet = false): void
     {
+<<<<<<< HEAD
         $dir = $this->challengeDir();
         if (is_dir($dir)) {
             @file_put_contents($dir.'/abort', '1');
@@ -407,6 +442,10 @@ class SslCertificateService
         foreach (['ready', 'done', 'abort', 'domain', 'validation', 'failed'] as $name) {
             $this->removeFile($dir.'/'.$name);
         }
+=======
+        $this->issuer()->abort();
+        $this->clearStoredChallenge();
+>>>>>>> a34ec4d81547d4963b761827020a578f3957b1c6
 
         if (! $quiet && Setting::getValue('ssl_status') === 'pending' && ! $this->isSslEnabled()) {
             Setting::setValue('ssl_status', 'disabled');
@@ -447,6 +486,16 @@ class SslCertificateService
         }
     }
 
+    private function issuer(): AcmeDnsIssuer
+    {
+        if ($this->issuer === null) {
+            $directory = env('ACME_DIRECTORY_URL') ?: null;
+            $this->issuer = new AcmeDnsIssuer($this->hostGuiDir(), is_string($directory) ? $directory : null);
+        }
+
+        return $this->issuer;
+    }
+
     private function installPanelCertsFromLetsEncrypt(): void
     {
         $live = $this->hostGuiDir().'/certs/live/panel';
@@ -454,7 +503,12 @@ class SslCertificateService
         $privkey = $live.'/privkey.pem';
 
         if (! is_readable($fullchain) || ! is_readable($privkey)) {
-            throw new RuntimeException(__('settings.certbot_ok_but_files_missing'));
+            $fullchain = $this->certsPanelDir().'/fullchain.pem';
+            $privkey = $this->certsPanelDir().'/privkey.pem';
+        }
+
+        if (! is_readable($fullchain) || ! is_readable($privkey)) {
+            throw new RuntimeException(__('settings.acme_ok_but_files_missing'));
         }
 
         $dest = $this->certsPanelDir();
@@ -462,7 +516,6 @@ class SslCertificateService
             mkdir($dest, 0755, true);
         }
 
-        // Follow Let's Encrypt symlinks to real files for the Caddy bind mount.
         $fc = file_get_contents($fullchain);
         $pk = file_get_contents($privkey);
         if ($fc === false || $pk === false || $fc === '' || $pk === '') {
@@ -493,11 +546,10 @@ class SslCertificateService
 
     private function ensureHostLayout(): void
     {
+        $this->issuer()->ensureLayout();
         foreach ([
             $this->hostGuiDir(),
             $this->certsPanelDir(),
-            $this->challengeDir(),
-            $this->hooksDir(),
             $this->hostGuiDir().'/certs',
         ] as $dir) {
             if (! is_dir($dir)) {
@@ -506,44 +558,36 @@ class SslCertificateService
         }
     }
 
-    private function ensureCertbotHooks(): void
+    /**
+     * Challenge from ACME files, mirrored into Settings for page-reload survival.
+     *
+     * @return array{txt_name:string,txt_value:string,domain:string}|null
+     */
+    private function resolvePendingChallenge(): ?array
     {
-        $auth = $this->hooksDir().'/auth.sh';
-        $cleanup = $this->hooksDir().'/cleanup.sh';
+        $domain = strtolower(trim($this->awg->resolvePanelDomain()));
+        $fromFiles = $this->issuer()->readPendingChallenge();
+        if ($fromFiles !== null) {
+            if ($domain !== '' && ($fromFiles['domain'] ?? '') !== $domain) {
+                // Stale challenge for a previous panel domain.
+                return null;
+            }
+            $this->storeChallenge($fromFiles);
 
-        if (! is_file($auth)) {
-            file_put_contents($auth, <<<'SH'
-#!/bin/sh
-set -eu
-printf '%s' "${CERTBOT_DOMAIN}" > /challenge/domain
-printf '%s' "${CERTBOT_VALIDATION}" > /challenge/validation
-rm -f /challenge/done /challenge/abort /challenge/failed
-touch /challenge/ready
-i=0
-while [ ! -f /challenge/done ]; do
-	if [ -f /challenge/abort ]; then
-		echo "DNS challenge aborted by user" >&2
-		exit 1
-	fi
-	sleep 2
-	i=$((i + 2))
-	if [ "$i" -ge 1800 ]; then
-		echo "Timeout waiting for DNS TXT confirmation" >&2
-		exit 1
-	fi
-done
-SH);
+            return $fromFiles;
         }
 
-        if (! is_file($cleanup)) {
-            file_put_contents($cleanup, <<<'SH'
-#!/bin/sh
-set -eu
-rm -f /challenge/ready /challenge/done /challenge/abort
-rm -f /challenge/failed
-SH);
+        $stored = $this->readStoredChallenge();
+        if ($stored === null) {
+            return null;
+        }
+        if ($domain !== '' && ($stored['domain'] ?? '') !== $domain) {
+            $this->clearStoredChallenge();
+
+            return null;
         }
 
+<<<<<<< HEAD
         $wrapper = $this->hooksDir().'/run-certbot.sh';
         if (! is_file($wrapper)) {
             file_put_contents($wrapper, <<<'SH'
@@ -560,6 +604,74 @@ SH);
         @chmod($auth, 0755);
         @chmod($cleanup, 0755);
         @chmod($wrapper, 0755);
+=======
+        // Prefer not to show a DB-only challenge that can no longer be completed.
+        if (! $this->issuer()->hasPendingOrder()) {
+            $this->clearStoredChallenge();
+
+            return null;
+        }
+
+        return $stored;
+    }
+
+    /**
+     * @param  array{txt_name?:string,txt_value?:string,domain?:string}  $challenge
+     */
+    private function storeChallenge(array $challenge): void
+    {
+        $domain = strtolower(trim((string) ($challenge['domain'] ?? '')));
+        $txtName = trim((string) ($challenge['txt_name'] ?? ''));
+        $txtValue = trim((string) ($challenge['txt_value'] ?? ''));
+        if ($domain === '' || $txtValue === '') {
+            return;
+        }
+        if ($txtName === '') {
+            $txtName = '_acme-challenge.'.$domain;
+        }
+
+        Setting::setValue('ssl_pending_challenge', json_encode([
+            'domain' => $domain,
+            'txt_name' => $txtName,
+            'txt_value' => $txtValue,
+            'saved_at' => gmdate('c'),
+        ], JSON_UNESCAPED_SLASHES));
+    }
+
+    /**
+     * @return array{txt_name:string,txt_value:string,domain:string}|null
+     */
+    private function readStoredChallenge(): ?array
+    {
+        $raw = trim((string) Setting::getValue('ssl_pending_challenge', ''));
+        if ($raw === '') {
+            return null;
+        }
+        $data = json_decode($raw, true);
+        if (! is_array($data)) {
+            return null;
+        }
+        $domain = strtolower(trim((string) ($data['domain'] ?? '')));
+        $txtValue = trim((string) ($data['txt_value'] ?? ''));
+        $txtName = trim((string) ($data['txt_name'] ?? ''));
+        if ($domain === '' || $txtValue === '') {
+            return null;
+        }
+        if ($txtName === '') {
+            $txtName = '_acme-challenge.'.$domain;
+        }
+
+        return [
+            'domain' => $domain,
+            'txt_name' => $txtName,
+            'txt_value' => $txtValue,
+        ];
+    }
+
+    private function clearStoredChallenge(): void
+    {
+        Setting::setValue('ssl_pending_challenge', '');
+>>>>>>> a34ec4d81547d4963b761827020a578f3957b1c6
     }
 
     private function buildHttpCaddyfile(): string
@@ -571,18 +683,30 @@ SH);
     {
         $domain = $this->awg->resolvePanelDomain();
         $httpsPort = (string) Setting::getValue('panel_https_port', env('PANEL_HTTPS_PORT', '7443'));
-        $redirect = '';
+        $httpRedirect = '';
+        $httpsRedirect = '';
         if ($domain !== '') {
-            $redirect = <<<CADDY
+            // Always upgrade domain HTTP → HTTPS.
+            $httpRedirect = <<<CADDY
 	@panel host {$domain}
-	redir @panel https://{$domain}:{$httpsPort}{uri} permanent
+	redir @panel https://{$domain}:{$httpsPort}{uri} temporary
 
 CADDY;
+            // Optional: also send IP / other Host values to the canonical HTTPS domain.
+            if ($this->awg->shouldRedirectIpToDomain()) {
+                $forceDomain = <<<CADDY
+	@not_panel not host {$domain}
+	redir @not_panel https://{$domain}:{$httpsPort}{uri} temporary
+
+CADDY;
+                $httpRedirect .= $forceDomain;
+                $httpsRedirect = $forceDomain;
+            }
         }
 
         return "{\n\tauto_https off\n}\n\n"
-            .$this->siteBlock(':443', true)."\n"
-            .$this->siteBlock(':80', false, $redirect);
+            .$this->siteBlock(':443', true, $httpsRedirect)."\n"
+            .$this->siteBlock(':80', false, $httpRedirect);
     }
 
     private function siteBlock(string $listen, bool $tls, string $extra = ''): string
@@ -615,6 +739,13 @@ CADDY;
 		}
 	}
 
+	@sw path /sw.js /sw.js.map /workbox-*.js /workbox-*.js.map
+	handle @sw {
+		root * /srv
+		header Cache-Control "no-cache"
+		file_server
+	}
+
 	handle {
 		root * /srv
 		try_files {path} /index.html
@@ -623,12 +754,5 @@ CADDY;
 }
 
 CADDY;
-    }
-
-    private function removeFile(string $path): void
-    {
-        if (is_file($path)) {
-            @unlink($path);
-        }
     }
 }

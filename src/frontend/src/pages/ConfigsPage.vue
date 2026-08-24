@@ -48,29 +48,32 @@
                 flat
                 dense
                 round
-                :icon="props.expand ? 'expand_less' : 'expand_more'"
+                :icon="expandBtnIcon(props)"
                 @click="toggleExpand(props)"
               />
             </q-td>
             <q-td key="name" :props="props">{{ props.row.name }}</q-td>
             <q-td key="type" :props="props">
-              <q-badge :color="props.row.type === 'virtual_network' ? 'info' : 'primary'">
-                {{ props.row.type === 'virtual_network' ? t('configs.typeVirtualNetwork') : t('configs.typeServer') }}
-              </q-badge>
-              <q-badge
-                v-if="props.row.type === 'virtual_network'"
-                :color="props.row.vn_policy === 'deny_all' ? 'deep-orange' : 'grey-8'"
-                class="q-ml-xs"
-              >
-                {{ props.row.vn_policy === 'deny_all' ? t('configs.badgeIsolation') : t('configs.badgeAllowAll') }}
-              </q-badge>
-              <q-badge
-                v-if="props.row.resolver_enabled"
-                color="deep-purple"
-                class="q-ml-xs"
-              >
-                {{ t('configs.badgeResolver') }}
-              </q-badge>
+              <div class="config-type-badges column items-start q-gutter-y-xs">
+                <q-badge :color="props.row.type === 'virtual_network' ? 'info' : 'primary'">
+                  {{ props.row.type === 'virtual_network' ? t('configs.typeVirtualNetwork') : t('configs.typeServer') }}
+                </q-badge>
+                <q-badge color="grey-7">
+                  {{ props.row.protocol_label || protocolLabel(props.row.protocol_version) }}
+                </q-badge>
+                <q-badge
+                  v-if="props.row.type === 'virtual_network'"
+                  :color="props.row.vn_policy === 'deny_all' ? 'deep-orange' : 'grey-8'"
+                >
+                  {{ props.row.vn_policy === 'deny_all' ? t('configs.badgeIsolation') : t('configs.badgeAllowAll') }}
+                </q-badge>
+                <q-badge
+                  v-if="props.row.resolver_enabled"
+                  color="deep-purple"
+                >
+                  {{ t('configs.badgeResolver') }}
+                </q-badge>
+              </div>
             </q-td>
             <q-td key="iface" :props="props">{{ props.row.iface }}</q-td>
             <q-td key="listen_port" :props="props">{{ props.row.listen_port }}</q-td>
@@ -82,189 +85,23 @@
               </q-badge>
             </q-td>
             <q-td key="actions" :props="props">
+              <q-btn flat dense icon="history" :title="t('configs.handshakeLogs')" @click="openHandshakeLogs(props.row)" />
+              <q-btn flat dense icon="restart_alt" :title="t('configs.resetTraffic')" @click="resetConfigTraffic(props.row)" />
               <q-btn flat dense icon="description" :title="t('configs.showConf')" @click="showServerConf(props.row)" />
               <q-btn flat dense icon="edit" :title="t('common.edit')" @click="openEdit(props.row)" />
               <q-btn flat dense color="negative" icon="delete" :title="t('common.delete')" @click="remove(props.row)" />
             </q-td>
           </q-tr>
 
-          <q-tr v-show="props.expand" :props="props" :key="`e_${props.row.id}`" class="q-virtual-scroll--with-prev">
+          <q-tr
+            v-show="!$q.screen.lt.md && props.expand"
+            :props="props"
+            :key="`e_${props.row.id}`"
+            class="q-virtual-scroll--with-prev"
+          >
             <q-td colspan="100%" class="expanded-cell">
               <div class="q-pa-md">
-                <div class="row items-center q-mb-sm">
-                  <div class="text-subtitle1 col">{{ t('configs.peersOfConfig', { name: props.row.name }) }}</div>
-                  <q-btn flat dense icon="refresh" :label="t('common.refresh')" class="q-mr-sm" @click="refreshConfigLive(props.row.id)" :loading="peersState[props.row.id]?.liveLoading" />
-                  <q-btn color="primary" dense icon="add" :label="t('configs.addPeer')" @click="openAddPeer(props.row)" />
-                </div>
-
-                <div v-if="props.row.type === 'virtual_network'" class="text-caption text-grey-5 q-mb-sm">
-                  <template v-if="props.row.vn_policy === 'deny_all'">
-                    {{ t('configs.isolationModeHint') }}
-                  </template>
-                  <template v-else>
-                    {{ t('configs.lanRouterHint') }}
-                  </template>
-                </div>
-
-                <q-banner
-                  v-if="peersState[props.row.id]?.statsAvailable === false"
-                  dense
-                  rounded
-                  class="bg-warning text-dark q-mb-sm"
-                >
-                  {{ t('configs.statsUnavailable') }}
-                </q-banner>
-
-                <q-table
-                  :rows="peersState[props.row.id]?.peers || []"
-                  :columns="peerColumns"
-                  row-key="membership_id"
-
-                  flat
-                  dense
-                  :loading="peersState[props.row.id]?.loading"
-                  class="bg-transparent"
-                  :rows-per-page-options="[10, 25, 0]"
-                  :no-data-label="t('configs.noPeers')"
-                >
-                  <template #body-cell-client_allowed_ips="peerProps">
-                    <q-td :props="peerProps">
-                      <div class="ellipsis" style="max-width: 320px;" :title="peerProps.row.client_allowed_ips">
-                        {{ peerProps.row.client_allowed_ips }}
-                      </div>
-                    </q-td>
-                  </template>
-                  <template #body-cell-online="peerProps">
-                    <q-td :props="peerProps">
-                      <q-badge :color="peerProps.row.online ? 'positive' : 'grey-8'">
-                        {{ peerProps.row.online != null ? (peerProps.row.online ? t('common.online') : t('common.offline')) : '—' }}
-                      </q-badge>
-                    </q-td>
-                  </template>
-                  <template #body-cell-latest_handshake_human="peerProps">
-                    <q-td :props="peerProps">
-                      <template v-if="formatHandshake(peerProps.row.latest_handshake_human)">
-                        <div class="text-no-wrap">{{ formatHandshake(peerProps.row.latest_handshake_human).date }}</div>
-                        <div class="text-no-wrap">{{ formatHandshake(peerProps.row.latest_handshake_human).time }}</div>
-                      </template>
-                      <template v-else>—</template>
-                    </q-td>
-                  </template>
-                  <template #body-cell-transfer_rx="peerProps">
-                    <q-td :props="peerProps">{{ peerProps.row.transfer_rx != null ? formatBytes(peerProps.row.transfer_rx) : '—' }}</q-td>
-                  </template>
-                  <template #body-cell-transfer_tx="peerProps">
-                    <q-td :props="peerProps">{{ peerProps.row.transfer_tx != null ? formatBytes(peerProps.row.transfer_tx) : '—' }}</q-td>
-                  </template>
-                  <template #body-cell-enabled="peerProps">
-                    <q-td :props="peerProps">
-                      <div class="row items-center no-wrap q-gutter-xs">
-                        <q-toggle
-                          :model-value="peerProps.row.enabled"
-                          dense
-                          color="positive"
-                          :disable="isPeerToggling(props.row.id, peerProps.row.client_id)"
-                          @update:model-value="(v) => togglePeer(props.row, peerProps.row, v)"
-                        />
-                        <q-spinner-dots
-                          v-if="isPeerToggling(props.row.id, peerProps.row.client_id)"
-                          size="20px"
-                          color="primary"
-                        />
-                      </div>
-                    </q-td>
-                  </template>
-                  <template #body-cell-actions="peerProps">
-                    <q-td :props="peerProps">
-                      <q-btn flat dense icon="edit" :title="t('common.edit')" @click="openEditPeer(props.row, peerProps.row)" />
-                      <q-btn flat dense icon="qr_code_2" title="QR" @click="openShare(props.row, peerProps.row)" />
-                      <q-btn flat dense icon="download" :title="t('dashboard.configTooltip')" @click="downloadConf(props.row, peerProps.row)" />
-                      <q-btn flat dense color="warning" icon="link_off" :title="t('configs.detachFromConfig')" @click="detachPeer(props.row, peerProps.row)" />
-                      <q-btn flat dense color="negative" icon="delete" :title="t('configs.deletePeerFully')" @click="deletePeer(peerProps.row)" />
-                    </q-td>
-                  </template>
-                </q-table>
-
-                <!-- access rules (isolation mode) -->
-                <div v-if="props.row.type === 'virtual_network' && props.row.vn_policy === 'deny_all'" class="q-mt-lg">
-                  <div class="row items-center q-mb-xs">
-                    <div class="text-subtitle1 col">{{ t('configs.accessRules') }}</div>
-                    <q-btn flat dense icon="add" :label="t('configs.addRule')" class="q-mr-sm" @click="addRule(props.row.id)" />
-                    <q-btn
-                      color="primary"
-                      dense
-                      icon="save"
-                      :label="t('configs.saveRules')"
-                      :loading="zonesState[props.row.id]?.saving"
-                      :disable="!zonesState[props.row.id]?.dirty"
-                      @click="saveZones(props.row)"
-                    />
-                  </div>
-                  <div class="text-caption text-grey-5 q-mb-sm">
-                    {{ t('configs.rulesHintLeftToRight') }} <br>
-                    {{ t('configs.rulesHintTunnelOnly') }} <br>
-                    {{ t('configs.rulesHintMasquerade') }} <br>
-                    {{ t('configs.peerOutsideRules') }}
-                  </div>
-
-                  <q-banner
-                    v-if="isolatedPeers(props.row.id).length"
-                    dense
-                    rounded
-                    class="bg-blue-grey-9 text-grey-4 q-mb-sm"
-                  >
-                    {{ t('configs.isolatedOutsideRules', { names: isolatedPeers(props.row.id).join(', ') }) }}
-                  </q-banner>
-
-                  <div v-if="!(zonesState[props.row.id]?.rules || []).length" class="text-caption text-grey-6 q-mb-sm">
-                    {{ t('configs.noRulesYet') }}
-                  </div>
-
-                  <div
-                    v-for="(rule, rIdx) in zonesState[props.row.id]?.rules || []"
-                    :key="rIdx"
-                    class="row q-col-gutter-sm items-center q-mb-sm"
-                  >
-                    <div class="col">
-                      <q-select
-                        v-model="rule.src_client_ids"
-                        :options="ruleMemberOptions(props.row.id, rule.dest_client_ids)"
-                        multiple
-                        use-chips
-                        emit-value
-                        map-options
-                        option-value="client_id"
-                        option-label="name"
-                        :label="t('configs.whoWalks')"
-
-                        filled
-                        dense
-                        @update:model-value="markZonesDirty(props.row.id)"
-                      />
-                    </div>
-                    <div class="col-auto text-h6 text-grey-5">→</div>
-                    <div class="col">
-                      <q-select
-                        v-model="rule.dest_client_ids"
-                        :options="ruleMemberOptions(props.row.id, rule.src_client_ids)"
-                        multiple
-                        use-chips
-                        emit-value
-                        map-options
-                        option-value="client_id"
-                        option-label="name"
-                        :label="t('configs.wherePeerSubnet')"
-
-                        filled
-                        dense
-                        @update:model-value="markZonesDirty(props.row.id)"
-                      />
-                    </div>
-                    <div class="col-auto">
-                      <q-btn flat dense icon="close" color="negative" :title="t('configs.deleteRule')" @click="removeRule(props.row.id, rIdx)" />
-                    </div>
-                  </div>
-                </div>
+                <ConfigExpandPanel :config="props.row" />
               </div>
             </q-td>
           </q-tr>
@@ -314,6 +151,19 @@
       </div>
     </div>
 
+    <!-- Mobile: peers/rules in fullscreen dialog instead of row expand -->
+    <q-dialog v-model="expandModalOpen" v-bind="mobileDialog" @hide="onExpandModalHide">
+      <q-card class="surface-panel dialog-card column no-wrap" style="width: min(960px, 95vw); max-width: 95vw;">
+        <DialogHeader
+          :title="expandModalRow ? t('configs.peersOfConfig', { name: expandModalRow.name }) : ''"
+          always-show-close
+        />
+        <q-card-section class="col dialog-scroll-body">
+          <ConfigExpandPanel v-if="expandModalRow" :config="expandModalRow" :show-title="false" />
+        </q-card-section>
+      </q-card>
+    </q-dialog>
+
     <!-- Pick config to attach unattached peer -->
     <q-dialog v-model="attachPickOpen" v-bind="mobileDialog" persistent>
       <q-card style="width: min(420px, 95vw); max-width: 95vw;" class="surface-panel dialog-card column no-wrap">
@@ -346,7 +196,7 @@
       <q-card
         :style="editingId
           ? 'width: min(820px, 95vw); max-width: 960px; max-height: 90vh;'
-          : 'width: min(480px, 95vw); max-width: 95vw; max-height: 90vh;'"
+          : 'width: min(520px, 95vw); max-width: 95vw; max-height: 90vh;'"
         class="surface-panel dialog-card column no-wrap"
       >
         <DialogHeader :title="editingId ? t('configs.editConfig') : t('configs.newConfig')" />
@@ -375,6 +225,41 @@
               </div>
             </div>
           </div>
+
+          <div v-if="editingId" class="q-mb-md">
+            <q-toggle
+              v-model="form.handshake_logging_enabled"
+              :label="t('configs.handshakeLoggingToggle')"
+              color="primary"
+            />
+            <div class="text-caption text-grey-5 q-mt-xs">{{ t('configs.handshakeLoggingHint') }}</div>
+          </div>
+
+          <q-select
+            v-model="form.protocol_version"
+            :options="protocolVersionOptions"
+            :label="t('configs.protocolVersion')"
+            emit-value
+            map-options
+            filled
+            class="q-mb-md"
+            :disable="!!editingId"
+            :hint="editingId
+              ? t('configs.protocolVersionImmutableHint')
+              : t('configs.protocolVersionHint')"
+            @update:model-value="onProtocolVersionChange"
+          />
+
+          <q-select
+            v-model="form.client_import_name_style"
+            :options="clientImportNameOptions"
+            :label="t('configs.clientImportName')"
+            :hint="t('configs.clientImportNameHint')"
+            emit-value
+            map-options
+            filled
+            class="q-mb-md"
+          />
 
           <q-select
             v-if="form.type === 'virtual_network'"
@@ -493,17 +378,17 @@
               />
             </div>
             <div class="row q-col-gutter-sm">
-              <div class="col-12 col-md-3">
-                <q-input v-for="k in ['jc', 'jmin', 'jmax']" :key="k" v-model="form[k]" :label="k.toUpperCase()" filled dense class="q-mb-sm" />
+              <div v-if="visibleJunkGroups.jc.length" class="col-12 col-md-3">
+                <q-input v-for="k in visibleJunkGroups.jc" :key="k" v-model="form[k]" :label="k.toUpperCase()" filled dense class="q-mb-sm" />
               </div>
-              <div class="col-12 col-md-3">
-                <q-input v-for="k in ['s1', 's2', 's3', 's4']" :key="k" v-model="form[k]" :label="k.toUpperCase()" filled dense class="q-mb-sm" />
+              <div v-if="visibleJunkGroups.s.length" class="col-12 col-md-3">
+                <q-input v-for="k in visibleJunkGroups.s" :key="k" v-model="form[k]" :label="k.toUpperCase()" filled dense class="q-mb-sm" />
               </div>
-              <div class="col-12 col-md-3">
-                <q-input v-for="k in ['h1', 'h2', 'h3', 'h4']" :key="k" v-model="form[k]" :label="k.toUpperCase()" filled dense class="q-mb-sm" />
+              <div v-if="visibleJunkGroups.h.length" class="col-12 col-md-3">
+                <q-input v-for="k in visibleJunkGroups.h" :key="k" v-model="form[k]" :label="k.toUpperCase()" filled dense class="q-mb-sm" />
               </div>
-              <div class="col-12 col-md-3">
-                <q-input v-for="k in ['i1', 'i2', 'i3', 'i4', 'i5']" :key="k" v-model="form[k]" :label="k.toUpperCase()" filled dense class="q-mb-sm" />
+              <div v-if="visibleJunkGroups.i.length" class="col-12 col-md-3">
+                <q-input v-for="k in visibleJunkGroups.i" :key="k" v-model="form[k]" :label="k.toUpperCase()" filled dense class="q-mb-sm" />
               </div>
             </div>
           </template>
@@ -600,7 +485,19 @@
             </q-banner>
           </template>
           <template v-else>
-            <div class="text-subtitle2 q-mb-sm">{{ t('configs.serverToPeerAllowedIps') }}</div>
+            <div class="text-subtitle2 q-mb-sm">{{ t('configs.clientVpnRoutes') }}</div>
+            <div
+              v-if="!activeConfig?.resolver_enabled"
+              class="text-caption text-grey-5 q-mb-sm"
+            >
+              {{ t('configs.clientVpnRoutesHint') }}
+            </div>
+            <div
+              v-else
+              class="text-caption text-grey-5 q-mb-sm"
+            >
+              {{ t('configs.clientVpnRoutesResolverHint') }}
+            </div>
             <div v-for="(ip, idx) in peerForm.extra_allowed_ips" :key="idx" class="row q-gutter-sm q-mb-sm items-center">
               <q-input v-model="peerForm.extra_allowed_ips[idx]" label="CIDR" filled dense class="col" />
               <q-btn flat dense icon="close" color="negative" @click="peerForm.extra_allowed_ips.splice(idx, 1)" />
@@ -656,11 +553,72 @@
         </q-card-actions>
       </q-card>
     </q-dialog>
+
+    <q-dialog v-model="handshakeLogsOpen">
+      <q-card
+        flat
+        style="width: min(720px, 95vw); max-width: 95vw; max-height: 90vh;"
+        class="surface-panel dialog-card column no-wrap"
+      >
+        <DialogHeader :title="handshakeLogsTitle" />
+        <q-card-section class="q-pt-none">
+          <div class="row items-center q-gutter-sm">
+            <div class="text-caption text-grey-5 col">
+              {{ t('configs.handshakeLogsSize', {
+                used: formatBytes(handshakeLogsMeta.log_bytes),
+                limit: formatBytes(handshakeLogsMeta.log_bytes_limit)
+              }) }}
+            </div>
+            <q-btn
+              v-if="!handshakeLogsPeer"
+              flat
+              dense
+              color="warning"
+              icon="delete_sweep"
+              :label="t('configs.handshakeLogsClear')"
+              :loading="handshakeLogsClearing"
+              @click="clearHandshakeLogs"
+            />
+            <q-btn flat dense icon="refresh" :loading="handshakeLogsLoading" @click="loadHandshakeLogs(true)" />
+          </div>
+        </q-card-section>
+        <q-card-section class="col dialog-scroll-body q-pt-none">
+          <q-table
+            :rows="handshakeLogsRows"
+            :columns="handshakeLogColumns"
+            row-key="id"
+            flat
+            dense
+            :loading="handshakeLogsLoading"
+            class="bg-transparent"
+            :rows-per-page-options="[0]"
+            hide-pagination
+            :no-data-label="t('configs.handshakeLogsEmpty')"
+          >
+            <template #body-cell-handshake_at_human="props">
+              <q-td :props="props">
+                <template v-if="formatHandshake(props.row.handshake_at_human)">
+                  <div class="text-no-wrap">{{ formatHandshake(props.row.handshake_at_human).date }}</div>
+                  <div class="text-no-wrap">{{ formatHandshake(props.row.handshake_at_human).time }}</div>
+                </template>
+                <template v-else>—</template>
+              </q-td>
+            </template>
+          </q-table>
+          <div v-if="handshakeLogsMeta.has_more" class="q-mt-sm text-center">
+            <q-btn flat dense color="primary" :label="t('configs.handshakeLogsLoadMore')" :loading="handshakeLogsLoading" @click="loadHandshakeLogs(false)" />
+          </div>
+        </q-card-section>
+        <q-card-actions align="right">
+          <q-btn flat :label="t('common.close')" v-close-popup />
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
   </q-page>
 </template>
 
 <script setup>
-import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, provide, reactive, ref } from 'vue'
 import {
   mergeLiveIntoPeers,
   onLiveStats,
@@ -674,9 +632,12 @@ import { useQuasar } from 'quasar'
 import api from '@/boot/axios'
 import { apiErrorMessage } from '@/utils/apiError'
 import { copyText } from '@/utils/clipboard'
+import { peerConfFilename } from '@/utils/peerConfFilename'
 import PeerShareDialog from '@/components/PeerShareDialog.vue'
 import DialogHeader from '@/components/DialogHeader.vue'
+import ConfigExpandPanel from '@/components/ConfigExpandPanel.vue'
 import { useMobileDialog } from '@/composables/useMobileDialog'
+import { CONFIG_EXPAND_KEY } from '@/composables/configExpandContext'
 import { useSystemStore } from '@/stores/system'
 
 const { t } = useI18n()
@@ -689,6 +650,8 @@ const restartingAwg = ref(false)
 const restartBusy = computed(() => restartingAwg.value || system.restartBusy)
 const configs = ref([])
 const allClients = ref([])
+const protocolVersions = ref([])
+const protocolVersionsDefault = ref('2.0')
 
 const formOpen = ref(false)
 const editingId = ref(null)
@@ -702,10 +665,23 @@ const vnPolicyOptions = computed(() => [
   { label: t('configs.policyAllowAll'), value: 'allow_all' },
   { label: t('configs.policyDenyAll'), value: 'deny_all' }
 ])
+const protocolVersionOptions = computed(() =>
+  protocolVersions.value.map((v) => ({
+    label: v.label,
+    value: v.id
+  }))
+)
+
+const clientImportNameOptions = computed(() => [
+  { label: t('configs.clientImportNamePeer'), value: 'peer_name' },
+  { label: t('configs.clientImportNameVersionHost'), value: 'version_host' }
+])
 
 const form = reactive({
   name: '',
   type: 'server',
+  protocol_version: '2.0',
+  client_import_name_style: 'peer_name',
   vn_policy: 'allow_all',
   internal_subnet: '10.66.66.0/24',
   server_address: '',
@@ -714,12 +690,39 @@ const form = reactive({
   client_allowed_ips: '0.0.0.0/0, ::/0',
   persistent_keepalive: 25,
   enabled: true,
+  handshake_logging_enabled: false,
   jc: '', jmin: '', jmax: '',
   s1: '', s2: '', s3: '', s4: '',
   h1: '', h2: '', h3: '', h4: '',
   i1: '', i2: '', i3: '', i4: '', i5: ''
 })
 
+function supportedParamsForVersion (versionId) {
+  const found = protocolVersions.value.find((v) => v.id === versionId)
+  if (found?.supported_params?.length) return found.supported_params
+  if (editingRow.value?.supported_params?.length && editingRow.value.protocol_version === versionId) {
+    return editingRow.value.supported_params
+  }
+  // Fallback until API loads: assume latest full set
+  return junkKeys
+}
+
+const formSupportedParams = computed(() => supportedParamsForVersion(form.protocol_version))
+
+const visibleJunkGroups = computed(() => {
+  const supported = new Set(formSupportedParams.value)
+  return {
+    jc: ['jc', 'jmin', 'jmax'].filter((k) => supported.has(k)),
+    s: ['s1', 's2', 's3', 's4'].filter((k) => supported.has(k)),
+    h: ['h1', 'h2', 'h3', 'h4'].filter((k) => supported.has(k)),
+    i: ['i1', 'i2', 'i3', 'i4', 'i5'].filter((k) => supported.has(k))
+  }
+})
+
+function protocolLabel (versionId) {
+  const found = protocolVersions.value.find((v) => v.id === versionId)
+  return found?.label || (versionId ? `AmneziaWG ${versionId}` : 'AmneziaWG')
+}
 const columns = computed(() => [
   { name: 'expand', label: '', field: 'expand', align: 'left' },
   { name: 'name', label: t('configs.colName'), field: 'name', align: 'left', sortable: true },
@@ -740,8 +743,16 @@ const peerColumns = computed(() => [
   { name: 'latest_handshake_human', label: 'Handshake', field: (row) => row.latest_handshake_human || '—', align: 'left' },
   { name: 'transfer_rx', label: 'RX', field: 'transfer_rx', align: 'right' },
   { name: 'transfer_tx', label: 'TX', field: 'transfer_tx', align: 'right' },
+  { name: 'traffic_rx_total', label: t('configs.colTotalRx'), field: 'traffic_rx_total', align: 'right' },
+  { name: 'traffic_tx_total', label: t('configs.colTotalTx'), field: 'traffic_tx_total', align: 'right' },
   { name: 'enabled', label: t('configs.colEnabled'), field: 'enabled', align: 'left' },
   { name: 'actions', label: t('configs.colActions'), field: 'actions', align: 'right' }
+])
+
+const handshakeLogColumns = computed(() => [
+  { name: 'peer_name', label: 'Peer', field: (row) => row.peer_name || '—', align: 'left' },
+  { name: 'handshake_at_human', label: t('configs.colHandshakeAt'), field: 'handshake_at_human', align: 'left' },
+  { name: 'endpoint', label: t('configs.colEndpoint'), field: (row) => row.endpoint || '—', align: 'left' }
 ])
 
 const unattachedColumns = computed(() => [
@@ -758,6 +769,13 @@ const peerToggling = reactive(new Set())
 // zonesState[configId] = { rules, baseline, dirty, saving }
 const zonesState = reactive({})
 const expandedIds = reactive(new Set())
+const expandModalOpen = ref(false)
+const expandModalId = ref(null)
+const expandModalRow = computed(() =>
+  expandModalId.value == null
+    ? null
+    : (configs.value.find(c => c.id === expandModalId.value) || null)
+)
 let liveOff = null
 
 const peerFormOpen = ref(false)
@@ -790,6 +808,32 @@ const serverConfTitle = ref('')
 const serverConfText = ref('')
 const serverConfFilename = ref('awg.conf')
 const serverConfLoading = ref(false)
+
+const handshakeLogsOpen = ref(false)
+const handshakeLogsLoading = ref(false)
+const handshakeLogsClearing = ref(false)
+const handshakeLogsConfig = ref(null)
+const handshakeLogsPeer = ref(null)
+const handshakeLogsRows = ref([])
+const handshakeLogsMeta = reactive({
+  log_bytes: 0,
+  log_bytes_limit: 10 * 1024 * 1024,
+  has_more: false,
+  logging_enabled: false
+})
+
+const handshakeLogsTitle = computed(() => {
+  const config = handshakeLogsConfig.value
+  const peer = handshakeLogsPeer.value
+  if (!config) return t('configs.handshakeLogs')
+  if (peer) {
+    return t('configs.handshakeLogsPeerTitle', {
+      peer: peer.name || `peer #${peer.client_id}`,
+      config: config.name
+    })
+  }
+  return t('configs.handshakeLogsTitle', { name: config.name })
+})
 
 const availableClients = computed(() => {
   if (!activeConfig.value) return []
@@ -835,7 +879,39 @@ function ruleDirection (rules, ownId, otherId) {
 }
 
 const peerPreview = computed(() => {
-  if (!activeConfig.value || activeConfig.value.type !== 'virtual_network') return ''
+  if (!activeConfig.value) return ''
+
+  // Server without resolver: split-tunnel preview when peer CIDRs are set
+  if (activeConfig.value.type === 'server' && !activeConfig.value.resolver_enabled) {
+    const cidrs = (peerForm.extra_allowed_ips || [])
+      .map((x) => String(x || '').trim())
+      .filter((x) => x && x !== '0.0.0.0/0' && x !== '::/0')
+    if (!cidrs.length) return ''
+    const ips = []
+    // Prefer network-aligned tunnel subnet (Android rejects 10.66.66.1/24 in AllowedIPs)
+    let tunnel = String(activeConfig.value.internal_subnet || '').trim()
+    if (!tunnel) {
+      tunnel = String(activeConfig.value.server_address || '').trim()
+      // Best-effort: x.x.x.1/24 → x.x.x.0/24 for common /24 case
+      const m = tunnel.match(/^(\d+\.\d+\.\d+)\.(\d+)\/(\d+)$/)
+      if (m) {
+        const prefix = Number(m[3])
+        if (prefix === 24) tunnel = `${m[1]}.0/24`
+        else if (prefix === 32) tunnel = `${m[1]}.${m[2]}/32`
+        else if (prefix === 16) tunnel = `${m[1].split('.').slice(0, 2).join('.')}.0.0/16`
+        else if (prefix === 8) tunnel = `${m[1].split('.')[0]}.0.0.0/8`
+      }
+    }
+    if (tunnel && tunnel !== '0.0.0.0/0' && tunnel !== '::/0') {
+      ips.push(tunnel)
+    }
+    cidrs.forEach((cidr) => {
+      if (!ips.includes(cidr)) ips.push(cidr)
+    })
+    return ips.join(', ')
+  }
+
+  if (activeConfig.value.type !== 'virtual_network') return ''
   const denyAll = activeConfig.value.vn_policy === 'deny_all'
   const rules = denyAll ? configRules(activeConfig.value) : null
   const ips = []
@@ -883,15 +959,128 @@ function formatHandshake (iso) {
   return { date: `${m[3]}.${m[2]}.${m[1]}`, time: `${m[4]} ${m[5]}`.trim() }
 }
 
+function openHandshakeLogs (config, peer = null) {
+  handshakeLogsConfig.value = config
+  handshakeLogsPeer.value = peer
+  handshakeLogsRows.value = []
+  handshakeLogsMeta.log_bytes = Number(config.handshake_log_bytes) || 0
+  handshakeLogsMeta.log_bytes_limit = Number(config.handshake_log_bytes_limit) || (10 * 1024 * 1024)
+  handshakeLogsMeta.has_more = false
+  handshakeLogsMeta.logging_enabled = !!config.handshake_logging_enabled
+  handshakeLogsOpen.value = true
+  loadHandshakeLogs(true)
+}
+
+async function loadHandshakeLogs (reset) {
+  const config = handshakeLogsConfig.value
+  if (!config) return
+  handshakeLogsLoading.value = true
+  try {
+    const params = { per_page: 50 }
+    if (!reset && handshakeLogsRows.value.length) {
+      params.before_id = handshakeLogsRows.value[handshakeLogsRows.value.length - 1].id
+    }
+    const peer = handshakeLogsPeer.value
+    const url = peer
+      ? `/api/configs/${config.id}/peers/${peer.client_id}/handshake-logs`
+      : `/api/configs/${config.id}/handshake-logs`
+    const { data } = await api.get(url, { params })
+    const rows = data.logs || []
+    handshakeLogsRows.value = reset ? rows : [...handshakeLogsRows.value, ...rows]
+    handshakeLogsMeta.log_bytes = Number(data.log_bytes) || 0
+    handshakeLogsMeta.log_bytes_limit = Number(data.log_bytes_limit) || (10 * 1024 * 1024)
+    handshakeLogsMeta.has_more = !!data.has_more
+    handshakeLogsMeta.logging_enabled = !!data.logging_enabled
+  } catch (e) {
+    $q.notify({ type: 'negative', message: e?.response?.data?.message || t('configs.handshakeLogsLoadError') })
+  } finally {
+    handshakeLogsLoading.value = false
+  }
+}
+
+function clearHandshakeLogs () {
+  const config = handshakeLogsConfig.value
+  if (!config) return
+  $q.dialog({
+    title: t('configs.handshakeLogsClear'),
+    message: t('configs.handshakeLogsClearConfirm'),
+    cancel: true,
+    persistent: true
+  }).onOk(async () => {
+    handshakeLogsClearing.value = true
+    try {
+      await api.delete(`/api/configs/${config.id}/handshake-logs`)
+      handshakeLogsRows.value = []
+      handshakeLogsMeta.log_bytes = 0
+      handshakeLogsMeta.has_more = false
+      config.handshake_log_bytes = 0
+      $q.notify({ type: 'positive', message: t('configs.handshakeLogsCleared') })
+    } catch (e) {
+      $q.notify({ type: 'negative', message: e?.response?.data?.message || t('configs.handshakeLogsClearError') })
+    } finally {
+      handshakeLogsClearing.value = false
+    }
+  })
+}
+
+function resetPeerTraffic (config, peer) {
+  $q.dialog({
+    title: t('configs.resetTraffic'),
+    message: t('configs.resetTrafficConfirm', { name: peer.name || `peer #${peer.client_id}` }),
+    cancel: true,
+    persistent: true
+  }).onOk(async () => {
+    try {
+      const { data } = await api.post(`/api/configs/${config.id}/peers/${peer.client_id}/reset-traffic`)
+      const membership = data.membership
+      const list = peersState[config.id]?.peers || []
+      const idx = list.findIndex((p) => p.client_id === peer.client_id)
+      if (idx >= 0 && membership) {
+        list[idx] = { ...list[idx], ...membership }
+      }
+      $q.notify({ type: 'positive', message: data.message || t('configs.resetTrafficDone') })
+    } catch (e) {
+      $q.notify({ type: 'negative', message: e?.response?.data?.message || t('configs.resetTrafficError') })
+    }
+  })
+}
+
+function resetConfigTraffic (config) {
+  $q.dialog({
+    title: t('configs.resetTraffic'),
+    message: t('configs.resetTrafficConfirmConfig', { name: config.name }),
+    cancel: true,
+    persistent: true
+  }).onOk(async () => {
+    try {
+      const { data } = await api.post(`/api/configs/${config.id}/reset-traffic`)
+      if (peersState[config.id]?.peers) {
+        peersState[config.id].peers = peersState[config.id].peers.map((p) => ({
+          ...p,
+          traffic_rx_total: 0,
+          traffic_tx_total: 0,
+          traffic_reset_at: new Date().toISOString()
+        }))
+      }
+      $q.notify({ type: 'positive', message: data.message || t('configs.resetTrafficDone') })
+    } catch (e) {
+      $q.notify({ type: 'negative', message: e?.response?.data?.message || t('configs.resetTrafficError') })
+    }
+  })
+}
+
 async function load () {
   loading.value = true
   try {
-    const [cfgRes, clientsRes] = await Promise.all([
+    const [cfgRes, clientsRes, versionsRes] = await Promise.all([
       api.get('/api/configs'),
-      api.get('/api/clients')
+      api.get('/api/clients'),
+      api.get('/api/awg-protocol-versions')
     ])
     configs.value = cfgRes.data.configs || []
     allClients.value = clientsRes.data.clients || []
+    protocolVersions.value = versionsRes.data.versions || []
+    protocolVersionsDefault.value = versionsRes.data.default || protocolVersions.value.at(-1)?.id || '2.0'
     syncZonesStates()
   } finally {
     loading.value = false
@@ -902,7 +1091,6 @@ function confirmRestartAwg () {
   if (restartBusy.value) {
     $q.notify({
       type: 'warning',
-      position: 'top-right',
       message: t('common.restartAwgInProgress')
     })
     return
@@ -931,14 +1119,12 @@ async function restartAwg () {
     const { data } = await api.post('/api/settings/restart-awg')
     $q.notify({
       type: data.ok ? 'positive' : 'negative',
-      position: 'top-right',
       message: data.message || (data.ok ? t('configs.awgRestarted') : t('configs.restartError'))
     })
   } catch (e) {
     const already = e?.response?.status === 409 || e?.response?.data?.already_restarting
     $q.notify({
       type: already ? 'warning' : 'negative',
-      position: 'top-right',
       message: e?.response?.data?.message || t('configs.restartFailed')
     })
   } finally {
@@ -1003,26 +1189,56 @@ function syncZonesStates () {
   })
 }
 
+function prepareExpand (row) {
+  const id = row.id
+  expandedIds.add(id)
+  void loadPeers(id).then(() => {
+    if (!subscribedLiveConfigs.has(id)) {
+      subscribedLiveConfigs.add(id)
+      subscribeLiveStats([id])
+    }
+  })
+  if (row.type === 'virtual_network' && !zonesState[id]) {
+    initZonesState(row)
+  }
+}
+
+function collapseExpand (id) {
+  expandedIds.delete(id)
+  if (subscribedLiveConfigs.has(id)) {
+    unsubscribeLiveStats([id])
+    subscribedLiveConfigs.delete(id)
+  }
+}
+
+function expandBtnIcon (props) {
+  if ($q.screen.lt.md) {
+    return expandModalOpen.value && expandModalId.value === props.row.id ? 'close' : 'open_in_full'
+  }
+  return props.expand ? 'expand_less' : 'expand_more'
+}
+
 function toggleExpand (props) {
+  if ($q.screen.lt.md) {
+    prepareExpand(props.row)
+    expandModalId.value = props.row.id
+    expandModalOpen.value = true
+    return
+  }
+
   props.expand = !props.expand
   const id = props.row.id
   if (props.expand) {
-    expandedIds.add(id)
-    void loadPeers(id).then(() => {
-      if (!subscribedLiveConfigs.has(id)) {
-        subscribedLiveConfigs.add(id)
-        subscribeLiveStats([id])
-      }
-    })
-    if (props.row.type === 'virtual_network' && !zonesState[id]) {
-      initZonesState(props.row)
-    }
+    prepareExpand(props.row)
   } else {
-    expandedIds.delete(id)
-    if (subscribedLiveConfigs.has(id)) {
-      unsubscribeLiveStats([id])
-      subscribedLiveConfigs.delete(id)
-    }
+    collapseExpand(id)
+  }
+}
+
+function onExpandModalHide () {
+  if (expandModalId.value != null) {
+    collapseExpand(expandModalId.value)
+    expandModalId.value = null
   }
 }
 
@@ -1236,6 +1452,8 @@ const portFieldError = computed(() => {
 function resetForm () {
   form.name = ''
   form.type = 'server'
+  form.protocol_version = protocolVersionsDefault.value
+  form.client_import_name_style = 'peer_name'
   form.vn_policy = 'allow_all'
   form.internal_subnet = nextFreeSubnet()
   form.server_address = ''
@@ -1244,6 +1462,7 @@ function resetForm () {
   form.client_allowed_ips = '0.0.0.0/0, ::/0'
   form.persistent_keepalive = 25
   form.enabled = true
+  form.handshake_logging_enabled = false
   generateJunk()
 }
 
@@ -1252,6 +1471,11 @@ function openCreate () {
   editingRow.value = null
   resetForm()
   formOpen.value = true
+}
+
+function onProtocolVersionChange () {
+  if (editingId.value) return
+  generateJunk()
 }
 
 function randInt (min, max) {
@@ -1268,6 +1492,8 @@ function randInt (min, max) {
 // Правила: https://docs.amnezia.org/ru/documentation/amnezia-wg/
 // i1-i5 (CPS-сигнатуры протоколов) не генерируем — случайные значения там бессмысленны
 function generateJunk () {
+  const supported = new Set(supportedParamsForVersion(form.protocol_version))
+
   form.jc = String(randInt(1, 10))
   const jmin = randInt(64, 1023)
   form.jmin = String(jmin)
@@ -1280,14 +1506,18 @@ function generateJunk () {
   } while (s1 + 56 === s2) // иначе Init(148+S1) совпадает по размеру с Response(92+S2)
   form.s1 = String(s1)
   form.s2 = String(s2)
-  form.s3 = String(randInt(0, 64))
-  form.s4 = String(randInt(0, 32))
+  form.s3 = supported.has('s3') ? String(randInt(0, 64)) : '0'
+  form.s4 = supported.has('s4') ? String(randInt(0, 32)) : '0'
 
   const hs = new Set()
   while (hs.size < 4) {
     hs.add(randInt(1, 2147483647))
   }
   ;[form.h1, form.h2, form.h3, form.h4] = [...hs].map(String)
+
+  ;['i1', 'i2', 'i3', 'i4', 'i5'].forEach((k) => {
+    form[k] = ''
+  })
 
   $q.notify({
     type: 'info',
@@ -1552,7 +1782,7 @@ async function downloadConf (config, row) {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = `${row.name}-${config.name}.conf`
+  a.download = peerConfFilename(text, `${row.name}-${config.name}.conf`)
   a.click()
   URL.revokeObjectURL(url)
 }
@@ -1622,6 +1852,31 @@ onUnmounted(() => {
     subscribedLiveConfigs.clear()
   }
 })
+
+provide(CONFIG_EXPAND_KEY, {
+  peersState,
+  zonesState,
+  peerColumns,
+  formatBytes,
+  formatHandshake,
+  isPeerToggling,
+  isolatedPeers,
+  ruleMemberOptions,
+  markZonesDirty,
+  refreshConfigLive,
+  openAddPeer,
+  togglePeer,
+  openHandshakeLogs,
+  resetPeerTraffic,
+  openEditPeer,
+  openShare,
+  downloadConf,
+  detachPeer,
+  deletePeer,
+  addRule,
+  saveZones,
+  removeRule
+})
 </script>
 
 <style scoped>
@@ -1644,6 +1899,14 @@ onUnmounted(() => {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+}
+
+.config-type-badges :deep(.q-badge) {
+  white-space: normal;
+  height: auto;
+  line-height: 1.25;
+  padding-top: 4px;
+  padding-bottom: 4px;
 }
 
 @media (max-width: 1023px) {

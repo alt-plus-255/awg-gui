@@ -3,15 +3,111 @@
 namespace App\Services\AmneziaWg;
 
 use App\Models\AwgConfigPeer;
+use App\Services\AmneziaWg\Versions\AwgVersionRegistry;
 
 class VpnUriService
 {
+    private const AMNEZIA_QR_MAGIC = 0x07C00100;
+
     public function __construct(
         private AmneziaWgService $awg,
         private QrCodeService $qr,
+        private ?AwgVersionRegistry $versions = null,
     ) {}
 
+    private function versions(): AwgVersionRegistry
+    {
+        return $this->versions ??= app(AwgVersionRegistry::class);
+    }
+
+    /**
+     * AmneziaWG mobile apps expect this packed payload in QR codes (not raw .conf text).
+     * Format: base64url( magic 0x07C00100 + zlib_len + plain_len + gzcompress(json) ).
+     */
+    public function buildAmneziaQrPackFromMembership(AwgConfigPeer $membership): string
+    {
+        $json = $this->encodeOuterJson($membership);
+
+        return $this->buildAmneziaQrPackFromOuterJson($json);
+    }
+
+    public function buildAmneziaQrPackFromOuterJson(string $json): string
+    {
+        $compressed = gzcompress($json);
+        if ($compressed === false) {
+            throw new \RuntimeException('Failed to compress Amnezia QR payload');
+        }
+
+        $header = pack('N', self::AMNEZIA_QR_MAGIC)
+            .pack('N', strlen($compressed) + 4)
+            .pack('N', strlen($json));
+
+        $packed = $header.$compressed;
+
+        return rtrim(strtr(base64_encode($packed), '+/', '-_'), '=');
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function decodeAmneziaQrPack(string $encoded): array
+    {
+        $encoded = trim($encoded);
+        $padding = (4 - strlen($encoded) % 4) % 4;
+        $packed = base64_decode(strtr($encoded, '-_', '+/').str_repeat('=', $padding), true);
+        if ($packed === false || strlen($packed) < 12) {
+            throw new \InvalidArgumentException('Invalid Amnezia QR base64 payload');
+        }
+
+        $magic = unpack('N', substr($packed, 0, 4))[1];
+        if ($magic !== self::AMNEZIA_QR_MAGIC) {
+            throw new \InvalidArgumentException('Invalid Amnezia QR magic header');
+        }
+
+        $jsonLen = unpack('N', substr($packed, 8, 4))[1];
+        $compressed = substr($packed, 12);
+        $json = gzuncompress($compressed);
+        if ($json === false) {
+            throw new \InvalidArgumentException('Invalid Amnezia QR zlib payload');
+        }
+
+        if ($jsonLen !== strlen($json)) {
+            throw new \InvalidArgumentException('Amnezia QR length header mismatch');
+        }
+
+        $outer = json_decode($json, true);
+        if (! is_array($outer)) {
+            throw new \InvalidArgumentException('Invalid Amnezia QR JSON');
+        }
+
+        return $outer;
+    }
+
     public function buildFromMembership(AwgConfigPeer $membership): string
+    {
+        $json = $this->encodeOuterJson($membership);
+        $compressed = gzcompress($json);
+        if ($compressed === false) {
+            throw new \RuntimeException('Failed to compress vpn:// payload');
+        }
+
+        $payload = pack('N', strlen($json)).$compressed;
+        $encoded = rtrim(strtr(base64_encode($payload), '+/', '-_'), '=');
+
+        return 'vpn://'.$encoded;
+    }
+
+    public function encodeOuterJson(AwgConfigPeer $membership): string
+    {
+        $outer = $this->buildOuterFromMembership($membership);
+
+        return json_encode($outer, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function buildOuterFromMembership(AwgConfigPeer $membership): array
     {
         if (! $membership->relationLoaded('config') || ! $membership->relationLoaded('client')) {
             $membership->loadMissing(['config', 'client']);
@@ -20,6 +116,8 @@ class VpnUriService
         if (! $config) {
             throw new \RuntimeException('Config not found for membership');
         }
+
+        $profile = $this->versions()->profileForConfig($config->protocol_version);
 
         $conf = $this->qr->normalizeConfigText($this->awg->buildClientConfig($membership));
         $conf = rtrim($conf, "\n");
@@ -39,53 +137,31 @@ class VpnUriService
         $dns1 = $dnsParts[0] ?? '1.1.1.1';
         $dns2 = $dnsParts[1] ?? $dns1;
 
-        $inner = [
-            'H1' => (string) $config->h1,
-            'H2' => (string) $config->h2,
-            'H3' => (string) $config->h3,
-            'H4' => (string) $config->h4,
-            'Jc' => (string) $config->jc,
-            'Jmin' => (string) $config->jmin,
-            'Jmax' => (string) $config->jmax,
-            'S1' => (string) $config->s1,
-            'S2' => (string) $config->s2,
-            'S3' => (string) $config->s3,
-            'S4' => (string) $config->s4,
+        $inner = array_merge($profile->vpnUriInnerParams($config), [
             'allowed_ips' => $allowedIps,
             'client_ip' => $address,
             'client_priv_key' => $privateKey,
             'config' => $conf,
             'hostName' => $hostName,
-            'mtu' => '1280',
+            'mtu' => '1420',
             'persistent_keep_alive' => (string) $keepalive,
             'port' => (int) $config->listen_port,
             'server_pub_key' => $config->server_public_key,
-        ];
-
-        $i1 = trim((string) ($config->i1 ?? ''));
-        if ($i1 !== '') {
-            $inner['I1'] = $i1;
-            $inner['I2'] = '';
-            $inner['I3'] = '';
-            $inner['I4'] = '';
-            $inner['I5'] = '';
-        }
+        ]);
 
         if ($psk !== null && $psk !== '') {
             $inner['psk_key'] = $psk;
         }
 
-        $description = $membership->client?->name
-            ? 'AWG '.$membership->client->name
-            : 'AWG Server';
+        $description = $this->awg->clientImportLabel($membership);
 
-        $outer = [
+        return [
             'containers' => [[
                 'awg' => [
                     'isThirdPartyConfig' => true,
                     'last_config' => json_encode($inner, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
                     'port' => (string) $config->listen_port,
-                    'protocol_version' => '2',
+                    'protocol_version' => $profile->vpnUriProtocolVersion(),
                     'transport_proto' => 'udp',
                 ],
                 'container' => 'amnezia-awg',
@@ -96,17 +172,6 @@ class VpnUriService
             'dns2' => $dns2,
             'hostName' => $hostName,
         ];
-
-        $json = json_encode($outer, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-        $compressed = gzcompress($json);
-        if ($compressed === false) {
-            throw new \RuntimeException('Failed to compress vpn:// payload');
-        }
-
-        $payload = pack('N', strlen($json)).$compressed;
-        $encoded = rtrim(strtr(base64_encode($payload), '+/', '-_'), '=');
-
-        return 'vpn://'.$encoded;
     }
 
     public function decode(string $vpnUri): array

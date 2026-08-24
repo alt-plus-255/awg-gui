@@ -18,6 +18,8 @@ dist/
   install.sh          # production online installer (wget one-liner)
   uninstall.sh        # production online uninstaller
   README.md           # prod bundle notes
+mobile/               # Quasar + Capacitor installer (FAQ, SSH install, panel WebView)
+build/                # mobile build artifacts (web/, android/)
 src/
   docker-compose.yml
   .env.example
@@ -25,7 +27,9 @@ src/
   systemd/awg-gui.service
   scripts/
     build-dist.sh
+    host/             # awg-kernel-host.sh (host kernel module helper)
     release/          # prod bundle templates
+  panel-ops/          # privileged host ops (update, awg-kernel)
   caddy/
   awg/
   backend/     # Laravel 12
@@ -42,9 +46,11 @@ Compose project name: **`awggui`**.
 | `awggui-app` | Laravel API |
 | `awggui-db` | MariaDB |
 | `awggui-awg` | AmneziaWG + sing-box (resolver) |
+| `awggui-panel-ops` | Host operations: panel update, AmneziaWG kernel module install/remove |
+| `awggui-docker-proxy` | Restricted Docker socket proxy for the app |
 
 ## Related docs
 
 - [Install](install.md) · [Uninstall](uninstall.md) · [Build release](build-release.md)
-- [CLI](cli.md) · [Webhook](webhook.md)
-- [Configs & peers](configs-and-peers.md) · [Virtual networks](virtual-networks.md) · [Resolver](resolver.md)
+- [CLI](cli.md) · [Webhook](webhook.md) · [Telegram bot](telegram.md)
+- [Use cases](use-cases.md) · [Configs & peers](configs-and-peers.md) · [Virtual networks](virtual-networks.md) · [Resolver](resolver.md)

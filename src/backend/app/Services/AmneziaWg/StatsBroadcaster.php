@@ -20,6 +20,7 @@ class StatsBroadcaster
 
     public function __construct(
         private AmneziaWgService $awg,
+        private PeerStatsSyncService $statsSync,
         private HostMetricsService $hostMetrics,
     ) {
         $this->connections = new SplObjectStorage;
@@ -210,7 +211,11 @@ class StatsBroadcaster
     /** @return array<string, mixed> */
     private function buildStatsPayload(int $configId): array
     {
-        $result = $this->awg->livePeerStats($configId);
+        // Live dump only — do not accumulate here; cron awg:sync-peer-stats owns totals.
+        $result = $this->statsSync->enrichLiveWithTotals(
+            $this->awg->livePeerStats($configId),
+            $configId
+        );
 
         return [
             'type' => 'stats',

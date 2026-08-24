@@ -6,6 +6,8 @@
   "resolverCaption": "Selective routing",
   "connections": "Connections",
   "connectionsCaption": "VPN / proxy endpoints",
+  "speedTest": "Speed",
+  "speedTestCaption": "Ping / ↓↑ via outbound",
   "diagnostics": "Diagnostics",
   "diagnosticsCaption": "Resolver checks",
   "resolverSettings": "Settings",
@@ -22,5 +24,9 @@
   "liveFetch": "Live Fetch",
   "liveFetchHint": "WebSocket unavailable, using HTTP polling",
   "liveConnecting": "Live…",
-  "liveConnectingHint": "Connecting to the updates channel"
+  "liveConnectingHint": "Connecting to the updates channel",
+  "updateAvailable": "Update available",
+  "updateAvailableTooltip": "Go to panel update settings",
+  "installApp": "Install app",
+  "installAppTooltip": "Install AWG-GUI as an app on this device"
 }

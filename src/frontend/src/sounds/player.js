@@ -3,9 +3,11 @@ import { useThemeStore } from '@/stores/theme'
 import { useSoundStore } from './store'
 
 const CLICK_DEBOUNCE_MS = 80
+const NAVIGATE_DEBOUNCE_MS = 120
 
 let audioCtx = null
 let lastClickAt = 0
+let lastNavigateAt = 0
 
 function getContext () {
   if (!audioCtx) {
@@ -35,10 +37,14 @@ export function play (event) {
   const soundStore = useSoundStore()
   if (!soundStore.enabled) return
 
+  const now = performance.now()
   if (event === 'click') {
-    const now = performance.now()
     if (now - lastClickAt < CLICK_DEBOUNCE_MS) return
     lastClickAt = now
+  }
+  if (event === 'navigate') {
+    if (now - lastNavigateAt < NAVIGATE_DEBOUNCE_MS) return
+    lastNavigateAt = now
   }
 
   const ctx = getContext()

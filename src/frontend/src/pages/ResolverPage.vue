@@ -18,6 +18,15 @@
             dense
             no-wrap
             color="primary"
+            icon="speed"
+            :label="t('nav.speedTest')"
+            :to="{ name: 'resolver-speed-test' }"
+          />
+          <q-btn
+            flat
+            dense
+            no-wrap
+            color="primary"
             icon="tune"
             :label="t('resolver.listSettingsLink')"
             :to="{ name: 'resolver-settings' }"
@@ -28,8 +37,30 @@
       <q-card class="q-pa-md q-mb-md status-card" flat bordered>
         <div class="row items-center q-col-gutter-md">
           <div class="col-auto">
-            <q-badge :color="status.healthy ? 'positive' : 'negative'" class="q-pa-sm">
+            <q-badge
+              :color="status.healthy ? 'positive' : 'negative'"
+              class="q-pa-sm status-health-badge"
+              :class="{ 'status-health-badge--error': !status.healthy }"
+            >
               {{ status.healthy ? t('diagnostics.ok') : t('common.error') }}
+              <q-tooltip
+                v-if="!status.healthy"
+                anchor="bottom middle"
+                self="top middle"
+                :offset="[0, 8]"
+                class="resolver-error-tooltip"
+                max-width="360px"
+              >
+                <div class="text-weight-medium q-mb-xs">{{ t('resolver.errorTooltipTitle') }}</div>
+                <div class="q-mb-xs">{{ t('resolver.errorTooltipBody') }}</div>
+                <div v-if="status.message" class="mono q-mb-xs">{{ status.message }}</div>
+                <ul v-if="configErrors.length" class="q-my-none q-pl-md">
+                  <li v-for="err in configErrors" :key="err.id">
+                    <span class="text-weight-medium">{{ err.name }}:</span>
+                    {{ err.error }}
+                  </li>
+                </ul>
+              </q-tooltip>
             </q-badge>
           </div>
           <div class="col">
@@ -37,7 +68,30 @@
               {{ status.enabled ? t('resolver.statusActive') : t('resolver.statusDisabled') }}
               <span class="text-grey-5"> · sing-box: {{ status.singbox_running ? t('resolver.singboxRunning') : t('resolver.singboxStopped') }}</span>
             </div>
-            <div class="text-caption text-grey-5">{{ status.message }}</div>
+            <div
+              class="text-caption"
+              :class="status.healthy ? 'text-grey-5' : 'text-negative cursor-pointer'"
+            >
+              {{ status.message }}
+              <q-tooltip
+                v-if="!status.healthy"
+                anchor="bottom start"
+                self="top start"
+                :offset="[0, 6]"
+                class="resolver-error-tooltip"
+                max-width="360px"
+              >
+                <div class="text-weight-medium q-mb-xs">{{ t('resolver.errorTooltipTitle') }}</div>
+                <div class="q-mb-xs">{{ t('resolver.errorTooltipBody') }}</div>
+                <div v-if="status.message" class="mono q-mb-xs">{{ status.message }}</div>
+                <ul v-if="configErrors.length" class="q-my-none q-pl-md">
+                  <li v-for="err in configErrors" :key="err.id">
+                    <span class="text-weight-medium">{{ err.name }}:</span>
+                    {{ err.error }}
+                  </li>
+                </ul>
+              </q-tooltip>
+            </div>
           </div>
           <div class="col-auto text-caption text-grey-5 mono">
             FakeIP {{ status.fakeip_cidr || '198.18.0.0/15' }}
@@ -45,8 +99,20 @@
         </div>
       </q-card>
 
+      <div class="row justify-end q-mb-sm">
+        <q-btn
+          class="resolver-select-config-btn"
+          color="primary"
+          unelevated
+          :label="t('resolver.selectConfig')"
+          :disable="!pickerConfigOptions.length || enabling"
+          @click="openConfigPicker"
+        />
+      </div>
+
       <q-table
-        :rows="serverConfigs"
+        v-model:expanded="expandedIds"
+        :rows="visibleConfigs"
         :columns="columns"
         row-key="id"
 
@@ -54,7 +120,7 @@
         :loading="loading"
         class="bg-transparent"
         :rows-per-page-options="[10, 25, 0]"
-        :no-data-label="t('resolver.noServerConfigs')"
+        :no-data-label="tableEmptyLabel"
       >
         <template #body="props">
           <q-tr :props="props">
@@ -63,7 +129,7 @@
                 flat
                 dense
                 round
-                :icon="props.expand ? 'expand_less' : 'expand_more'"
+                :icon="expandBtnIcon(props)"
                 @click="toggleExpand(props)"
               />
             </q-td>
@@ -81,8 +147,14 @@
             </q-td>
           </q-tr>
 
-          <q-tr v-show="props.expand" :props="props" :key="`e_${props.row.id}`" class="q-virtual-scroll--with-prev">
+          <q-tr
+            v-show="!$q.screen.lt.md && props.expand"
+            :props="props"
+            :key="`e_${props.row.id}`"
+            class="q-virtual-scroll--with-prev"
+          >
             <q-td colspan="100%" class="expanded-cell">
+<<<<<<< HEAD
               <div v-if="forms[props.row.id]" class="q-pa-md expand-inner">
                 <div class="row items-center q-mb-md">
                   <div class="col text-subtitle1">{{ t('resolver.settingsFor', { name: props.row.name }) }}</div>
@@ -204,6 +276,26 @@
                     {{ t('resolver.appliedAt', { ts: formatTs(props.row.resolver_updated_at) }) }}
                   </div>
                 </div>
+=======
+              <div class="q-pa-md">
+                <ResolverConfigExpandPanel
+                  :config="props.row"
+                  :form="forms[props.row.id]"
+                  :connection-options="connectionOptions"
+                  :selectable-lists="selectableLists"
+                  :saving="savingId === props.row.id"
+                  :dirty="isDirty(props.row.id)"
+                  :preview-allowed="previewAllowed(props.row.id)"
+                  :is-list-disabled="isListDisabled"
+                  :on-lists-change="onListsChange"
+                  :normalize-domain="normalizeDomain"
+                  :validate-domain="validateDomain"
+                  :normalize-subnet="normalizeSubnet"
+                  :validate-subnet="validateSubnet"
+                  :format-ts="formatTs"
+                  @save="save"
+                />
+>>>>>>> a34ec4d81547d4963b761827020a578f3957b1c6
               </div>
             </q-td>
           </q-tr>
@@ -379,6 +471,91 @@
         {{ t('resolver.virtualNetworksHidden') }}
         {{ vnConfigs.map(c => c.name).join(', ') }}.
       </div>
+
+      <q-dialog v-model="expandModalOpen" v-bind="mobileDialog" @hide="onExpandModalHide">
+        <q-card class="surface-panel dialog-card column no-wrap" style="width: min(720px, 95vw); max-width: 95vw;">
+          <DialogHeader
+            :title="expandModalRow ? t('resolver.settingsFor', { name: expandModalRow.name }) : ''"
+            always-show-close
+          />
+          <q-card-section v-if="expandModalRow" class="col dialog-scroll-body">
+            <ResolverConfigExpandPanel
+              :config="expandModalRow"
+              :form="forms[expandModalRow.id]"
+              :connection-options="connectionOptions"
+              :selectable-lists="selectableLists"
+              :saving="savingId === expandModalRow.id"
+              :dirty="isDirty(expandModalRow.id)"
+              :preview-allowed="previewAllowed(expandModalRow.id)"
+              :show-title="false"
+              :is-list-disabled="isListDisabled"
+              :on-lists-change="onListsChange"
+              :normalize-domain="normalizeDomain"
+              :validate-domain="validateDomain"
+              :normalize-subnet="normalizeSubnet"
+              :validate-subnet="validateSubnet"
+              :format-ts="formatTs"
+              @save="save"
+            />
+          </q-card-section>
+        </q-card>
+      </q-dialog>
+
+      <q-dialog v-model="pickerOpen" v-bind="mobileDialog" persistent>
+        <q-card style="width: min(420px, 95vw); max-width: 95vw;" class="surface-panel dialog-card column no-wrap">
+          <DialogHeader :title="t('resolver.selectConfigTitle')" />
+          <q-card-section class="col dialog-scroll-body">
+            <q-select
+              v-model="pickerConfigId"
+              :options="pickerConfigOptions"
+              option-value="id"
+              option-label="name"
+              emit-value
+              map-options
+              :label="t('resolver.selectConfigLabel')"
+              filled
+              class="q-mb-md"
+              :disable="!pickerConfigOptions.length"
+            >
+              <template #no-option>
+                <q-item>
+                  <q-item-section class="text-grey-5">
+                    {{ t('resolver.noConfigsToPick') }}
+                  </q-item-section>
+                </q-item>
+              </template>
+            </q-select>
+            <q-select
+              v-model="pickerConnectionId"
+              :options="connectionOptions"
+              :label="t('resolver.connectionRequired')"
+              emit-value
+              map-options
+              filled
+              :disable="!connectionOptions.length"
+            >
+              <template #no-option>
+                <q-item>
+                  <q-item-section class="text-grey-5">
+                    {{ t('resolver.noConnections') }}
+                    <router-link :to="{ name: 'resolver-connections' }" class="text-primary">{{ t('resolver.create') }}</router-link>
+                  </q-item-section>
+                </q-item>
+              </template>
+            </q-select>
+          </q-card-section>
+          <q-card-actions align="right">
+            <q-btn flat :label="t('common.cancel')" v-close-popup :disable="enabling" />
+            <q-btn
+              color="primary"
+              :label="t('resolver.pickConfig')"
+              :loading="enabling"
+              :disable="!pickerConfigId || !pickerConnectionId"
+              @click="confirmConfigPick"
+            />
+          </q-card-actions>
+        </q-card>
+      </q-dialog>
     </div>
   </q-page>
 </template>
@@ -388,16 +565,27 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useQuasar } from 'quasar'
 import api from '@/boot/axios'
-import TagListInput from '@/components/TagListInput.vue'
+import DialogHeader from '@/components/DialogHeader.vue'
+import ResolverConfigExpandPanel from '@/components/ResolverConfigExpandPanel.vue'
 import { useApplyProgress } from '@/composables/useApplyProgress'
+import { useMobileDialog } from '@/composables/useMobileDialog'
+import { useResolverListsBootstrap } from '@/composables/useResolverListsBootstrap'
 import { bcp47Locale } from '@/i18n'
 
 const { t, locale } = useI18n()
 const $q = useQuasar()
+const mobileDialog = useMobileDialog()
 const { withApplyProgress } = useApplyProgress()
+const { ensureListsReady } = useResolverListsBootstrap()
 const loading = ref(true)
 const savingId = ref(null)
+const enabling = ref(false)
 const expandedIds = ref([])
+const expandModalOpen = ref(false)
+const expandModalId = ref(null)
+const pickerOpen = ref(false)
+const pickerConfigId = ref(null)
+const pickerConnectionId = ref(null)
 const status = reactive({
   enabled: false,
   healthy: true,
@@ -405,6 +593,7 @@ const status = reactive({
   message: '',
   fakeip_cidr: '198.18.0.0/15',
   updated_at: null,
+  needs_initial_sync: false,
   community_lists: [],
   custom_lists: [],
   connections: [],
@@ -426,7 +615,19 @@ const selectableLists = computed(() => [
   ...(status.custom_lists || [])
 ])
 const serverConfigs = computed(() => (status.configs || []).filter(c => c.type === 'server'))
+const visibleConfigs = computed(() => serverConfigs.value.filter(c => c.resolver_enabled))
+const expandModalRow = computed(() =>
+  expandModalId.value == null
+    ? null
+    : (visibleConfigs.value.find(c => c.id === expandModalId.value) || null)
+)
+const pickerConfigOptions = computed(() => serverConfigs.value.filter(c => !c.resolver_enabled))
 const vnConfigs = computed(() => (status.configs || []).filter(c => c.type === 'virtual_network'))
+const tableEmptyLabel = computed(() =>
+  serverConfigs.value.length
+    ? t('resolver.noConfigsSelected')
+    : t('resolver.noServerConfigs')
+)
 const connectionOptions = computed(() =>
   (status.connections || [])
     .filter(c => c.enabled)
@@ -441,6 +642,19 @@ const firstEnabledGateway = computed(() => {
   return cfg?.gateway_ip || null
 })
 
+<<<<<<< HEAD
+=======
+const configErrors = computed(() =>
+  (status.configs || [])
+    .filter(c => c.resolver_enabled && c.resolver_last_error)
+    .map(c => ({
+      id: c.id,
+      name: c.name,
+      error: c.resolver_last_error
+    }))
+)
+
+>>>>>>> a34ec4d81547d4963b761827020a578f3957b1c6
 function formatTs (iso) {
   if (!iso) return '—'
   try {
@@ -524,14 +738,124 @@ function isDirty (configId) {
   return JSON.stringify(formSnapshot(form)) !== JSON.stringify(base)
 }
 
+function expandBtnIcon (props) {
+  if ($q.screen.lt.md) {
+    return expandModalOpen.value && expandModalId.value === props.row.id ? 'close' : 'open_in_full'
+  }
+  return props.expand ? 'expand_less' : 'expand_more'
+}
+
+function openExpandModal (row) {
+  const id = row.id
+  if (!forms[id]) syncForm(row)
+  expandModalId.value = id
+  expandModalOpen.value = true
+  if (!expandedIds.value.includes(id)) expandedIds.value.push(id)
+}
+
 function toggleExpand (props) {
-  props.expand = !props.expand
   const id = props.row.id
-  if (props.expand) {
-    if (!expandedIds.value.includes(id)) expandedIds.value.push(id)
-    if (!forms[id]) syncForm(props.row)
-  } else {
-    expandedIds.value = expandedIds.value.filter(x => x !== id)
+  if ($q.screen.lt.md) {
+    openExpandModal(props.row)
+    return
+  }
+
+  const next = !props.expand
+  if (next && !forms[id]) syncForm(props.row)
+  // Let v-model:expanded own expandedIds — do not push/filter here
+  props.expand = next
+}
+
+function onExpandModalHide () {
+  if (expandModalId.value != null) {
+    expandedIds.value = expandedIds.value.filter(x => x !== expandModalId.value)
+    expandModalId.value = null
+  }
+}
+
+function openConfigPicker () {
+  pickerConfigId.value = pickerConfigOptions.value.length === 1
+    ? pickerConfigOptions.value[0].id
+    : null
+  pickerConnectionId.value = connectionOptions.value.length === 1
+    ? connectionOptions.value[0].value
+    : null
+  pickerOpen.value = true
+}
+
+async function confirmConfigPick () {
+  const id = pickerConfigId.value
+  const connectionId = pickerConnectionId.value
+  if (!id || !connectionId) return
+
+  const cfg = serverConfigs.value.find(c => c.id === id)
+  if (!cfg) return
+
+  if (cfg.has_peer_extra_allowed_ips) {
+    $q.dialog({
+      title: t('resolver.splitTunnelEnableTitle'),
+      message: t('resolver.splitTunnelEnableConfirm'),
+      cancel: true,
+      persistent: true
+    }).onOk(() => {
+      enableResolverForConfig(cfg, connectionId)
+    })
+    return
+  }
+
+  await enableResolverForConfig(cfg, connectionId)
+}
+
+async function enableResolverForConfig (cfg, connectionId) {
+  const id = cfg.id
+  if (!forms[id]) syncForm(cfg)
+
+  const form = forms[id]
+  form.resolver_enabled = true
+  form.connection_id = connectionId
+
+  enabling.value = true
+  savingId.value = id
+  try {
+    const { data } = await withApplyProgress('resolver-save', () =>
+      api.put(`/api/resolver/configs/${id}`, {
+        resolver_enabled: true,
+        resolver_reject_quic: form.resolver_reject_quic,
+        connection_id: connectionId,
+        resolver_dns: form.resolver_dns,
+        community_lists: form.community_lists,
+        user_domains: form.user_domains,
+        user_subnets: form.user_subnets
+      })
+    )
+    Object.assign(status, data.status)
+    for (const row of data.status?.configs || []) {
+      syncForm(row)
+    }
+    pickerOpen.value = false
+    pickerConfigId.value = null
+    pickerConnectionId.value = null
+    if ($q.screen.lt.md) {
+      openExpandModal(cfg)
+    } else if (!expandedIds.value.includes(id)) {
+      expandedIds.value.push(id)
+    }
+    if (data.apply_error) {
+      $q.notify({ type: 'negative', message: data.apply_error, timeout: 12000 })
+    } else if (data.warning) {
+      $q.notify({ type: 'warning', message: data.warning, timeout: 8000 })
+    } else {
+      $q.notify({ type: 'positive', message: t('common.saved') })
+    }
+  } catch (e) {
+    form.resolver_enabled = false
+    const msg = e?.response?.data?.message
+      || Object.values(e?.response?.data?.errors || {}).flat()[0]
+      || t('common.saveError')
+    $q.notify({ type: 'negative', message: msg })
+  } finally {
+    enabling.value = false
+    savingId.value = null
   }
 }
 
@@ -576,6 +900,10 @@ async function load () {
     for (const cfg of data.configs || []) {
       syncForm(cfg)
     }
+    if (data.needs_initial_sync) {
+      const synced = await ensureListsReady()
+      status.needs_initial_sync = !!synced?.needs_initial_sync
+    }
   } catch (e) {
     $q.notify({ type: 'negative', message: e?.response?.data?.message || t('resolver.loadError') })
   } finally {
@@ -607,7 +935,18 @@ async function save (id) {
     for (const cfg of data.status?.configs || []) {
       syncForm(cfg)
     }
-    if (data.warning) {
+    // Drop expand state for configs that left the table after disable
+    const visibleIds = new Set(
+      (data.status?.configs || []).filter(c => c.type === 'server' && c.resolver_enabled).map(c => c.id)
+    )
+    expandedIds.value = expandedIds.value.filter(id => visibleIds.has(id))
+    if (expandModalId.value != null && !visibleIds.has(expandModalId.value)) {
+      expandModalOpen.value = false
+      expandModalId.value = null
+    }
+    if (data.apply_error) {
+      $q.notify({ type: 'negative', message: data.apply_error, timeout: 12000 })
+    } else if (data.warning) {
       $q.notify({ type: 'warning', message: data.warning, timeout: 8000 })
     } else {
       $q.notify({ type: 'positive', message: t('common.saved') })
@@ -652,6 +991,14 @@ onMounted(load)
   gap: 8px;
 }
 
+.status-health-badge--error {
+  cursor: help;
+}
+
+.text-negative.cursor-pointer {
+  cursor: help;
+}
+
 @media (max-width: 1023px) {
   .resolver-header {
     grid-template-columns: 1fr;
@@ -662,19 +1009,19 @@ onMounted(load)
   }
 
   .resolver-header__actions {
-    flex-direction: row;
+    flex-direction: column;
+    align-items: stretch;
     width: 100%;
+    gap: 4px;
   }
 
   .resolver-header__actions > .q-btn {
-    flex: 1 1 0;
-    min-width: 0;
+    width: 100%;
+    justify-content: flex-start;
   }
 
-  .resolver-header__actions > .q-btn :deep(.q-btn__content) {
-    flex-direction: row;
-    flex-wrap: nowrap;
-    white-space: nowrap;
+  .resolver-select-config-btn {
+    width: 100%;
   }
 }
 
@@ -686,20 +1033,6 @@ onMounted(load)
   background: var(--surface-bg);
   /* q-table defaults to --no-wrap; allow form/banner text to wrap */
   white-space: normal;
-}
-.expand-inner {
-  border-left: 2px solid var(--surface-border);
-  margin-left: 8px;
-  min-width: 0;
-  max-width: 100%;
-  overflow-wrap: anywhere;
-}
-.expand-inner :deep(.q-banner),
-.expand-inner :deep(.q-banner__content) {
-  min-width: 0;
-  max-width: 100%;
-  white-space: normal;
-  overflow-wrap: anywhere;
 }
 .mono {
   font-family: var(--theme-mono);

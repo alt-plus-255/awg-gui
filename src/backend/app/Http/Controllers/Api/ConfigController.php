@@ -7,9 +7,11 @@ use App\Models\AwgConfig;
 use App\Models\AwgConfigPeer;
 use App\Models\VpnClient;
 use App\Services\AmneziaWg\AmneziaWgService;
+use App\Services\AmneziaWg\HandshakeLogService;
 use App\Services\AmneziaWg\PeerStatsSyncService;
 use App\Services\AmneziaWg\QrCodeService;
 use App\Services\AmneziaWg\VpnUriService;
+use App\Services\AmneziaWg\Versions\AwgVersionRegistry;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
@@ -20,9 +22,24 @@ class ConfigController extends Controller
     public function __construct(
         private AmneziaWgService $awg,
         private PeerStatsSyncService $statsSync,
+        private HandshakeLogService $handshakeLogs,
         private QrCodeService $qr,
         private VpnUriService $vpnUri,
+        private AwgVersionRegistry $versions,
     ) {}
+
+    public function protocolVersions()
+    {
+        return response()->json([
+            'versions' => array_map(fn ($profile) => [
+                'id' => $profile->id(),
+                'label' => $profile->label(),
+                'vpn_uri_protocol_version' => $profile->vpnUriProtocolVersion(),
+                'supported_params' => $profile->supportedParams(),
+            ], $this->versions->all()),
+            'default' => $this->versions->latest(),
+        ]);
+    }
 
     public function index()
     {
@@ -40,6 +57,8 @@ class ConfigController extends Controller
         $data = $request->validate([
             'name' => ['required', 'string', 'max:64'],
             'type' => ['required', Rule::in(['server', 'virtual_network'])],
+            'protocol_version' => ['sometimes', 'string', Rule::in($this->versions->ids())],
+            'client_import_name_style' => ['sometimes', 'string', Rule::in($this->awg->clientImportNameStyles())],
             'vn_policy' => ['sometimes', Rule::in(['allow_all', 'deny_all'])],
             'internal_subnet' => ['sometimes', 'string', 'max:64'],
             'listen_port' => ['sometimes', 'integer', 'min:51820', 'max:51839'],
@@ -49,8 +68,9 @@ class ConfigController extends Controller
             'enabled' => ['sometimes', 'boolean'],
         ]);
 
+        $protocolVersion = $data['protocol_version'] ?? $this->versions->latest();
         $keys = $this->awg->generateKeyPair();
-        $junk = $this->awg->generateJunkParams();
+        $junk = $this->awg->generateJunkParams($protocolVersion);
         $defaults = $this->awg->defaultConfigAttributes();
 
         $subnet = $data['internal_subnet'] ?? $defaults['internal_subnet'];
@@ -73,6 +93,11 @@ class ConfigController extends Controller
         $config = AwgConfig::query()->create(array_merge($junk, [
             'name' => $data['name'],
             'type' => $data['type'],
+            'protocol_version' => $protocolVersion,
+            'client_import_name_style' => $this->awg->resolveClientImportNameStyle(
+                null,
+                $data['client_import_name_style'] ?? null
+            ),
             'vn_policy' => $data['vn_policy'] ?? 'allow_all',
             'iface' => $iface,
             'listen_port' => $port,
@@ -103,6 +128,8 @@ class ConfigController extends Controller
         $data = $request->validate([
             'name' => ['sometimes', 'string', 'max:64'],
             'type' => ['sometimes', Rule::in(['server', 'virtual_network'])],
+            'protocol_version' => ['sometimes', 'string', Rule::in($this->versions->ids())],
+            'client_import_name_style' => ['sometimes', 'string', Rule::in($this->awg->clientImportNameStyles())],
             'vn_policy' => ['sometimes', Rule::in(['allow_all', 'deny_all'])],
             'internal_subnet' => ['sometimes', 'string', 'max:64'],
             'server_address' => ['sometimes', 'string', 'max:64'],
@@ -111,6 +138,7 @@ class ConfigController extends Controller
             'client_allowed_ips' => ['sometimes', 'string', 'max:255'],
             'persistent_keepalive' => ['sometimes', 'integer', 'min:0', 'max:65535'],
             'enabled' => ['sometimes', 'boolean'],
+            'handshake_logging_enabled' => ['sometimes', 'boolean'],
             'jc' => ['sometimes', 'string', 'max:10'],
             'jmin' => ['sometimes', 'string', 'max:10'],
             'jmax' => ['sometimes', 'string', 'max:10'],
@@ -129,10 +157,42 @@ class ConfigController extends Controller
             'i5' => ['nullable', 'string', 'max:2048'],
         ]);
 
+        if (array_key_exists('protocol_version', $data)
+            && (string) $data['protocol_version'] !== (string) $config->protocol_version) {
+            throw ValidationException::withMessages([
+                'protocol_version' => [__('configs.protocol_version_immutable')],
+            ]);
+        }
+        unset($data['protocol_version']);
+
+        if (array_key_exists('type', $data) && (string) $data['type'] !== (string) $config->type) {
+            // type is also immutable after create (UI disables it); ignore attempts
+            unset($data['type']);
+        }
+
         $data = $this->sanitizeSignatureFields($data);
+
+        $junkKeys = ['jc', 'jmin', 'jmax', 's1', 's2', 's3', 's4', 'h1', 'h2', 'h3', 'h4', 'i1', 'i2', 'i3', 'i4', 'i5'];
+        $junkPatch = array_intersect_key($data, array_flip($junkKeys));
+        if ($junkPatch !== []) {
+            $normalized = $this->versions->profileForConfig($config->protocol_version)
+                ->normalizeForPersist($junkPatch);
+            foreach ($junkKeys as $key) {
+                if (array_key_exists($key, $normalized)) {
+                    $data[$key] = $normalized[$key];
+                }
+            }
+        }
 
         if (isset($data['internal_subnet'])) {
             $this->assertSubnetAvailable($data['internal_subnet'], $config->id);
+        }
+
+        if (array_key_exists('client_import_name_style', $data)) {
+            $data['client_import_name_style'] = $this->awg->resolveClientImportNameStyle(
+                $config,
+                $data['client_import_name_style'] ?? null
+            );
         }
 
         $config->fill($data);
@@ -355,7 +415,7 @@ class ConfigController extends Controller
 
         $conf = $this->awg->buildClientConfig($membership);
         $conf = $this->qr->normalizeConfigText($conf);
-        $filename = ($membership->client?->name ?? 'peer').'-'.$config->name.'.conf';
+        $filename = $this->awg->clientImportFilename($membership);
 
         return response($conf, 200, [
             'Content-Type' => 'text/plain; charset=UTF-8',
@@ -385,22 +445,30 @@ class ConfigController extends Controller
             ->where('vpn_client_id', $client->id)
             ->firstOrFail();
 
-        $conf = $this->awg->buildClientConfig($membership);
-        $conf = $this->qr->normalizeConfigText($conf);
-        $format = $request->query('format', 'svg');
+        $encoding = $request->query('encoding', 'amnezia');
+        $format = $request->query('format', 'png');
 
-        if ($format === 'png') {
-            $body = $this->qr->buildPng($conf);
+        if ($encoding === 'conf') {
+            $payload = $this->qr->normalizeConfigText($this->awg->buildClientConfig($membership));
+        } elseif ($encoding === 'vpn-uri') {
+            $payload = $this->vpnUri->buildFromMembership($membership);
+        } else {
+            $membership->loadMissing(['config', 'client']);
+            $payload = $this->vpnUri->buildAmneziaQrPackFromMembership($membership);
+        }
+
+        if ($format === 'svg') {
+            $body = $this->qr->buildSvg($payload);
 
             return response($body, 200, [
-                'Content-Type' => 'image/png',
+                'Content-Type' => 'image/svg+xml',
             ]);
         }
 
-        $body = $this->qr->buildSvg($conf);
+        $body = $this->qr->buildPng($payload);
 
         return response($body, 200, [
-            'Content-Type' => 'image/svg+xml',
+            'Content-Type' => 'image/png',
         ]);
     }
 
@@ -458,6 +526,81 @@ class ConfigController extends Controller
             'public_key' => $membership->public_key,
             'preshared_key' => $membership->preshared_key,
             'use_preshared_key' => (bool) $membership->preshared_key,
+        ]);
+    }
+
+    public function handshakeLogs(Request $request, AwgConfig $config)
+    {
+        $data = $request->validate([
+            'per_page' => ['sometimes', 'integer', 'min:1', 'max:200'],
+            'before_id' => ['sometimes', 'integer', 'min:1'],
+        ]);
+
+        return response()->json($this->handshakeLogs->list(
+            $config,
+            null,
+            isset($data['before_id']) ? (int) $data['before_id'] : null,
+            (int) ($data['per_page'] ?? 50),
+        ));
+    }
+
+    public function peerHandshakeLogs(Request $request, AwgConfig $config, VpnClient $client)
+    {
+        AwgConfigPeer::query()
+            ->where('awg_config_id', $config->id)
+            ->where('vpn_client_id', $client->id)
+            ->firstOrFail();
+
+        $data = $request->validate([
+            'per_page' => ['sometimes', 'integer', 'min:1', 'max:200'],
+            'before_id' => ['sometimes', 'integer', 'min:1'],
+        ]);
+
+        return response()->json($this->handshakeLogs->list(
+            $config,
+            $client->id,
+            isset($data['before_id']) ? (int) $data['before_id'] : null,
+            (int) ($data['per_page'] ?? 50),
+        ));
+    }
+
+    public function clearHandshakeLogs(AwgConfig $config)
+    {
+        $this->handshakeLogs->clear($config);
+
+        return response()->json([
+            'ok' => true,
+            'log_bytes' => 0,
+            'log_bytes_limit' => HandshakeLogService::BYTE_LIMIT,
+            'message' => __('configs.handshake_logs_cleared'),
+        ]);
+    }
+
+    public function resetPeerTraffic(AwgConfig $config, VpnClient $client)
+    {
+        $membership = AwgConfigPeer::query()
+            ->where('awg_config_id', $config->id)
+            ->where('vpn_client_id', $client->id)
+            ->firstOrFail();
+
+        $this->statsSync->resetPeerTraffic($membership);
+        $membership->refresh()->load('client');
+
+        return response()->json([
+            'ok' => true,
+            'membership' => $this->serializeMembership($config, $membership),
+            'message' => __('configs.peer_traffic_reset'),
+        ]);
+    }
+
+    public function resetConfigTraffic(AwgConfig $config)
+    {
+        $count = $this->statsSync->resetConfigTraffic($config);
+
+        return response()->json([
+            'ok' => true,
+            'reset_count' => $count,
+            'message' => __('configs.config_traffic_reset'),
         ]);
     }
 
@@ -728,6 +871,11 @@ class ConfigController extends Controller
                     'extra_allowed_ips' => [__('configs.invalid_ip_in_cidr', ['cidr' => $cidr])],
                 ]);
             }
+            if ($cidr === '0.0.0.0/0' || $cidr === '::/0') {
+                throw ValidationException::withMessages([
+                    'extra_allowed_ips' => [__('configs.full_tunnel_cidr_forbidden', ['cidr' => $cidr])],
+                ]);
+            }
             $out[] = $cidr;
         }
 
@@ -781,11 +929,17 @@ class ConfigController extends Controller
 
     private function serializeConfig(AwgConfig $config): array
     {
+        $profile = $this->versions->profileForConfig($config->protocol_version);
+
         return [
             'id' => $config->id,
             'name' => $config->name,
             'type' => $config->type,
             'type_label' => $config->type === 'virtual_network' ? __('api.type_virtual_network') : __('api.type_server'),
+            'protocol_version' => $config->protocol_version ?: $this->versions->latest(),
+            'protocol_label' => $profile->label(),
+            'client_import_name_style' => $this->awg->resolveClientImportNameStyle($config),
+            'supported_params' => $profile->supportedParams(),
             'vn_policy' => $config->vn_policy ?? 'allow_all',
             'vn_zones' => [
                 'rules' => array_values($config->vn_zones['rules'] ?? []),
@@ -799,6 +953,9 @@ class ConfigController extends Controller
             'client_allowed_ips' => $config->client_allowed_ips,
             'persistent_keepalive' => $config->persistent_keepalive,
             'enabled' => $config->enabled,
+            'handshake_logging_enabled' => (bool) $config->handshake_logging_enabled,
+            'handshake_log_bytes' => (int) ($config->handshake_log_bytes ?? 0),
+            'handshake_log_bytes_limit' => HandshakeLogService::BYTE_LIMIT,
             'resolver_enabled' => (bool) $config->resolver_enabled,
             'connection_id' => $config->connection_id,
             'community_lists' => array_values($config->community_lists ?? []),

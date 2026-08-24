@@ -6,7 +6,9 @@ use App\Models\ResolverConnection;
 
 class SingBoxPingProbeBuilder
 {
-    public function __construct(private ConnectionOutboundBuilder $outboundBuilder) {}
+    public function __construct(
+        private ConnectionOutboundBuilder $outboundBuilder,
+    ) {}
 
     /**
      * @return array{config: array<string, mixed>, outbound_count: int, truncated_subscriptions: array<int, bool>}
@@ -38,6 +40,12 @@ class SingBoxPingProbeBuilder
                 'strategy' => 'ipv4_only',
             ],
             'outbounds' => $built['outbounds'],
+            // Same egress ownership as production: pin dials to resolved NIC.
+            'route' => [
+                'auto_detect_interface' => false,
+                'default_interface' => app(EgressInterfaceResolver::class)->resolve(),
+                'default_domain_resolver' => 'bootstrap',
+            ],
             'experimental' => [
                 'clash_api' => [
                     'external_controller' => ResolverService::CLASH_PROBE_API_ADDR,

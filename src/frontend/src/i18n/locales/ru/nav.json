@@ -6,6 +6,8 @@
   "resolverCaption": "Точечный обход",
   "connections": "Подключения",
   "connectionsCaption": "Точки VPN / прокси",
+  "speedTest": "Скорость",
+  "speedTestCaption": "Ping / ↓↑ через outbound",
   "diagnostics": "Диагностика",
   "diagnosticsCaption": "Проверка резолвера",
   "resolverSettings": "Настройки",
@@ -22,5 +24,9 @@
   "liveFetch": "Live Fetch",
   "liveFetchHint": "WebSocket недоступен, используется HTTP polling",
   "liveConnecting": "Live…",
-  "liveConnectingHint": "Подключение к каналу обновлений"
+  "liveConnectingHint": "Подключение к каналу обновлений",
+  "updateAvailable": "Доступно обновление",
+  "updateAvailableTooltip": "Перейти к обновлению панели",
+  "installApp": "Установить приложение",
+  "installAppTooltip": "Установить AWG-GUI как приложение на этом устройстве"
 }

@@ -10,21 +10,29 @@ use Symfony\Component\HttpFoundation\Response;
 class SetLocale
 {
     /** @var list<string> */
-    private const SUPPORTED = ['ru', 'en'];
+    public const SUPPORTED = ['ru', 'en'];
 
     public function handle(Request $request, Closure $next): Response
     {
-        $locale = $this->resolveLocale($request);
-        App::setLocale($locale);
+        self::apply($request);
 
         return $next($request);
     }
 
-    private function resolveLocale(Request $request): string
+    public static function apply(?Request $request = null): string
     {
+        $locale = self::resolve($request ?? request());
+        App::setLocale($locale);
+
+        return $locale;
+    }
+
+    public static function resolve(?Request $request = null): string
+    {
+        $request ??= request();
         $header = (string) $request->header('Accept-Language', '');
         if ($header === '') {
-            return (string) config('app.locale');
+            return (string) config('app.locale', 'en');
         }
 
         // Parse "ru-RU,ru;q=0.9,en;q=0.8" → ordered language tags
@@ -40,6 +48,6 @@ class SetLocale
             }
         }
 
-        return (string) config('app.locale');
+        return (string) config('app.locale', 'en');
     }
 }

@@ -18,7 +18,7 @@ These binaries are compiled or copied into the AWG image during `docker build`
 
 | Component | Version (pinned in build) | License | Source |
 |-----------|---------------------------|---------|--------|
-| [sing-box](https://github.com/SagerNet/sing-box) | 1.12.12 | **GPL-3.0** + [additional terms](https://github.com/SagerNet/sing-box/blob/dev/LICENSE) | https://github.com/SagerNet/sing-box/tree/v1.12.12 |
+| [sing-box](https://github.com/SagerNet/sing-box) | 1.13.14 | **GPL-3.0** + [additional terms](https://github.com/SagerNet/sing-box/blob/dev/LICENSE) | https://github.com/SagerNet/sing-box/tree/v1.13.14 |
 | [amneziawg-go](https://github.com/amnezia-vpn/amneziawg-go) | latest `master` at build time | **MIT** | https://github.com/amnezia-vpn/amneziawg-go |
 | [amneziawg-tools](https://github.com/amnezia-vpn/amneziawg-tools) | latest `master` at build time | **GPL-2.0** | https://github.com/amnezia-vpn/amneziawg-tools |
 
@@ -94,7 +94,7 @@ For **sing-box** (version in your image):
 ```bash
 git clone https://github.com/SagerNet/sing-box.git
 cd sing-box
-git checkout v1.12.12
+git checkout v1.13.14
 ```
 
 For **amneziawg-tools**:

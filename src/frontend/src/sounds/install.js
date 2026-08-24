@@ -11,6 +11,7 @@ const CLICK_SELECTOR = [
 ].join(',')
 
 const TOGGLE_SELECTOR = '.q-toggle, .q-checkbox, .q-radio'
+const TAB_SELECTOR = '.q-tab, [role="tab"]'
 
 function isDisabled (el) {
   if (!el) return true
@@ -39,9 +40,9 @@ function normalizeNotifyOpts (opts) {
 }
 
 /**
- * @param {{ router: import('vue-router').Router, Notify: { create: Function } }} opts
+ * @param {{ router: import('vue-router').Router, Notify: { create: Function }, app?: import('vue').App }} opts
  */
-export function installUiSounds ({ router, Notify }) {
+export function installUiSounds ({ router, Notify, app }) {
   let navReady = false
 
   document.addEventListener(
@@ -55,6 +56,16 @@ export function installUiSounds ({ router, Notify }) {
   document.addEventListener(
     'click',
     (e) => {
+      if (e.target instanceof Element) {
+        const tab = e.target.closest(TAB_SELECTOR)
+        if (tab && !isDisabled(tab)) {
+          if (!tab.classList.contains('q-tab--active')) {
+            play('navigate')
+          }
+          return
+        }
+      }
+
       const el = findInteractive(e.target)
       if (!el || isDisabled(el)) return
 
@@ -76,11 +87,24 @@ export function installUiSounds ({ router, Notify }) {
   })
 
   const originalCreate = Notify.create.bind(Notify)
-  Notify.create = (opts) => {
+  const wrappedCreate = (opts) => {
     const normalized = normalizeNotifyOpts(opts)
     const type = normalized.type || 'info'
     if (type === 'positive') play('success')
     else if (type === 'negative') play('error')
     return originalCreate(normalized)
+  }
+
+  Notify.create = wrappedCreate
+
+  // $q.notify is bound at Quasar install time and would otherwise bypass the wrap.
+  const $q = app?.config?.globalProperties?.$q
+  if ($q) {
+    const notifyApi = wrappedCreate
+    Object.assign(notifyApi, {
+      setDefaults: Notify.setDefaults?.bind(Notify),
+      registerType: Notify.registerType?.bind(Notify)
+    })
+    $q.notify = notifyApi
   }
 }

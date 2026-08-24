@@ -8,6 +8,7 @@ Installed to `/usr/local/bin/awg-gui`. Config: `/etc/awg-gui/awg-gui.conf`.
 |---------|-------------|
 | `awg-gui help` | Show help |
 | `awg-gui status` | Show compose service status |
+| `awg-gui info` | Panel URL, host, port, and login (no password) |
 | `awg-gui ensure-up` | If containers are down, `compose up -d` |
 | `awg-gui restart awg` | Restart AmneziaWG container |
 | `awg-gui restart panel` | Restart Caddy + Laravel app |
@@ -21,6 +22,16 @@ Installed to `/usr/local/bin/awg-gui`. Config: `/etc/awg-gui/awg-gui.conf`.
 | `awg-gui endpoint IP [PORT]` | Set public IP/hostname and optionally AWG UDP port |
 | `awg-gui endpoint --auto` | Reset endpoint to auto-detect |
 | `awg-gui endpoint PORT` | Change AWG UDP port only (51820–51839) |
+
+## Panel access
+
+```bash
+sudo awg-gui info
+```
+
+Prints the panel URL, host, port, and `admin` login (password is not shown). Useful after install or when changing domain / HTTPS.
+
+After you attach a domain and issue a Let's Encrypt certificate in **Settings → HTTPS**, open the panel over `https://` — you can install it as a PWA (header **Install app** button, or the browser Install / Add to Home Screen menu).
 
 ## Public VPN endpoint
 

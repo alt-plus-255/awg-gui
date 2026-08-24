@@ -49,6 +49,29 @@ class ResolverListsService
         return is_string($v) && $v !== '' ? $v : null;
     }
 
+    /**
+     * True until the first full community sync finishes (or if any community list is still missing).
+     */
+    public function needsInitialSync(): bool
+    {
+        if ($this->lastSyncAt() === null) {
+            return true;
+        }
+
+        foreach (app(ResolverService::class)->communityListCatalog() as $item) {
+            $tag = (string) ($item['tag'] ?? '');
+            if ($tag === '') {
+                continue;
+            }
+            $path = $this->paths->communityRulesetPath($tag);
+            if (! is_file($path) || filesize($path) <= 16) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     /** @return array<string, array{downloaded_at?: string, size?: int}> */
     public function listMeta(): array
     {
@@ -226,6 +249,7 @@ class ResolverListsService
         return [
             'sync_interval_minutes' => $this->syncIntervalMinutes(),
             'last_sync_at' => $this->lastSyncAt(),
+            'needs_initial_sync' => $this->needsInitialSync(),
             'lists' => $this->listsTableRows(),
         ];
     }
@@ -313,7 +337,7 @@ class ResolverListsService
 
         $needed = [];
         foreach (AwgConfig::query()->where('resolver_enabled', true)->get() as $cfg) {
-            foreach ($cfg->community_lists ?? [] as $tag) {
+            foreach ($this->mergedRulesets->asList($cfg->community_lists) as $tag) {
                 if (! is_string($tag) || $this->isCustomTag($tag)) {
                     continue;
                 }
@@ -713,7 +737,7 @@ class ResolverListsService
     public function detachCustomTagFromConfigs(string $slug): void
     {
         foreach (AwgConfig::query()->get() as $cfg) {
-            $lists = array_values($cfg->community_lists ?? []);
+            $lists = $this->mergedRulesets->asList($cfg->community_lists);
             if (! in_array($slug, $lists, true)) {
                 continue;
             }

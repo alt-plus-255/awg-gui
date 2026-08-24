@@ -23,6 +23,11 @@ class AwgConfigPeer extends Model
         'latest_handshake',
         'transfer_rx',
         'transfer_tx',
+        'traffic_rx_total',
+        'traffic_tx_total',
+        'traffic_rx_baseline',
+        'traffic_tx_baseline',
+        'traffic_reset_at',
         'online',
         'stats_synced_at',
     ];
@@ -43,6 +48,11 @@ class AwgConfigPeer extends Model
             'latest_handshake' => 'integer',
             'transfer_rx' => 'integer',
             'transfer_tx' => 'integer',
+            'traffic_rx_total' => 'integer',
+            'traffic_tx_total' => 'integer',
+            'traffic_rx_baseline' => 'integer',
+            'traffic_tx_baseline' => 'integer',
+            'traffic_reset_at' => 'datetime',
             'online' => 'boolean',
             'stats_synced_at' => 'datetime',
         ];

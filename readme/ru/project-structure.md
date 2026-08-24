@@ -18,6 +18,8 @@ dist/
   install.sh          # production online installer (wget one-liner)
   uninstall.sh        # production online uninstaller
   README.md           # заметка про prod-bundle
+mobile/               # Quasar + Capacitor installer (FAQ, SSH install, panel WebView)
+build/                # mobile build artifacts (web/, android/)
 src/
   docker-compose.yml
   .env.example
@@ -25,7 +27,9 @@ src/
   systemd/awg-gui.service
   scripts/
     build-dist.sh
+    host/             # awg-kernel-host.sh (helper kernel-модуля на хосте)
     release/          # prod bundle templates
+  panel-ops/          # привилегированные ops (update, awg-kernel)
   caddy/
   awg/
   backend/     # Laravel 12
@@ -42,9 +46,11 @@ src/
 | `awggui-app` | Laravel API |
 | `awggui-db` | MariaDB |
 | `awggui-awg` | AmneziaWG + sing-box (резолвер) |
+| `awggui-panel-ops` | Операции на хосте: обновление панели, установка/удаление kernel-модуля AmneziaWG |
+| `awggui-docker-proxy` | Ограниченный Docker socket proxy для приложения |
 
 ## Связанные разделы
 
 - [Установка](install.md) · [Удаление](uninstall.md) · [Сборка release](build-release.md)
-- [CLI](cli.md) · [Webhook](webhook.md)
-- [Конфиги и пиры](configs-and-peers.md) · [Виртуальные сети](virtual-networks.md) · [Резолвер](resolver.md)
+- [CLI](cli.md) · [Webhook](webhook.md) · [Telegram-бот](telegram.md)
+- [Кейсы использования](use-cases.md) · [Конфиги и пиры](configs-and-peers.md) · [Виртуальные сети](virtual-networks.md) · [Резолвер](resolver.md)

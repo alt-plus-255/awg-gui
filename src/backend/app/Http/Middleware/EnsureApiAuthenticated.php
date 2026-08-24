@@ -23,7 +23,7 @@ class EnsureApiAuthenticated
             return $next($request);
         }
 
-        return response()->json(['message' => 'Unauthenticated.'], 401);
+        return response()->json(['message' => __('api.unauthenticated')], 401);
     }
 
     private function isPublic(Request $request): bool
@@ -41,6 +41,10 @@ class EnsureApiAuthenticated
         }
 
         if ($request->isMethod('GET') && $request->is('api/login/captcha')) {
+            return true;
+        }
+
+        if ($request->isMethod('POST') && $request->is('api/telegram/webhook/*')) {
             return true;
         }
 

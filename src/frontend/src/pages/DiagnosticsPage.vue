@@ -134,6 +134,29 @@
                 <li v-for="(h, i) in store.hints" :key="i">{{ h }}</li>
               </ul>
             </q-card>
+
+            <q-card
+              v-if="store.failedChecks.length"
+              class="q-pa-md q-mb-md status-card error-report-card"
+              flat
+              bordered
+            >
+              <div class="row items-center q-mb-sm">
+                <div class="text-subtitle2 col">{{ t('diagnostics.errorReportTitle') }}</div>
+                <q-btn
+                  flat
+                  dense
+                  color="primary"
+                  icon="content_copy"
+                  :label="t('diagnostics.copyErrorJson')"
+                  @click="copyErrorJson"
+                />
+              </div>
+              <div class="text-caption text-muted-theme q-mb-sm">
+                {{ t('diagnostics.errorReportHint') }}
+              </div>
+              <pre class="config-pre mono error-report-pre">{{ store.errorReportJson() }}</pre>
+            </q-card>
           </template>
 
           <q-card
@@ -226,8 +249,17 @@
                 icon="restart_alt"
                 :label="t('diagnostics.restartAwg')"
                 :loading="systemStore.restartBusy"
-                :disable="systemStore.restartBusy"
+                :disable="systemStore.restartBusy || restartingSingbox"
                 @click="restartAwg"
+              />
+              <q-btn
+                outline
+                color="secondary"
+                icon="play_circle"
+                :label="t('diagnostics.restartSingbox')"
+                :loading="restartingSingbox"
+                :disable="systemStore.restartBusy || restartingSingbox"
+                @click="restartSingbox"
               />
               <q-btn
                 outline
@@ -235,7 +267,7 @@
                 icon="power_settings_new"
                 :label="t('diagnostics.restartServices')"
                 :loading="systemStore.restartBusy"
-                :disable="systemStore.restartBusy"
+                :disable="systemStore.restartBusy || restartingSingbox"
                 @click="restartAll"
               />
               <q-btn
@@ -253,6 +285,14 @@
                 :label="t('diagnostics.showAwgConfigs')"
                 :loading="store.awgModal.loading"
                 @click="store.openAwgConfigs()"
+              />
+              <q-btn
+                outline
+                color="negative"
+                icon="data_object"
+                :label="t('diagnostics.copyErrorJson')"
+                :disable="!store.result || !store.failedChecks.length"
+                @click="copyErrorJson"
               />
               <q-btn
                 outline
@@ -351,7 +391,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useQuasar } from 'quasar'
 import { useDiagnosticsStore } from '@/stores/diagnostics'
@@ -359,6 +399,7 @@ import { useSystemStore } from '@/stores/system'
 import { useSettingsStore } from '@/stores/settings'
 import { useMobileDialog } from '@/composables/useMobileDialog'
 import DialogHeader from '@/components/DialogHeader.vue'
+import { copyText as clipboardCopy } from '@/utils/clipboard'
 
 const { t } = useI18n()
 const $q = useQuasar()
@@ -366,6 +407,7 @@ const mobileDialog = useMobileDialog()
 const store = useDiagnosticsStore()
 const systemStore = useSystemStore()
 const settingsStore = useSettingsStore()
+const restartingSingbox = ref(false)
 
 const resultBadgeColor = computed(() => {
   const s = store.result?.status
@@ -429,6 +471,26 @@ async function restartAwg () {
   }
 }
 
+async function restartSingbox () {
+  restartingSingbox.value = true
+  try {
+    const data = await systemStore.restartSingbox()
+    $q.notify({
+      type: data.ok ? 'positive' : 'negative',
+      message: data.message || (data.ok ? t('diagnostics.singboxRestarted') : t('diagnostics.restartSingboxError')),
+      multiLine: true,
+      timeout: data.ok ? 2500 : 8000
+    })
+    await store.fetchStatus()
+  } catch (e) {
+    const msg = e?.response?.data?.message || e?.response?.data?.details?.message || t('diagnostics.restartSingboxError')
+    $q.notify({ type: 'negative', message: msg, multiLine: true, timeout: 8000 })
+    await store.fetchStatus()
+  } finally {
+    restartingSingbox.value = false
+  }
+}
+
 async function restartAll () {
   try {
     const data = await systemStore.restartAll()
@@ -440,7 +502,7 @@ async function restartAll () {
 
 async function copyText (text) {
   try {
-    await navigator.clipboard.writeText(text || '')
+    await clipboardCopy(text || '')
     $q.notify({ type: 'positive', message: t('diagnostics.copied') })
   } catch {
     $q.notify({ type: 'negative', message: t('diagnostics.copyFailed') })
@@ -449,6 +511,14 @@ async function copyText (text) {
 
 async function copyDump () {
   await copyText(store.dumpText())
+}
+
+async function copyErrorJson () {
+  if (!store.failedChecks.length) {
+    $q.notify({ type: 'warning', message: t('diagnostics.noFailedChecks') })
+    return
+  }
+  await copyText(store.errorReportJson())
 }
 
 function onSingBoxOpen (v) {
@@ -544,6 +614,16 @@ onMounted(async () => {
   background:
     linear-gradient(90deg, color-mix(in srgb, var(--q-warning) 10%, transparent), transparent 40%),
     var(--surface-panel) !important;
+}
+
+.error-report-card {
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--q-negative) 10%, transparent), transparent 40%),
+    var(--surface-panel) !important;
+}
+
+.error-report-pre {
+  max-height: 280px;
 }
 
 .hints-list {

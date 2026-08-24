@@ -303,12 +303,14 @@ import { useI18n } from 'vue-i18n'
 import { useQuasar } from 'quasar'
 import api from '@/boot/axios'
 import { useMobileDialog } from '@/composables/useMobileDialog'
+import { useResolverListsBootstrap } from '@/composables/useResolverListsBootstrap'
 import DialogHeader from '@/components/DialogHeader.vue'
 import { bcp47Locale } from '@/i18n'
 
 const { t, locale } = useI18n()
 const $q = useQuasar()
 const mobileDialog = useMobileDialog()
+const { ensureListsReady } = useResolverListsBootstrap()
 const loading = ref(true)
 const savingInterval = ref(false)
 const syncingAll = ref(false)
@@ -364,6 +366,10 @@ async function load () {
   try {
     const { data } = await api.get('/api/resolver/settings')
     applyPayload(data)
+    if (data.needs_initial_sync) {
+      const synced = await ensureListsReady({ settingsData: data })
+      if (synced) applyPayload(synced)
+    }
   } catch (e) {
     $q.notify({ type: 'negative', message: e?.response?.data?.message || t('resolver.loadSettingsError') })
   } finally {

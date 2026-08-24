@@ -14,97 +14,188 @@ class ResolverMarkScripts
         private ResolverFileHelper $files,
     ) {}
 
-    public function ensureResolverMarkScripts(): void
+    public function ensureResolverMarkScripts(): bool
     {
         $dir = $this->awg->configDir();
         $mark = $dir.'/resolver-mark.sh';
         $unmark = $dir.'/resolver-unmark.sh';
-        $routes = $dir.'/resolver-tun-routes.sh';
         $reload = $dir.'/reload-singbox.sh';
+        $changed = false;
 
-        $routesBody = <<<'SH'
+        // Remove obsolete TUN helper if present from older installs.
+        $legacyTunRoutes = $dir.'/resolver-tun-routes.sh';
+        if (is_file($legacyTunRoutes)) {
+            @unlink($legacyTunRoutes);
+        }
+
+        $tproxyPort = ResolverService::TPROXY_PORT;
+        $udpTproxyPort = ResolverService::UDP_TPROXY_PORT;
+        $fakeip = ResolverService::FAKEIP_CIDR;
+        $tproxyMark = ResolverService::TPROXY_MARK;
+        $tproxyTable = ResolverService::TPROXY_TABLE;
+        $tproxyOnIp = ResolverService::TPROXY_ON_IP;
+        $tunMark = '0x2';
+        $tunTable = ResolverService::TUN_TABLE;
+        $tunIface = ResolverService::TUN_IFACE;
+
+        $markBody = <<<SH
 #!/bin/sh
-# Install policy routes for FakeIP + proxy_cidrs_all.lst → sing-box TUN.
-TUN_IFACE=sbox0
-TUN_MARK=0x2
-TUN_TABLE=101
-FAKEIP=198.18.0.0/15
+# Selective FakeIP/list delivery into sing-box (NOT TUN/auto_route):
+# - AWG iface owns the client full-tunnel.
+# - TCP FakeIP + list CIDRs → NAT REDIRECT → sing-box :{$tproxyPort} (Docker-safe).
+# - UDP FakeIP → always TPROXY :{$udpTproxyPort} (Block QUIC = sing-box protocol reject).
+# - Do NOT use --on-ip 127.0.0.1 (route_localnet). Prefer awg iface IPv4.
+# - DIVERT is FakeIP-scoped UDP only (global DIVERT blackholes container DNS).
+# - Arg2 (legacy reject_quic) accepted for PostUp compatibility but ignored for iptables.
+# - Everything else stays on \${1} and exits via POSTROUTING MASQUERADE (direct / VDS IP).
+IFACE="\${1:?iface}"
+REJECT_QUIC="\${2:-0}"
+REDIR_PORT={$tproxyPort}
+UDP_PORT={$udpTproxyPort}
+FAKEIP={$fakeip}
+TPROXY_MARK={$tproxyMark}
+TPROXY_TABLE={$tproxyTable}
 CIDR_FILE=/config/rulesets/proxy_cidrs_all.lst
+NAT_CHAIN="RSNAT_\${IFACE}"
+MANGLE_CHAIN="RS_\${IFACE}"
 
-while ip rule show 2>/dev/null | grep -q "fwmark ${TUN_MARK} lookup ${TUN_TABLE}"; do
-  ip rule del fwmark "${TUN_MARK}" table "${TUN_TABLE}" 2>/dev/null || break
+TPROXY_ON_IP=\$(ip -4 -o addr show dev "\$IFACE" 2>/dev/null | awk '{print \$4}' | cut -d/ -f1 | head -n1)
+[ -n "\$TPROXY_ON_IP" ] || TPROXY_ON_IP={$tproxyOnIp}
+
+sysctl -w "net.ipv4.conf.\$IFACE.rp_filter=0" >/dev/null 2>&1 || true
+sysctl -w net.ipv4.conf.all.rp_filter=0 >/dev/null 2>&1 || true
+sysctl -w "net.ipv4.conf.\$IFACE.route_localnet=1" >/dev/null 2>&1 || true
+
+# Drop legacy TUN mark/table if still present.
+while ip rule show 2>/dev/null | grep -q "fwmark {$tunMark} lookup {$tunTable}"; do
+  ip rule del fwmark {$tunMark} table {$tunTable} 2>/dev/null || break
 done
-ip rule add fwmark "${TUN_MARK}" table "${TUN_TABLE}" 2>/dev/null || true
+ip route flush table {$tunTable} 2>/dev/null || true
+ip link delete {$tunIface} 2>/dev/null || true
 
-if ! ip link show "${TUN_IFACE}" >/dev/null 2>&1; then
-  echo "[sing-box] warn: ${TUN_IFACE} not present yet" >&2
-  exit 0
+# Clear previous NAT / mangle / UDP REJECT / unified-TPROXY leftovers (idempotent; also drop duplicates).
+iptables -t nat -D PREROUTING -i "\$IFACE" -j "\$NAT_CHAIN" 2>/dev/null || true
+iptables -t nat -F "\$NAT_CHAIN" 2>/dev/null || true
+iptables -t nat -X "\$NAT_CHAIN" 2>/dev/null || true
+iptables -D FORWARD -i "\$IFACE" -d "\$FAKEIP" -p udp -j REJECT --reject-with icmp-port-unreachable 2>/dev/null || true
+iptables -t mangle -D PREROUTING -i "\$IFACE" -j "\$MANGLE_CHAIN" 2>/dev/null || true
+iptables -t mangle -F "\$MANGLE_CHAIN" 2>/dev/null || true
+iptables -t mangle -X "\$MANGLE_CHAIN" 2>/dev/null || true
+# Remove all FakeIP UDP TPROXY/DIVERT lines for this iface (may have been duplicated by older PostUp).
+while iptables -t mangle -D PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p udp -j TPROXY --on-port "\$UDP_PORT" --on-ip "\$TPROXY_ON_IP" --tproxy-mark "\$TPROXY_MARK/\$TPROXY_MARK" 2>/dev/null; do :; done
+while iptables -t mangle -D PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p udp -j TPROXY --on-port "\$UDP_PORT" --on-ip 0.0.0.0 --tproxy-mark "\$TPROXY_MARK/\$TPROXY_MARK" 2>/dev/null; do :; done
+while iptables -t mangle -D PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p udp -j TPROXY --on-port "\$UDP_PORT" --on-ip 127.0.0.1 --tproxy-mark "\$TPROXY_MARK/\$TPROXY_MARK" 2>/dev/null; do :; done
+iptables -t mangle -D PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p tcp -j TPROXY --on-port "\$REDIR_PORT" --on-ip 0.0.0.0 --tproxy-mark "\$TPROXY_MARK/\$TPROXY_MARK" 2>/dev/null || true
+iptables -t mangle -D PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p udp -j TPROXY --on-port "\$REDIR_PORT" --on-ip 0.0.0.0 --tproxy-mark "\$TPROXY_MARK/\$TPROXY_MARK" 2>/dev/null || true
+iptables -t mangle -D PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p tcp -j TPROXY --on-port "\$REDIR_PORT" --on-ip "\$TPROXY_ON_IP" --tproxy-mark "\$TPROXY_MARK/\$TPROXY_MARK" 2>/dev/null || true
+iptables -t mangle -D PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p udp -j TPROXY --on-port "\$REDIR_PORT" --on-ip "\$TPROXY_ON_IP" --tproxy-mark "\$TPROXY_MARK/\$TPROXY_MARK" 2>/dev/null || true
+while iptables -t mangle -D PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p tcp -m socket -j DIVERT 2>/dev/null; do :; done
+while iptables -t mangle -D PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p udp -m socket -j DIVERT 2>/dev/null; do :; done
+iptables -t mangle -D PREROUTING -p udp -m socket -j DIVERT 2>/dev/null || true
+iptables -t mangle -D PREROUTING -p tcp -m socket -j DIVERT 2>/dev/null || true
+iptables -t mangle -D PREROUTING -p udp -m socket --transparent -j DIVERT 2>/dev/null || true
+iptables -t mangle -D PREROUTING -p tcp -m socket --transparent -j DIVERT 2>/dev/null || true
+# Drop previous TCPMSS clamps for this iface (re-add below).
+while iptables -t mangle -D FORWARD -o "\$IFACE" -p tcp -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null; do :; done
+while iptables -t mangle -D FORWARD -i "\$IFACE" -p tcp -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null; do :; done
+
+# TCP FakeIP/list → NAT REDIRECT (works in Docker; TCP TPROXY does not).
+iptables -t nat -N "\$NAT_CHAIN" 2>/dev/null || iptables -t nat -F "\$NAT_CHAIN"
+
+redir_add() {
+  _cidr="\$1"
+  iptables -t nat -A "\$NAT_CHAIN" -d "\$_cidr" -p tcp -j REDIRECT --to-ports "\$REDIR_PORT"
+}
+
+redir_add "\$FAKEIP"
+if [ -f "\$CIDR_FILE" ]; then
+  while IFS= read -r cidr || [ -n "\$cidr" ]; do
+    cidr=\$(echo "\$cidr" | tr -d '\\r' | sed 's/#.*//;s/^[[:space:]]*//;s/[[:space:]]*\$//')
+    [ -z "\$cidr" ] && continue
+    redir_add "\$cidr"
+  done < "\$CIDR_FILE"
 fi
 
-ip link set "${TUN_IFACE}" up 2>/dev/null || true
-ip route replace "${FAKEIP}" dev "${TUN_IFACE}" table "${TUN_TABLE}" 2>/dev/null \
-  || ip route add "${FAKEIP}" dev "${TUN_IFACE}" table "${TUN_TABLE}" 2>/dev/null || true
-ip route replace "${FAKEIP}" dev "${TUN_IFACE}" 2>/dev/null \
-  || ip route add "${FAKEIP}" dev "${TUN_IFACE}" 2>/dev/null || true
+iptables -t nat -C PREROUTING -i "\$IFACE" -j "\$NAT_CHAIN" 2>/dev/null \\
+  || iptables -t nat -A PREROUTING -i "\$IFACE" -j "\$NAT_CHAIN"
 
-if [ -f "${CIDR_FILE}" ]; then
-  while IFS= read -r cidr || [ -n "$cidr" ]; do
-    cidr=$(echo "$cidr" | tr -d '\r' | sed 's/#.*//;s/^[[:space:]]*//;s/[[:space:]]*$//')
-    [ -z "$cidr" ] && continue
-    ip route replace "${cidr}" dev "${TUN_IFACE}" table "${TUN_TABLE}" 2>/dev/null \
-      || ip route add "${cidr}" dev "${TUN_IFACE}" table "${TUN_TABLE}" 2>/dev/null || true
-  done < "${CIDR_FILE}"
-fi
+# MSS clamp for nested AWG+proxy (MTU 1420) — iface-scoped, idempotent.
+iptables -t mangle -C FORWARD -o "\$IFACE" -p tcp -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null \\
+  || iptables -t mangle -A FORWARD -o "\$IFACE" -p tcp -j TCPMSS --clamp-mss-to-pmtu
+iptables -t mangle -C FORWARD -i "\$IFACE" -p tcp -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null \\
+  || iptables -t mangle -A FORWARD -i "\$IFACE" -p tcp -j TCPMSS --clamp-mss-to-pmtu
 
-echo "[sing-box] tun routing: mark ${TUN_MARK} → ${TUN_IFACE} (${FAKEIP} + list CIDRs)"
+# UDP FakeIP → TPROXY :1603 (always; Block QUIC is sing-box-only).
+iptables -t mangle -N DIVERT 2>/dev/null || true
+iptables -t mangle -C DIVERT -j MARK --set-mark "\$TPROXY_MARK" 2>/dev/null \\
+  || iptables -t mangle -A DIVERT -j MARK --set-mark "\$TPROXY_MARK"
+iptables -t mangle -C DIVERT -j ACCEPT 2>/dev/null \\
+  || iptables -t mangle -A DIVERT -j ACCEPT
+iptables -t mangle -C PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p udp -m socket -j DIVERT 2>/dev/null \\
+  || iptables -t mangle -I PREROUTING 1 -i "\$IFACE" -d "\$FAKEIP" -p udp -m socket -j DIVERT
+
+while ip rule show 2>/dev/null | grep -q "fwmark \$TPROXY_MARK lookup \$TPROXY_TABLE"; do
+  ip rule del fwmark "\$TPROXY_MARK" table "\$TPROXY_TABLE" 2>/dev/null || break
+done
+ip rule add fwmark "\$TPROXY_MARK" lookup "\$TPROXY_TABLE" 2>/dev/null || true
+ip route replace local default dev lo table "\$TPROXY_TABLE" 2>/dev/null || true
+ip route replace local "\$FAKEIP" dev lo table "\$TPROXY_TABLE" 2>/dev/null || true
+
+iptables -t mangle -C PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p udp -j TPROXY \\
+  --on-port "\$UDP_PORT" --on-ip "\$TPROXY_ON_IP" --tproxy-mark "\$TPROXY_MARK/\$TPROXY_MARK" 2>/dev/null \\
+  || iptables -t mangle -A PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p udp -j TPROXY \\
+  --on-port "\$UDP_PORT" --on-ip "\$TPROXY_ON_IP" --tproxy-mark "\$TPROXY_MARK/\$TPROXY_MARK"
+
+echo "[sing-box] redirect-tcp: \${IFACE} → :\${REDIR_PORT}; udp-fakeip TPROXY :\${UDP_PORT} on-ip=\${TPROXY_ON_IP}"
 SH;
-        $this->files->writeExecutable($routes, $routesBody);
+        $changed = $this->files->writeExecutable($mark, $markBody) || $changed;
 
-        $markBody = <<<'SH'
+        $unmarkBody = <<<SH
 #!/bin/sh
-# Mark FakeIP + list CIDRs toward sing-box TUN. Full-tunnel non-list traffic uses MASQUERADE.
-IFACE="${1:?iface}"
-MARK=0x2
-FAKEIP=198.18.0.0/15
-CIDR_FILE=/config/rulesets/proxy_cidrs_all.lst
-CHAIN="RS_${IFACE}"
+IFACE="\${1:?iface}"
+NAT_CHAIN="RSNAT_\${IFACE}"
+MANGLE_CHAIN="RS_\${IFACE}"
+FAKEIP={$fakeip}
+TPROXY_PORT={$tproxyPort}
+UDP_PORT={$udpTproxyPort}
+TPROXY_MARK={$tproxyMark}
+TPROXY_ON_IP=\$(ip -4 -o addr show dev "\$IFACE" 2>/dev/null | awk '{print \$4}' | cut -d/ -f1 | head -n1)
+[ -n "\$TPROXY_ON_IP" ] || TPROXY_ON_IP={$tproxyOnIp}
 
-iptables -t mangle -N "$CHAIN" 2>/dev/null || iptables -t mangle -F "$CHAIN"
-iptables -t mangle -A "$CHAIN" -d "$FAKEIP" -j MARK --set-mark "$MARK"
+iptables -t nat -D PREROUTING -i "\$IFACE" -j "\$NAT_CHAIN" 2>/dev/null || true
+iptables -t nat -F "\$NAT_CHAIN" 2>/dev/null || true
+iptables -t nat -X "\$NAT_CHAIN" 2>/dev/null || true
 
-if [ -f "$CIDR_FILE" ]; then
-  while IFS= read -r cidr || [ -n "$cidr" ]; do
-    cidr=$(echo "$cidr" | tr -d '\r' | sed 's/#.*//;s/^[[:space:]]*//;s/[[:space:]]*$//')
-    [ -z "$cidr" ] && continue
-    iptables -t mangle -A "$CHAIN" -d "$cidr" -j MARK --set-mark "$MARK"
-  done < "$CIDR_FILE"
-fi
+iptables -D FORWARD -i "\$IFACE" -d "\$FAKEIP" -p udp -j REJECT --reject-with icmp-port-unreachable 2>/dev/null || true
 
-iptables -t mangle -C PREROUTING -i "$IFACE" -j "$CHAIN" 2>/dev/null \
-  || iptables -t mangle -A PREROUTING -i "$IFACE" -j "$CHAIN"
+iptables -t mangle -D PREROUTING -i "\$IFACE" -j "\$MANGLE_CHAIN" 2>/dev/null || true
+iptables -t mangle -F "\$MANGLE_CHAIN" 2>/dev/null || true
+iptables -t mangle -X "\$MANGLE_CHAIN" 2>/dev/null || true
 
-# Ensure TUN routes exist even if reload-singbox from the image is outdated.
-[ -x /config/resolver-tun-routes.sh ] && /config/resolver-tun-routes.sh >/dev/null 2>&1 || true
+iptables -t mangle -D PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p udp -j TPROXY --on-port "\$UDP_PORT" --on-ip "\$TPROXY_ON_IP" --tproxy-mark "\$TPROXY_MARK/\$TPROXY_MARK" 2>/dev/null || true
+iptables -t mangle -D PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p udp -j TPROXY --on-port "\$UDP_PORT" --on-ip 0.0.0.0 --tproxy-mark "\$TPROXY_MARK/\$TPROXY_MARK" 2>/dev/null || true
+iptables -t mangle -D PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p udp -j TPROXY --on-port "\$UDP_PORT" --on-ip 127.0.0.1 --tproxy-mark "\$TPROXY_MARK/\$TPROXY_MARK" 2>/dev/null || true
+iptables -t mangle -D PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p tcp -j TPROXY --on-port "\$TPROXY_PORT" --on-ip "\$TPROXY_ON_IP" --tproxy-mark "\$TPROXY_MARK/\$TPROXY_MARK" 2>/dev/null || true
+iptables -t mangle -D PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p udp -j TPROXY --on-port "\$TPROXY_PORT" --on-ip "\$TPROXY_ON_IP" --tproxy-mark "\$TPROXY_MARK/\$TPROXY_MARK" 2>/dev/null || true
+iptables -t mangle -D PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p tcp -j TPROXY --on-port "\$TPROXY_PORT" --on-ip 0.0.0.0 --tproxy-mark "\$TPROXY_MARK/\$TPROXY_MARK" 2>/dev/null || true
+iptables -t mangle -D PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p udp -j TPROXY --on-port "\$TPROXY_PORT" --on-ip 0.0.0.0 --tproxy-mark "\$TPROXY_MARK/\$TPROXY_MARK" 2>/dev/null || true
+iptables -t mangle -D PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p tcp -m socket -j DIVERT 2>/dev/null || true
+iptables -t mangle -D PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p udp -m socket -j DIVERT 2>/dev/null || true
+iptables -t mangle -D PREROUTING -p udp -m socket -j DIVERT 2>/dev/null || true
+iptables -t mangle -D PREROUTING -p tcp -m socket -j DIVERT 2>/dev/null || true
+iptables -t mangle -D PREROUTING -p udp -m socket --transparent -j DIVERT 2>/dev/null || true
+iptables -t mangle -D PREROUTING -p tcp -m socket --transparent -j DIVERT 2>/dev/null || true
+
+iptables -t mangle -D PREROUTING -i "\$IFACE" -d "\$FAKEIP" -j MARK --set-mark 0x2 2>/dev/null || true
+iptables -t mangle -D PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p tcp -j TPROXY --on-port "\$TPROXY_PORT" --on-ip 127.0.0.1 --tproxy-mark 0x1/0x1 2>/dev/null || true
+iptables -t mangle -D PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p udp -j TPROXY --on-port "\$TPROXY_PORT" --on-ip 127.0.0.1 --tproxy-mark 0x1/0x1 2>/dev/null || true
+iptables -t nat -D PREROUTING -i "\$IFACE" -d "\$FAKEIP" -p tcp -j REDIRECT --to-ports "\$TPROXY_PORT" 2>/dev/null || true
+while iptables -t mangle -D FORWARD -o "\$IFACE" -p tcp -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null; do :; done
+while iptables -t mangle -D FORWARD -i "\$IFACE" -p tcp -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null; do :; done
 SH;
-        $this->files->writeExecutable($mark, $markBody);
+        $changed = $this->files->writeExecutable($unmark, $unmarkBody) || $changed;
 
-        $unmarkBody = <<<'SH'
-#!/bin/sh
-IFACE="${1:?iface}"
-CHAIN="RS_${IFACE}"
-
-iptables -t mangle -D PREROUTING -i "$IFACE" -j "$CHAIN" 2>/dev/null || true
-iptables -t mangle -F "$CHAIN" 2>/dev/null || true
-iptables -t mangle -X "$CHAIN" 2>/dev/null || true
-
-# Legacy FakeIP-only rules (pre-chain)
-MARK=0x2
-FAKEIP=198.18.0.0/15
-iptables -t mangle -D PREROUTING -i "$IFACE" -d "$FAKEIP" -j MARK --set-mark "$MARK" 2>/dev/null || true
-SH;
-        $this->files->writeExecutable($unmark, $unmarkBody);
-
-        // Prefer volume copy so list-CIDR routes work without rebuilding the AWG image.
+        // Prefer volume copy so list-CIDR TPROXY works without rebuilding the AWG image.
         $reloadBody = <<<'SH'
 #!/usr/bin/env bash
 # Reload or start/stop sing-box based on /config/sing-box.json
@@ -113,36 +204,48 @@ set -euo pipefail
 CONFIG=/config/sing-box.json
 PIDFILE=/run/sing-box.pid
 BIN=/usr/local/bin/sing-box
+CACHE_FILE=/config/sing-box-cache.db
+LOG_FILE=/config/sing-box.log
+# Soft cap: bbolt does not shrink; drop oversized cache so disk cannot fill unbounded.
+CACHE_MAX_BYTES=$((32 * 1024 * 1024))
+# Cap stdout/stderr log; keep one rotated backup (~10MB + 10MB).
+LOG_MAX_BYTES=$((10 * 1024 * 1024))
 
-ensure_tun_routing() {
-  if [[ -x /config/resolver-tun-routes.sh ]]; then
-    /config/resolver-tun-routes.sh || true
+prune_cache_if_huge() {
+  if [[ ! -f "${CACHE_FILE}" ]]; then
     return 0
   fi
-  TUN_IFACE=sbox0
-  TUN_MARK=0x2
-  TUN_TABLE=101
-  FAKEIP=198.18.0.0/15
-  while ip rule show | grep -q "fwmark ${TUN_MARK} lookup ${TUN_TABLE}"; do
+  local size
+  size="$(wc -c < "${CACHE_FILE}" | tr -d '[:space:]')"
+  # Prefer POSIX -gt: `(( size > … ))` breaks when script is invoked as `sh reload-singbox.sh` (ash/dash).
+  if [[ "${size}" =~ ^[0-9]+$ ]] && [ "${size}" -gt "${CACHE_MAX_BYTES}" ]; then
+    echo "[sing-box] pruning oversized cache ${CACHE_FILE} (${size} bytes > ${CACHE_MAX_BYTES})"
+    rm -f "${CACHE_FILE}"
+  fi
+}
+
+rotate_log_if_huge() {
+  local file="${1:-}"
+  [[ -n "${file}" && -f "${file}" ]] || return 0
+  local size
+  size="$(wc -c < "${file}" | tr -d '[:space:]')"
+  if [[ "${size}" =~ ^[0-9]+$ ]] && [ "${size}" -gt "${LOG_MAX_BYTES}" ]; then
+    echo "[sing-box] rotating oversized log ${file} (${size} bytes > ${LOG_MAX_BYTES})"
+    rm -f "${file}.1"
+    mv -f "${file}" "${file}.1"
+  fi
+}
+
+# Remove leftover TUN iface/routes from older resolver builds.
+cleanup_legacy_tun() {
+  local TUN_IFACE=sbox0
+  local TUN_MARK=0x2
+  local TUN_TABLE=101
+  while ip rule show 2>/dev/null | grep -q "fwmark ${TUN_MARK} lookup ${TUN_TABLE}"; do
     ip rule del fwmark "${TUN_MARK}" table "${TUN_TABLE}" 2>/dev/null || break
   done
-  ip rule add fwmark "${TUN_MARK}" table "${TUN_TABLE}" 2>/dev/null || true
-  for _ in 1 2 3 4 5 6 7 8 9 10; do
-    if ip link show "${TUN_IFACE}" >/dev/null 2>&1; then
-      break
-    fi
-    sleep 0.2
-  done
-  if ip link show "${TUN_IFACE}" >/dev/null 2>&1; then
-    ip link set "${TUN_IFACE}" up 2>/dev/null || true
-    ip route replace "${FAKEIP}" dev "${TUN_IFACE}" table "${TUN_TABLE}" 2>/dev/null \
-      || ip route add "${FAKEIP}" dev "${TUN_IFACE}" table "${TUN_TABLE}" 2>/dev/null || true
-    ip route replace "${FAKEIP}" dev "${TUN_IFACE}" 2>/dev/null \
-      || ip route add "${FAKEIP}" dev "${TUN_IFACE}" 2>/dev/null || true
-    echo "[sing-box] tun routing: mark ${TUN_MARK} → ${TUN_IFACE} (${FAKEIP})"
-  else
-    echo "[sing-box] warn: ${TUN_IFACE} not present yet" >&2
-  fi
+  ip route flush table "${TUN_TABLE}" 2>/dev/null || true
+  ip link delete "${TUN_IFACE}" 2>/dev/null || true
 }
 
 stop_singbox() {
@@ -156,12 +259,15 @@ stop_singbox() {
     fi
     rm -f "${PIDFILE}"
   fi
-  pkill -x sing-box 2>/dev/null || true
+  # Do not use pkill -x sing-box: gcompat renames process comm.
+  pkill -f "${BIN} run -c ${CONFIG}" 2>/dev/null || true
+  sleep 0.2
 }
 
 start_singbox() {
   if [[ ! -f "${CONFIG}" ]]; then
     stop_singbox
+    cleanup_legacy_tun
     return 0
   fi
 
@@ -170,23 +276,39 @@ start_singbox() {
     return 1
   fi
 
+  prune_cache_if_huge
   stop_singbox
-  "${BIN}" run -c "${CONFIG}" &
+  cleanup_legacy_tun
+  rotate_log_if_huge "${LOG_FILE}"
+
+  # setsid: survive parent exit (docker exec from panel kills the session otherwise).
+  # Redirect stdio so a closed exec tty cannot SIGPIPE the daemon.
+  : >>"${LOG_FILE}"
+  setsid "${BIN}" run -c "${CONFIG}" >>"${LOG_FILE}" 2>&1 </dev/null &
   echo $! > "${PIDFILE}"
-  echo "[sing-box] started pid=$(cat "${PIDFILE}")"
-  # Wait briefly for TUN before installing routes (incl. list CIDRs).
-  for _ in 1 2 3 4 5 6 7 8 9 10; do
-    if ip link show sbox0 >/dev/null 2>&1; then
-      break
+
+  local pid
+  pid="$(cat "${PIDFILE}")"
+  local i
+  for i in 1 2 3 4 5 6 7 8 9 10; do
+    if kill -0 "${pid}" 2>/dev/null; then
+      echo "[sing-box] started pid=${pid}"
+      return 0
     fi
     sleep 0.2
   done
-  ensure_tun_routing
+
+  echo "[sing-box] failed to stay running (pid=${pid}); last log:" >&2
+  tail -n 40 "${LOG_FILE}" >&2 || true
+  rm -f "${PIDFILE}"
+  return 1
 }
 
 start_singbox
 SH;
-        $this->files->writeExecutable($reload, $reloadBody);
+        $changed = $this->files->writeExecutable($reload, $reloadBody) || $changed;
+
+        return $changed;
     }
 
     public function ensurePingProbeScript(): void
@@ -279,9 +401,25 @@ start_ping() {
     fi
   fi
 
-  "${BIN}" run -c "${CONFIG}" &
+  # setsid: survive parent exit (docker exec from panel kills the session otherwise).
+  setsid "${BIN}" run -c "${CONFIG}" >>/config/sing-box-ping.log 2>&1 </dev/null &
   echo $! > "${PIDFILE}"
-  echo "[sing-box-ping] started pid=$(cat "${PIDFILE}")"
+
+  local pid
+  pid="$(cat "${PIDFILE}")"
+  local i
+  for i in 1 2 3 4 5 6 7 8 9 10; do
+    if kill -0 "${pid}" 2>/dev/null; then
+      echo "[sing-box-ping] started pid=${pid}"
+      return 0
+    fi
+    sleep 0.2
+  done
+
+  echo "[sing-box-ping] failed to stay running (pid=${pid}); last log:" >&2
+  tail -n 40 /config/sing-box-ping.log >&2 || true
+  rm -f "${PIDFILE}"
+  return 1
 }
 
 reload_ping() {
@@ -326,35 +464,42 @@ SH;
     }
 
     /**
-     * Re-apply MARK chains on live AWG ifaces after proxy_cidrs_all.lst changes.
+     * Re-apply REDIRECT/UDP chains on live AWG ifaces after proxy_cidrs changes.
      * Single docker exec for all ifaces (avoids O(N) round-trips).
+     * UDP FakeIP TPROXY is always installed; Block QUIC is sing-box-only.
      *
-     * @param  list<string>  $ifaces
+     * @param  array<string, bool>  $ifaceRejectQuic  iface => resolver_reject_quic (flag ignored for iptables)
      */
-    public function refreshResolverMarksOnIfaces(array $ifaces): void
+    public function refreshResolverMarksOnIfaces(array $ifaceRejectQuic): void
     {
-        $clean = [];
-        foreach ($ifaces as $iface) {
+        $parts = [];
+        foreach ($ifaceRejectQuic as $iface => $_rejectQuic) {
             $iface = trim((string) $iface);
-            if ($iface !== '') {
-                $clean[] = $iface;
+            if ($iface === '') {
+                continue;
             }
+            $parts[] = 'sh /config/resolver-unmark.sh '.escapeshellarg($iface).' 2>/dev/null || true';
+            // Arg2 kept for PostUp compatibility; mark script ignores it for iptables.
+            $parts[] = 'sh /config/resolver-mark.sh '.escapeshellarg($iface).' 0 2>/dev/null || true';
         }
-        if ($clean === []) {
+        if ($parts === []) {
             return;
         }
 
         $container = $this->awg->containerName();
-        $quoted = implode(' ', array_map('escapeshellarg', $clean));
         try {
             $this->docker->exec(
                 $container,
+<<<<<<< HEAD
                 ['sh', '-c',
                     'for iface in '.$quoted.'; do '
                     .'sh /config/resolver-unmark.sh "$iface" 2>/dev/null || true; '
                     .'sh /config/resolver-mark.sh "$iface" 2>/dev/null || true; '
                     .'done',
                 ],
+=======
+                ['sh', '-c', implode('; ', $parts)],
+>>>>>>> a34ec4d81547d4963b761827020a578f3957b1c6
                 timeout: 60,
             );
         } catch (\Throwable $e) {

@@ -19,10 +19,34 @@
 curl -fsSL https://raw.githubusercontent.com/alt-plus-255/awg-gui/refs/heads/main/dist/install.sh | sudo bash
 ```
 
-Без интерактива (порт панели **8877**, при существующей установке — режим обновления):
+В интерактивном режиме сначала спрашивается **язык** (по умолчанию русский; можно выбрать English). Статусы установки выводятся на выбранном языке.
+
+Без интерактива (порт панели **8877**, при существующей установке — режим обновления; kernel-модуль ставится по умолчанию; язык **ru**):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/alt-plus-255/awg-gui/refs/heads/main/dist/install.sh | sudo bash -s -- --yes
+```
+
+Английский язык сообщений без интерактива:
+
+```bash
+curl -fsSL .../dist/install.sh | sudo bash -s -- --yes --lang=en
+# или: AWG_GUI_LANG=en
+```
+
+Пропустить kernel-модуль AmneziaWG (останется userspace `amneziawg-go`):
+
+```bash
+curl -fsSL .../dist/install.sh | sudo bash -s -- --yes --no-awg-kernel
+# или: AWG_GUI_SKIP_KERNEL=1
+```
+
+Если модуль/пакет уже установлен на хосте, инсталлер **пропускает** повторную установку и выставляет `AWG_KERNEL_WANTED=1`.
+
+Диагностика при ошибке (логи контейнеров) — только с `--debug` / `AWG_GUI_DEBUG=1`:
+
+```bash
+curl -fsSL .../dist/install.sh | sudo bash -s -- --yes --debug
 ```
 
 Конкретная версия:
@@ -52,6 +76,7 @@ cd awg-gui
 sudo ./awg-gui-install.sh
 # или без интерактива (порт панели 8877, upgrade при существующей установке):
 sudo ./awg-gui-install.sh --yes
+# язык сообщений: --lang=en или AWG_GUI_LANG=en (по умолчанию ru)
 ```
 
 Dev-скрипт установки:
@@ -64,11 +89,16 @@ Dev-скрипт установки:
   - внутренняя подсеть / `INTERNAL_SUBNET` (по умолчанию **10.66.66.0/24**);
   - DNS для клиентов / `PEER_DNS` (по умолчанию **1.1.1.1**);
   - AllowedIPs / `ALLOWED_IPS` (по умолчанию **0.0.0.0/0, ::/0**);
+  - **kernel-модуль AmneziaWG** (по умолчанию **Y**) — нужен для YouTube/Instagram ABR при полном туннеле + резолвере (всё равно нужен рабочий QUIC или устойчивый TCP-path; см. [resolver.md](resolver.md)); при ошибке установка продолжается на userspace. Уже установленный модуль пропускается. См. [amneziawg-linux-kernel-module](https://github.com/amnezia-vpn/amneziawg-linux-kernel-module). Только официальные пакеты Amnezia; панель не принимает произвольные команды с хоста.
 - копирует `src/.env.example` → `src/.env` и заполняет значения, включая случайные **`DB_PASSWORD`**, **`APP_KEY`** и пароль admin.
+
+Позже модуль можно установить или удалить в панели: **Настройки → Панель → Kernel-модуль AmneziaWG** (статус: модуль загружен, пакет установлен, datapath AWG kernel/userspace).
 
 ### Повторная установка / обновление
 
-Если обнаружены контейнеры `awggui-*` или `src/.env` с `DB_PASSWORD`, скрипт предложит:
+Если остался только `src/.env` без контейнеров (например после uninstall) — выполняется **чистая установка** с новыми случайными паролями.
+
+Если обнаружены контейнеры `awggui-*`, скрипт предложит:
 
 1. **Прервать** — рекомендуется перед чистой установкой выполнить [uninstall](uninstall.md);
 2. **Обновить** — сохранить `.env`, volumes, данные БД и AWG; пересобрать образы и выполнить миграции.
@@ -83,8 +113,8 @@ Dev-скрипт установки:
 
 ```bash
 mkdir -p src/awg/vendor
-curl -fsSL -o src/awg/vendor/sing-box-1.12.12-linux-amd64.tar.gz \
-  https://github.com/SagerNet/sing-box/releases/download/v1.12.12/sing-box-1.12.12-linux-amd64.tar.gz
+curl -fsSL -o src/awg/vendor/sing-box-1.13.14-linux-amd64.tar.gz \
+  https://github.com/SagerNet/sing-box/releases/download/v1.13.14/sing-box-1.13.14-linux-amd64.tar.gz
 ```
 
 Для ARM замените `amd64` на `arm64` или `armv7`.

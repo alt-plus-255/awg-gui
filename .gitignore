@@ -1,5 +1,8 @@
 src/.env
 
+# Dependencies (anywhere in the repo)
+node_modules/
+
 # ── dist/ ─────────────────────────────────────────────────────────────
 # В git коммитятся только маленькие prod-скрипты (install.sh, uninstall.sh).
 # Пользователь: curl -fsSL .../dist/install.sh | sudo bash
@@ -14,3 +17,30 @@ dist/images/
 
 # sing-box tarball только для локальной сборки образа (build.sh)
 src/awg/vendor/
+
+# Live dumps with secrets — never commit
+sing-box.live.json
+*.live.json
+
+# ── mobile installer (Quasar + Capacitor) ─────────────────────────────
+mobile/dist/
+mobile/.env
+mobile/.env.*
+mobile/android/.gradle/
+mobile/android/app/build/
+mobile/android/build/
+mobile/android/local.properties
+mobile/android/captures/
+mobile/android/*.apk
+mobile/android/*.aab
+mobile/android/.idea/
+mobile/android/app/release/
+
+# Built artifacts (keep README / .gitkeep)
+build/web/
+build/android/*.apk
+build/android/*.aab
+build/android/*.ipa
+!build/android/README.md
+!build/.gitkeep
+

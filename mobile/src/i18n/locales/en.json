@@ -1,0 +1,57 @@
+{
+  "nav": {
+    "faq": "FAQ",
+    "install": "Install",
+    "panel": "Panel"
+  },
+  "faq": {
+    "title": "Deploying awg-gui",
+    "intro": "This app SSHes into your VDS and runs the official production installer. Root/sudo credentials are only needed during install.",
+    "reqTitle": "Server requirements",
+    "reqBody": "Linux (Ubuntu, Debian, Fedora, CentOS/RHEL/Rocky/Alma), root or sudo, KVM or /dev/net/tun. Docker and curl are installed automatically if missing.",
+    "portsTitle": "Ports",
+    "portsBody": "SSH — usually 22. Panel — 8877 (HTTP). AmneziaWG UDP — 51820 (and following ports for extra configs). Open them in your firewall/security group.",
+    "cmdTitle": "What runs",
+    "cmdBody": "curl -fsSL …/dist/install.sh | sudo bash -s -- --yes\n\nNon-interactive: panel port 8877, AmneziaWG kernel module on by default.",
+    "kernelTitle": "Kernel module",
+    "kernelBody": "Recommended for stable YouTube/Instagram ABR over full-tunnel + resolver. You can skip it at install time and stay on userspace amneziawg-go.",
+    "securityTitle": "Security",
+    "securityBody": "The app gets full server access over SSH. Passwords stay on the device only. There is no relay — traffic goes directly to your VDS.",
+    "afterTitle": "After install",
+    "afterBody": "The app waits for the panel, signs in as admin, and opens it in an embedded WebView.",
+    "cta": "Go to install"
+  },
+  "install": {
+    "title": "Install on VDS",
+    "host": "IP or hostname",
+    "port": "SSH port",
+    "username": "Username",
+    "password": "Password",
+    "skipKernel": "Skip AmneziaWG kernel module",
+    "mockHint": "Browser uses mock SSH (no real server). Android uses real SSH.",
+    "submit": "Install awg-gui",
+    "validationHost": "Enter IP or hostname",
+    "validationUser": "Enter username",
+    "validationPassword": "Enter password"
+  },
+  "terminal": {
+    "title": "Installing",
+    "statusConnecting": "Connecting over SSH…",
+    "statusRunning": "Running installer…",
+    "statusWaitingPanel": "Waiting for panel…",
+    "statusReadingCreds": "Reading credentials…",
+    "statusDone": "Done",
+    "statusFailed": "Failed",
+    "openPanel": "Open panel",
+    "retry": "Back to form",
+    "cancelled": "Cancelled"
+  },
+  "panel": {
+    "title": "Panel",
+    "opening": "Opening panel and signing in…",
+    "openNative": "Open panel",
+    "missing": "No saved connection. Install awg-gui first.",
+    "disconnect": "Disconnect server",
+    "webHint": "Browser auto-login WebView is limited by CORS. On Android a native WebView opens."
+  }
+}

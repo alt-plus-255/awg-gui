@@ -3,9 +3,14 @@
 namespace App\Services\Resolver;
 
 use App\Models\AwgConfig;
+use App\Models\AwgConfigPeer;
 use App\Models\ResolverConnection;
 use App\Services\AmneziaWg\AmneziaWgService;
 use App\Services\Docker\DockerRuntime;
+<<<<<<< HEAD
+=======
+use App\Services\Telegram\TelegramSettings;
+>>>>>>> a34ec4d81547d4963b761827020a578f3957b1c6
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 use RuntimeException;
@@ -14,7 +19,40 @@ class ResolverService
 {
     public const FAKEIP_CIDR = '198.18.0.0/15';
 
+    /** Client-facing FakeIP DNS TTL (seconds). Match podkop/forkop default (60). */
+    public const FAKEIP_REWRITE_TTL = 60;
+
     public const TPROXY_PORT = 1602;
+
+    public const TPROXY_INBOUND_TAG = 'tproxy-in';
+
+    /**
+     * UDP-only TPROXY for FakeIP (QUIC/HTTP3). TCP uses NAT REDIRECT :1602 —
+     * Docker blackholes TCP TPROXY (iptables hits, Clash empty).
+     */
+    public const UDP_TPROXY_PORT = 1603;
+
+    public const UDP_TPROXY_INBOUND_TAG = 'tproxy-udp-in';
+
+    /**
+     * Bind all interfaces. Do NOT use 127.0.0.1: Docker often leaves
+     * net.ipv4.conf.lo.route_localnet=0 (and blocks sysctl), so TPROXY
+     * --on-ip 127.0.0.1 blackholes FakeIP while iptables counters still rise.
+     */
+    public const TPROXY_LISTEN = '0.0.0.0';
+
+    /** 0.0.0.0 → primary address of the ingress iface (awg0), no route_localnet needed. */
+    public const TPROXY_ON_IP = '0.0.0.0';
+
+    /**
+     * Physical egress inside the AWG container (docker bridge is usually eth0).
+     * Prefer EgressInterfaceResolver::resolve() — this constant is only a fallback.
+     */
+    public const EGRESS_INTERFACE = 'eth0';
+
+    public const TPROXY_MARK = '0x1';
+
+    public const TPROXY_TABLE = 100;
 
     /** Plain DNS listen for WireGuard clients (gateway:53 → local delivery). */
     public const DNS_LISTEN_PORT = 53;
@@ -22,13 +60,28 @@ class ResolverService
     /** @deprecated use DNS_LISTEN_PORT; kept for older PostUp cleanup */
     public const DNS_REDIRECT_PORT = 5353;
 
+    /** @deprecated TUN path removed; kept for legacy iptables/route cleanup */
     public const TUN_IFACE = 'sbox0';
 
+    /** @deprecated TUN path removed; kept for legacy ip rule cleanup */
     public const TUN_TABLE = 101;
 
     public const CLASH_API_ADDR = '127.0.0.1:9090';
 
     public const CLASH_PROBE_API_ADDR = '127.0.0.1:9091';
+
+    /** Ephemeral speed-test probe Clash API (must not collide with prod/ping). */
+    public const CLASH_SPEED_API_ADDR = '127.0.0.1:9092';
+
+    public const SPEED_MIXED_LISTEN = '127.0.0.1';
+
+    public const SPEED_MIXED_PORT = 19091;
+
+    public const SPEED_TEST_BYTES = 25_000_000;
+
+    public const SPEED_DOWN_URL = 'https://speed.cloudflare.com/__down?bytes=25000000';
+
+    public const SPEED_UP_URL = 'https://speed.cloudflare.com/__up';
 
     public const DELAY_TEST_URL = 'https://www.gstatic.com/generate_204';
 
@@ -79,6 +132,8 @@ class ResolverService
         private ClashApiClient $clash,
         private ResolverDiagnostics $diagnostics,
         private ResolverListsService $lists,
+        private AmneziaWgConfParser $awgConfParser,
+        private AmneziaWgClientConfBuilder $awgClientConf,
     ) {}
 
     public static function communitySourceUrl(string $tag): string
@@ -355,12 +410,64 @@ class ResolverService
         return $this->files->writeExecutable($path, $body);
     }
 
+    /**
+     * Sync AmneziaWG client exit tunnels (awgc{id}.conf) for enabled AWG connections.
+     * Entrypoint already watches awg*.conf and brings interfaces up.
+     */
+    public function syncAwgClientConfs(): void
+    {
+        $dir = $this->awg->configDir();
+        if (! is_dir($dir)) {
+            mkdir($dir, 0755, true);
+        }
+
+        $active = ResolverConnection::query()
+            ->where('enabled', true)
+            ->where('config_type', 'awg')
+            ->whereNotNull('awg_conf')
+            ->orderBy('id')
+            ->get();
+
+        $keep = [];
+        foreach ($active as $conn) {
+            $iface = $this->awgClientConf->ifaceName((int) $conn->id);
+            $keep[] = $iface;
+            try {
+                $parsed = $this->awgConfParser->parse((string) $conn->awg_conf);
+                $body = $this->awgClientConf->build($parsed, (string) ($conn->protocol_version ?: '2.0'));
+                $path = $dir.'/'.$iface.'.conf';
+                if ($this->writeFileIfChanged($path, $body)) {
+                    @touch($path);
+                }
+            } catch (\Throwable $e) {
+                Log::warning('awg client conf sync failed for conn_'.$conn->id.': '.$e->getMessage());
+            }
+        }
+
+        foreach (glob($dir.'/awgc*.conf') ?: [] as $path) {
+            $iface = basename($path, '.conf');
+            if (! preg_match('/^awgc\d+$/', $iface)) {
+                continue;
+            }
+            if (! in_array($iface, $keep, true)) {
+                @unlink($path);
+            }
+        }
+    }
+
     public function isSingBoxRunning(): bool
     {
         try {
+<<<<<<< HEAD
             $r = $this->docker->exec(
                 $this->awg->containerName(),
                 ['sh', '-c', 'pgrep -x sing-box >/dev/null && echo yes || echo no'],
+=======
+            // gcompat renames process comm (ld-musl-*/ld-linux-*); match PID file or cmdline.
+            $r = $this->docker->exec(
+                $this->awg->containerName(),
+                ['sh', '-c', 'pid=$(cat /run/sing-box.pid 2>/dev/null); if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then echo yes; elif pgrep -f "/usr/local/bin/sing-box run -c /config/sing-box.json" >/dev/null 2>&1; then echo yes; else echo no; fi'],
+>>>>>>> a34ec4d81547d4963b761827020a578f3957b1c6
                 timeout: 10,
             );
 
@@ -426,11 +533,11 @@ class ResolverService
     }
 
     /**
-     * FakeIP + list CIDR MARK helpers and TUN routes on the AWG config volume (no image rebuild).
+     * FakeIP + list CIDR TPROXY helpers on the AWG config volume (no image rebuild).
      */
-    public function ensureResolverMarkScripts(): void
+    public function ensureResolverMarkScripts(): bool
     {
-        $this->markScripts->ensureResolverMarkScripts();
+        return $this->markScripts->ensureResolverMarkScripts();
     }
 
     /**
@@ -441,7 +548,7 @@ class ResolverService
     {
         $tags = [];
         foreach ($configs as $config) {
-            foreach ($config->community_lists ?? [] as $tag) {
+            foreach ($this->mergedRulesets->asList($config->community_lists) as $tag) {
                 if (is_string($tag) && $tag !== '') {
                     $tags[$tag] = true;
                 }
@@ -617,6 +724,7 @@ class ResolverService
         }
 
         if ($configs === [] && ! $hasConnections) {
+            $this->syncAwgClientConfs();
             @unlink($this->singBoxConfigPath());
             @file_put_contents($this->resolverIfacesPath(), "");
             @file_put_contents($this->proxyCidrsAllPath(), '');
@@ -632,6 +740,8 @@ class ResolverService
         }
 
         try {
+            $this->syncAwgClientConfs();
+
             if ($refreshSubscriptions) {
                 $this->refreshSubscriptionConnections();
             }
@@ -648,6 +758,7 @@ class ResolverService
             $this->mergedRulesets->resetChangeFlags();
 
             $sb = $this->buildSingBoxConfig($configs, $forceSyncLists);
+            $sb = $this->stripLegacyInboundFields($sb);
             $json = json_encode($sb, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
             if ($json === false) {
                 throw new RuntimeException(__('resolver.singbox_serialize_failed'));
@@ -659,11 +770,18 @@ class ResolverService
 
             $ifaces = array_map(fn (AwgConfig $c) => $c->iface, $configs);
             $ifacesContents = implode("\n", $ifaces)."\n";
-            $ifacesChanged = $this->writeFileIfChanged($this->resolverIfacesPath(), $ifacesContents);
+            $this->writeFileIfChanged($this->resolverIfacesPath(), $ifacesContents);
+
+            $ifaceRejectQuic = [];
+            foreach ($configs as $config) {
+                $ifaceRejectQuic[(string) $config->iface] = (bool) $config->resolver_reject_quic;
+            }
 
             $this->ensureResolverMarkScripts();
-            if ($this->mergedRulesets->applyProxyCidrsChanged || $ifacesChanged) {
-                $this->refreshResolverMarksOnIfaces($ifaces);
+            // Refresh live iptables whenever resolver configs exist so REDIRECT/UDP
+            // TPROXY stay in sync without waiting for awg-quick re-up.
+            if ($configs !== []) {
+                $this->refreshResolverMarksOnIfaces($ifaceRejectQuic);
             }
 
             $now = now();
@@ -696,7 +814,9 @@ class ResolverService
                 }
             }
         } catch (\Throwable $e) {
-            Log::error('resolver apply failed: '.$e->getMessage());
+            $where = $e->getFile().':'.$e->getLine();
+            $message = $e->getMessage().' @ '.$where;
+            Log::error('resolver apply failed: '.$message);
             foreach ($configs as $config) {
                 $config->resolver_last_error = $e->getMessage();
                 $config->save();
@@ -705,6 +825,7 @@ class ResolverService
                 'enabled' => $configs !== [],
                 'healthy' => false,
                 'message' => $e->getMessage(),
+                'error_at' => $where,
                 'updated_at' => now()->toIso8601String(),
             ], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
             throw $e;
@@ -725,8 +846,36 @@ class ResolverService
         }
 
         $ruleSets = [];
-        $dnsRules = [];
+        $dnsRules = [
+            [
+                'query_type' => ['HTTPS'],
+                'action' => 'reject',
+            ],
+            [
+                'domain_suffix' => ['use-application-dns.net'],
+                'action' => 'reject',
+            ],
+        ];
+        $allProxyCidrs = [];
+        $quicRejectRules = [];
+
+        // TCP redirect + UDP tproxy. Route-level sniff (not inbound sniff_* —
+        // those legacy inbound fields were removed in sing-box 1.13).
+        // FakeIP reverse uses experimental.cache_file.store_fakeip.
+        $sniffInbounds = [self::TPROXY_INBOUND_TAG, self::UDP_TPROXY_INBOUND_TAG, 'dns-in'];
+
         $routeRules = [
+            [
+                'action' => 'sniff',
+                // Short timeout: fail fast on broken QUIC so ABR falls back to TCP sooner.
+                // Default in sing-box is already 300ms; keep explicit for clarity.
+                'timeout' => '300ms',
+                'inbound' => $sniffInbounds,
+            ],
+            [
+                'port' => 53,
+                'action' => 'hijack-dns',
+            ],
             [
                 'protocol' => 'dns',
                 'action' => 'hijack-dns',
@@ -749,23 +898,21 @@ class ResolverService
         $outbounds = $built['outbounds'];
         $outboundTagsAdded = $built['tags_added'];
 
-        $allProxyCidrs = [];
-        $quicRejectRules = [];
-
         foreach ($configs as $config) {
             $config->loadMissing('resolverConnection');
             $routingTag = $this->routingTagForConfig($config);
             $source = [$this->subnetCidr($config)];
-            $lists = array_values($config->community_lists ?? []);
-            $domains = array_values($config->user_domains ?? []);
-            $subnets = array_values($config->user_subnets ?? []);
+            $lists = $this->mergedRulesets->asList($config->community_lists);
+            $domains = $this->mergedRulesets->asList($config->user_domains);
+            $subnets = $this->mergedRulesets->asList($config->user_subnets);
 
             if ($config->resolver_reject_quic) {
+                // Per-config only: never global quic reject (multi AWG isolation).
+                // UDP FakeIP still arrives on tproxy-udp-in; reject sniffed QUIC.
                 $quicRejectRules[] = [
+                    'inbound' => [self::UDP_TPROXY_INBOUND_TAG],
                     'source_ip_cidr' => $source,
-                    'ip_cidr' => [self::FAKEIP_CIDR],
-                    'network' => 'udp',
-                    'port' => 443,
+                    'protocol' => 'quic',
                     'action' => 'reject',
                 ];
             }
@@ -782,6 +929,7 @@ class ResolverService
                 $routeRules[] = [
                     'source_ip_cidr' => $source,
                     'ip_cidr' => [self::FAKEIP_CIDR],
+                    'action' => 'route',
                     'outbound' => $routingTag,
                 ];
 
@@ -801,13 +949,24 @@ class ResolverService
                 $dnsRules[] = [
                     'source_ip_cidr' => $source,
                     'rule_set' => [$mergedTag],
+                    'action' => 'route',
                     'server' => 'fakeip',
+                    'rewrite_ttl' => self::FAKEIP_REWRITE_TTL,
                 ];
-                // Domain rules without source_ip: FakeIP/sniff rewrite can break
-                // source+dest AND matching on TUN; inbound+rule_set is reliable.
+                // FakeIP catch-all for this subnet BEFORE domain sniff rules so traffic
+                // still proxies if sniff+source_ip AND matching fails on TPROXY.
                 $routeRules[] = [
-                    'inbound' => ['tun-in'],
+                    'source_ip_cidr' => $source,
+                    'ip_cidr' => [self::FAKEIP_CIDR],
+                    'action' => 'route',
+                    'outbound' => $routingTag,
+                ];
+                // Domain sniff rules also carry source_ip for multi-config isolation.
+                $routeRules[] = [
+                    'inbound' => [self::TPROXY_INBOUND_TAG, self::UDP_TPROXY_INBOUND_TAG],
+                    'source_ip_cidr' => $source,
                     'rule_set' => [$mergedTag],
+                    'action' => 'route',
                     'outbound' => $routingTag,
                 ];
             }
@@ -820,9 +979,10 @@ class ResolverService
                     'path' => '/config/rulesets/merged_cfg_'.$config->id.'_ip.json',
                 ];
                 $routeRules[] = [
-                    'inbound' => ['tun-in'],
+                    'inbound' => [self::TPROXY_INBOUND_TAG, self::UDP_TPROXY_INBOUND_TAG],
                     'source_ip_cidr' => $source,
                     'rule_set' => [$merged['ip_tag']],
+                    'action' => 'route',
                     'outbound' => $routingTag,
                 ];
                 foreach ($merged['ip_cidrs'] as $cidr) {
@@ -830,21 +990,25 @@ class ResolverService
                 }
             }
 
-            // FakeIP for this VPN subnet → this config's outbound (never shared catch-all).
-            $routeRules[] = [
-                'source_ip_cidr' => $source,
-                'ip_cidr' => [self::FAKEIP_CIDR],
-                'outbound' => $routingTag,
-            ];
+            if ($lists === [] && $domains === []) {
+                // IP-only lists: still pin FakeIP (if any) for this subnet.
+                $routeRules[] = [
+                    'source_ip_cidr' => $source,
+                    'ip_cidr' => [self::FAKEIP_CIDR],
+                    'action' => 'route',
+                    'outbound' => $routingTag,
+                ];
+            }
         }
 
         $this->writeProxyCidrsAll($allProxyCidrs);
 
-        if ($quicRejectRules !== []) {
-            array_splice($routeRules, 1, 0, $quicRejectRules);
+        foreach ($quicRejectRules as $quicRule) {
+            $this->insertRouteRuleAfterDnsHijack($routeRules, $quicRule);
         }
 
         $dnsRules[] = [
+            'action' => 'route',
             'server' => 'remote',
         ];
 
@@ -878,6 +1042,7 @@ class ResolverService
             // Insert before the final catch-all rule
             array_splice($dnsRules, -1, 0, [[
                 'source_ip_cidr' => [$this->subnetCidr($config)],
+                'action' => 'route',
                 'server' => $tag,
             ]]);
         }
@@ -894,56 +1059,69 @@ class ResolverService
             'inet4_range' => self::FAKEIP_CIDR,
         ];
 
-        return [
+        $built = [
             'log' => [
-                'level' => 'info',
+                // warn: info floods Docker json logs under client DNS/FakeIP load
+                'level' => 'warn',
                 'timestamp' => true,
             ],
             'dns' => [
                 'servers' => $dnsServers,
                 'rules' => $dnsRules,
                 'final' => 'remote',
+                // Keep independent_cache like podkop/forkop on sing-box 1.12–1.13.
                 'independent_cache' => true,
+                'cache_capacity' => 4096,
                 'strategy' => 'ipv4_only',
             ],
-            'inbounds' => [
+            'inbounds' => $this->withTelegramMixedInbound(array_values(array_filter([
                 [
                     'type' => 'direct',
                     'tag' => 'dns-in',
                     'listen' => '0.0.0.0',
                     'listen_port' => self::DNS_LISTEN_PORT,
-                    'sniff' => true,
                 ],
                 [
-                    'type' => 'tun',
-                    'tag' => 'tun-in',
-                    'interface_name' => self::TUN_IFACE,
-                    // Keep off Docker bridge ranges (often 172.16–172.19) to avoid route clashes.
-                    'address' => ['10.255.255.1/30'],
-                    // Stay under AmneziaWG MTU (1420) to avoid blackhole fragments.
-                    'mtu' => 1280,
-                    'auto_route' => false,
-                    'strict_route' => false,
-                    'stack' => 'system',
-                    'sniff' => true,
-                    // Must stay false: override replaces 198.18.x with the domain and
-                    // breaks the FakeIP ip_cidr → proxy route (traffic falls to direct).
-                    'sniff_override_destination' => false,
+                    // TCP FakeIP/list via NAT REDIRECT (Docker-safe; TCP TPROXY blackholes).
+                    'type' => 'redirect',
+                    'tag' => self::TPROXY_INBOUND_TAG,
+                    'listen' => self::TPROXY_LISTEN,
+                    'listen_port' => self::TPROXY_PORT,
+                    'tcp_fast_open' => true,
                 ],
-            ],
+                [
+                    // UDP FakeIP (QUIC/HTTP3) via TPROXY :1603.
+                    'type' => 'tproxy',
+                    'tag' => self::UDP_TPROXY_INBOUND_TAG,
+                    'listen' => self::TPROXY_LISTEN,
+                    'listen_port' => self::UDP_TPROXY_PORT,
+                    'network' => 'udp',
+                    'udp_fragment' => true,
+                ],
+            ])), $outbounds, $routeRules, $outboundTagsAdded),
             'outbounds' => $outbounds,
+            // Routing ownership (anti-TUN-auto_route):
+            // 1) Client full-tunnel is owned by AWG (AllowedIPs 0.0.0.0/0) — not by sing-box.
+            // 2) FakeIP/list TCP → NAT REDIRECT :1602; FakeIP UDP → TPROXY :1603.
+            //    Block QUIC = route protocol=quic reject. Everything else → MASQUERADE.
+            // 3) Pin egress to the resolved NIC (auto-detect or settings override).
+            //    route.exclude_interface does not exist in sing-box (TUN-inbound only).
             'route' => [
                 'rules' => $routeRules,
                 'rule_set' => $ruleSets,
                 'final' => 'direct',
-                'auto_detect_interface' => true,
+                'auto_detect_interface' => false,
+                'default_interface' => app(EgressInterfaceResolver::class)->resolve(),
                 'default_domain_resolver' => 'bootstrap',
             ],
             'experimental' => [
                 'cache_file' => [
                     'enabled' => true,
                     'path' => '/config/sing-box-cache.db',
-                    'store_rdrc' => true,
+                    // Required for UDP/QUIC FakeIP reverse lookup (podkop/forkop).
+                    // Growth is capped by reload-singbox.sh prune (>32 MiB).
+                    'store_fakeip' => true,
+                    'store_rdrc' => false,
                 ],
                 'clash_api' => [
                     'external_controller' => self::CLASH_API_ADDR,
@@ -951,6 +1129,128 @@ class ResolverService
                 ],
             ],
         ];
+
+        return $this->stripLegacyInboundFields($built);
+    }
+
+    /**
+     * sing-box 1.13 removed legacy inbound listen fields (fatal on check).
+     * Strip them defensively so Save/apply never writes a broken config.
+     *
+     * @param  array<string, mixed>  $config
+     * @return array<string, mixed>
+     */
+    public function stripLegacyInboundFields(array $config): array
+    {
+        $legacy = [
+            'sniff',
+            'sniff_override_destination',
+            'sniff_timeout',
+            'domain_strategy',
+            'udp_disable_domain_unmapping',
+        ];
+
+        if (! isset($config['inbounds']) || ! is_array($config['inbounds'])) {
+            return $config;
+        }
+
+        foreach ($config['inbounds'] as $i => $inbound) {
+            if (! is_array($inbound)) {
+                continue;
+            }
+            foreach ($legacy as $key) {
+                unset($config['inbounds'][$i][$key]);
+            }
+        }
+
+        return $config;
+    }
+
+    /**
+     * Insert a route rule immediately after hijack-dns (after sniff if present).
+     *
+     * @param  list<array<string, mixed>>  $routeRules
+     * @param  array<string, mixed>  $rule
+     */
+    private function insertRouteRuleAfterDnsHijack(array &$routeRules, array $rule): void
+    {
+        $idx = 0;
+        foreach ($routeRules as $i => $existing) {
+            if (($existing['action'] ?? null) === 'hijack-dns') {
+                $idx = $i + 1;
+            }
+        }
+        array_splice($routeRules, $idx, 0, [$rule]);
+    }
+
+    /**
+     * Optional SOCKS/HTTP mixed inbound for Telegram bot traffic via selected resolver connections.
+     *
+     * @param  list<array<string, mixed>>  $inbounds
+     * @param  list<array<string, mixed>>  $outbounds
+     * @param  list<array<string, mixed>>  $routeRules
+     * @param  array<string, true>  $outboundTagsAdded
+     * @return list<array<string, mixed>>
+     */
+    private function withTelegramMixedInbound(
+        array $inbounds,
+        array &$outbounds,
+        array &$routeRules,
+        array $outboundTagsAdded,
+    ): array {
+        $ids = app(TelegramSettings::class)->enabledConnectionIds();
+        if ($ids === []) {
+            return $inbounds;
+        }
+
+        $tags = [];
+        foreach ($ids as $id) {
+            $tag = 'conn_'.$id;
+            if (isset($outboundTagsAdded[$tag])) {
+                $tags[] = $tag;
+            }
+        }
+        if ($tags === []) {
+            return $inbounds;
+        }
+
+        $auth = app(TelegramSettings::class)->mixedAuth();
+
+        $inbounds[] = [
+            'type' => 'mixed',
+            'tag' => TelegramSettings::MIXED_INBOUND_TAG,
+            'listen' => '0.0.0.0',
+            'listen_port' => TelegramSettings::MIXED_INBOUND_PORT,
+            'users' => [
+                [
+                    'username' => $auth['username'],
+                    'password' => $auth['password'],
+                ],
+            ],
+        ];
+
+        if (count($tags) === 1) {
+            $outTag = $tags[0];
+        } else {
+            $outTag = TelegramSettings::TELEGRAM_OUTBOUND_TAG;
+            if (! isset($outboundTagsAdded[$outTag])) {
+                $outbounds[] = [
+                    'type' => 'urltest',
+                    'tag' => $outTag,
+                    'outbounds' => $tags,
+                    'url' => self::DELAY_TEST_URL,
+                    'interval' => '3m',
+                ];
+            }
+        }
+
+        $this->insertRouteRuleAfterDnsHijack($routeRules, [
+            'inbound' => [TelegramSettings::MIXED_INBOUND_TAG],
+            'action' => 'route',
+            'outbound' => $outTag,
+        ]);
+
+        return $inbounds;
     }
 
     /**
@@ -1048,6 +1348,7 @@ class ResolverService
     public function reloadSingBox(): void
     {
         $container = $this->awg->containerName();
+<<<<<<< HEAD
         try {
             // Prefer volume copy (list CIDR routes) so AWG image rebuild is not required.
             $this->docker->exec(
@@ -1057,18 +1358,109 @@ class ResolverService
             );
         } catch (\Throwable $e) {
             Log::warning('reload-singbox: '.$e->getMessage());
+=======
+        // Prefer volume copy (list CIDR routes) so AWG image rebuild is not required.
+        $result = $this->docker->exec(
+            $container,
+            ['sh', '-c', 'if [ -x /config/reload-singbox.sh ]; then /config/reload-singbox.sh; else /usr/local/bin/reload-singbox.sh; fi'],
+            timeout: 30,
+        );
+        if (! $result->successful()) {
+            $err = trim($result->errorOutput()."\n".$result->output());
+            Log::warning('reload-singbox: '.($err !== '' ? $err : 'command failed'));
+            throw new RuntimeException($err !== '' ? $err : 'sing-box reload failed');
+>>>>>>> a34ec4d81547d4963b761827020a578f3957b1c6
         }
     }
 
     /**
-     * Re-apply MARK chains on live AWG ifaces after proxy_cidrs_all.lst changes.
+     * Force reload/start sing-box and return diagnostics-friendly status.
+     *
+     * @return array{ok: bool, running: bool, config_exists: bool, message: string, check_output: string, reload_output: string}
+     */
+    public function restartSingBox(): array
+    {
+        $configPath = $this->singBoxConfigPath();
+        $configExists = is_file($configPath);
+        $container = $this->awg->containerName();
+
+        if (! $this->awg->isContainerRunning()) {
+            return [
+                'ok' => false,
+                'running' => false,
+                'config_exists' => $configExists,
+                'message' => __('system.awg_container_not_running'),
+                'check_output' => '',
+                'reload_output' => '',
+            ];
+        }
+
+        if (! $configExists) {
+            return [
+                'ok' => false,
+                'running' => false,
+                'config_exists' => false,
+                'message' => __('system.singbox_json_not_found'),
+                'check_output' => '',
+                'reload_output' => '',
+            ];
+        }
+
+        $check = $this->docker->exec(
+            $container,
+            ['/usr/local/bin/sing-box', 'check', '-c', '/config/sing-box.json'],
+            timeout: 20,
+        );
+        $checkOut = trim($check->errorOutput()."\n".$check->output());
+        if (! $check->successful()) {
+            return [
+                'ok' => false,
+                'running' => $this->isSingBoxRunning(),
+                'config_exists' => true,
+                'message' => $checkOut !== '' ? $checkOut : __('system.singbox_check_failed'),
+                'check_output' => $checkOut,
+                'reload_output' => '',
+            ];
+        }
+
+        $reload = $this->docker->exec(
+            $container,
+            ['sh', '-c', 'if [ -x /config/reload-singbox.sh ]; then /config/reload-singbox.sh; else /usr/local/bin/reload-singbox.sh; fi'],
+            timeout: 30,
+        );
+        $reloadOut = trim($reload->errorOutput()."\n".$reload->output());
+        $running = $this->isSingBoxRunning();
+
+        if (! $reload->successful() || ! $running) {
+            return [
+                'ok' => false,
+                'running' => $running,
+                'config_exists' => true,
+                'message' => $reloadOut !== '' ? $reloadOut : __('system.singbox_restart_failed'),
+                'check_output' => $checkOut,
+                'reload_output' => $reloadOut,
+            ];
+        }
+
+        return [
+            'ok' => true,
+            'running' => true,
+            'config_exists' => true,
+            'message' => __('system.singbox_restart_ok'),
+            'check_output' => $checkOut,
+            'reload_output' => $reloadOut,
+        ];
+    }
+
+    /**
+     * Re-apply MARK/REDIRECT/UDP chains on live AWG ifaces.
      * Single docker exec for all ifaces (avoids O(N) round-trips).
      *
-     * @param  list<string>  $ifaces
+     * @param  array<string, bool>  $ifaceRejectQuic  iface => resolver_reject_quic
      */
-    public function refreshResolverMarksOnIfaces(array $ifaces): void
+    public function refreshResolverMarksOnIfaces(array $ifaceRejectQuic): void
     {
-        $this->markScripts->refreshResolverMarksOnIfaces($ifaces);
+        $this->markScripts->refreshResolverMarksOnIfaces($ifaceRejectQuic);
     }
 
     /**
@@ -1095,7 +1487,7 @@ class ResolverService
 
         $configs = AwgConfig::query()
             ->where('type', 'server')
-            ->with('resolverConnection')
+            ->with(['resolverConnection', 'peers:id,awg_config_id,extra_allowed_ips'])
             ->orderBy('id')
             ->get();
 
@@ -1126,11 +1518,25 @@ class ResolverService
             'fakeip_cidr' => self::FAKEIP_CIDR,
             'message' => $file['message'] ?? ($enabledCount > 0 ? 'OK' : __('resolver.disabled')),
             'updated_at' => $file['updated_at'] ?? null,
+            'needs_initial_sync' => $this->lists->needsInitialSync(),
             'community_lists' => $this->communityListCatalog(),
             'custom_lists' => $this->lists->customListCatalog(),
             'connections' => $connections,
             'configs' => $configs->map(function (AwgConfig $c) {
                 $conn = $c->resolverConnection;
+                $hasPeerExtras = $c->peers->contains(function (AwgConfigPeer $peer): bool {
+                    $extras = $peer->extra_allowed_ips ?? [];
+                    if (! is_array($extras)) {
+                        return false;
+                    }
+                    foreach ($extras as $cidr) {
+                        if (trim((string) $cidr) !== '') {
+                            return true;
+                        }
+                    }
+
+                    return false;
+                });
 
                 return [
                     'id' => $c->id,
@@ -1152,6 +1558,7 @@ class ResolverService
                     'resolver_dns' => $c->resolver_dns ?: '1.1.1.1',
                     'client_dns' => $c->resolver_enabled ? $this->gatewayIp($c) : $c->peer_dns,
                     'client_allowed_ips_preview' => $this->clientAllowedIpsPreview($c),
+                    'has_peer_extra_allowed_ips' => $hasPeerExtras,
                 ];
             })->values()->all(),
         ];

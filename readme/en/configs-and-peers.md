@@ -10,7 +10,8 @@ You can create up to **20** AmneziaWG configs. Each config gets:
 
 - its own interface (`awg0`, `awg1`, …);
 - a dedicated internal subnet;
-- a UDP port from **51820–51839**.
+- a UDP port from **51820–51839**;
+- its own AmneziaWG **protocol version** (**1.0**, **1.5**, or **2.0**) — different configs may use different versions.
 
 Config types:
 
@@ -19,7 +20,23 @@ Config types:
 | **Server** | Classic VPN: clients reach the internet via the server (or via the [resolver](resolver.md)) |
 | **Virtual network** | Isolated LAN between peers — see [virtual-networks.md](virtual-networks.md) |
 
+Typical deployment layouts (simple VPN, cascade, VN routers) — [use cases](use-cases.md).
+
 When creating a config the panel automatically allocates a free `iface` and UDP port.
+
+## AmneziaWG protocol versions
+
+Choose the protocol version when **creating** a config. Default is the latest (**2.0**). On one panel you can run several configs with **different** versions at once (for example, 1.5 for older clients and 2.0 for new ones). Versions are **not compatible** with each other: the client and that specific config must use the same one. After create the version **cannot be changed** — create a new config for a different version.
+
+| Version | Obfuscation parameters in `.conf` / `vpn://` |
+|---------|-----------------------------------------------|
+| **1.0** | `Jc`, `Jmin`, `Jmax`, `S1`, `S2`, `H1`–`H4` |
+| **1.5** | same as 1.0 + `I1`–`I5` |
+| **2.0** | same as 1.5 + `S3`, `S4` |
+
+The obfuscation form on the config page shows only fields for the selected version. Exports (**`.conf`**, **QR**, **`vpn://`**) follow that profile (outer `vpn://` `protocol_version`: `1` for 1.0/1.5, `2` for 2.0).
+
+On upgrade, existing configs receive **2.0**. If you need 1.x, create a separate config with that version and re-share QR / `.conf` / `vpn://` with clients.
 
 ## Peers (clients)
 
@@ -31,14 +48,40 @@ A **peer** (`vpn_client`) is a separate entity with keys and a name. A peer is *
 
 Unattached peers are shown separately and can be linked to any config later.
 
+## AllowedIPs for Server configs
+
+On a peer, **“Client routes via VPN”** (`extra_allowed_ips`) lists CIDRs the client sends into the tunnel (resources behind or near the server).
+
+| Situation | Server `.conf` `[Peer]` | Client `.conf` / QR |
+|-----------|-------------------------|---------------------|
+| No CIDRs | peer `Address` only | Config `client_allowed_ips` (usually `0.0.0.0/0, ::/0`) |
+| CIDRs set, **resolver off** | peer `Address` **only** (no extras) | **Tunnel subnet** (`internal_subnet`) + those CIDRs |
+| **Resolver on** | peer `Address` only | always `0.0.0.0/0, ::/0` |
+
+Extras are **not** written to the server Peer AllowedIPs: otherwise WireGuard installs `CIDR → peer` (cryptokey loop) and packets never leave toward the LAN/network behind the server.
+
+Example: subnet `10.66.66.0/24`, peer CIDR `192.168.10.5/32`:
+
+- client: `AllowedIPs = 10.66.66.0/24, 192.168.10.5/32`, `DNS = 1.1.1.1` — general internet off-VPN, that host via the tunnel;
+- server: `AllowedIPs = 10.66.66.2/32` — without the client CIDRs.
+
+The target must be reachable from the `awggui-awg` container (forward + MASQUERADE on egress). Do not put non-canonical `x.x.x.1/24` in AllowedIPs — Android rejects it (Error 1000).
+
+`0.0.0.0/0` and `::/0` cannot be set as peer CIDRs.
+
+**Unlike VN:** in a virtual network, `extra_allowed_ips` is the LAN **behind that peer** and *does* go into the server Peer AllowedIPs — see [virtual-networks.md](virtual-networks.md).
+
+After changing peer CIDRs: the server conf reapplies on save; re-import client `.conf` / QR only if client AllowedIPs changed.
+
 ## Export configuration
 
 For each attached peer you can:
 
 - download a **`.conf`** file (AmneziaWG / WireGuard);
-- show a **QR code** for mobile import.
+- show a **QR code** for mobile import;
+- copy a **`vpn://`** key to paste into Amnezia / AmneziaWG.
 
-After changing endpoint, UDP port, or resolver settings, re-export or re-import configs on devices.
+After changing endpoint, UDP port, obfuscation, or resolver settings, re-export or re-import configs on devices.
 
 ## Panel settings
 

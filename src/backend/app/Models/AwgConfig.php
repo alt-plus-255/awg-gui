@@ -11,6 +11,8 @@ class AwgConfig extends Model
     protected $fillable = [
         'name',
         'type',
+        'protocol_version',
+        'client_import_name_style',
         'vn_policy',
         'vn_zones',
         'iface',
@@ -24,6 +26,8 @@ class AwgConfig extends Model
         'client_allowed_ips',
         'persistent_keepalive',
         'enabled',
+        'handshake_logging_enabled',
+        'handshake_log_bytes',
         'resolver_enabled',
         'resolver_reject_quic',
         'community_lists',
@@ -48,6 +52,8 @@ class AwgConfig extends Model
             'listen_port' => 'integer',
             'persistent_keepalive' => 'integer',
             'enabled' => 'boolean',
+            'handshake_logging_enabled' => 'boolean',
+            'handshake_log_bytes' => 'integer',
             'vn_zones' => 'array',
             'resolver_enabled' => 'boolean',
             'resolver_reject_quic' => 'boolean',
@@ -62,6 +68,11 @@ class AwgConfig extends Model
     public function peers(): HasMany
     {
         return $this->hasMany(AwgConfigPeer::class);
+    }
+
+    public function handshakeLogs(): HasMany
+    {
+        return $this->hasMany(AwgHandshakeLog::class);
     }
 
     public function resolverConnection(): BelongsTo

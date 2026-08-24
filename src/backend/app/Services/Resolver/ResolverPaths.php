@@ -44,7 +44,7 @@ class ResolverPaths
         return 'merged_cfg_'.$config->id.'_ip';
     }
 
-    /** Union of list/user CIDRs for iptables MARK + TUN routes (not a sing-box ruleset). */
+    /** Union of list/user CIDRs for iptables TPROXY (not a sing-box ruleset). */
     public function proxyCidrsAllPath(): string
     {
         return $this->rulesetDir().'/proxy_cidrs_all.lst';
@@ -68,6 +68,11 @@ class ResolverPaths
     public function singBoxPingConfigPath(): string
     {
         return $this->awg->configDir().'/sing-box-ping.json';
+    }
+
+    public function singBoxSpeedConfigPath(): string
+    {
+        return $this->awg->configDir().'/sing-box-speed.json';
     }
 
     public function resolverIfacesPath(): string

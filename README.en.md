@@ -2,7 +2,20 @@
 
 **Languages / Языки:** [Русский](README.md) | [English](README.en.md)
 
-AmneziaWG 2.0 VPN server with a Laravel 12 API and Quasar Vue admin panel, all in Docker containers prefixed with `awggui`.
+AmneziaWG VPN server (protocol versions **1.0**, **1.5**, and **2.0**, default **2.0**) with a Laravel 12 API and Quasar Vue admin panel, all in Docker containers prefixed with `awggui`.
+
+## Use cases
+
+| Layout | Where the panel runs | What it does |
+|--------|----------------------|--------------|
+| **Server → client** | Foreign VDS | Classic VPN: all traffic exits via the server IP |
+| **Server + resolver (RU access)** | Foreign VDS | Default exit = foreign IP; `russia_inside` → Connection (VPN/proxy in Russia) |
+| **Cascade server → client** | Russia VDS | RU segment via provider IP; `russia_outside` and services → foreign hop |
+| **Virtual network hub** | Often Russia VDS | N routers/clients in one LAN; each router has its own subnet |
+| **Home / office via a router** | Any VDS | Router as a Server-config client — whole LAN behind VPN |
+| **Several roles** | One VDS | Up to 20 configs: plain VPN, cascade, and VN at once |
+
+→ [Details: use cases](readme/en/use-cases.md)
 
 <p align="center">
   <img src="readme/assets/dashboard.png" alt="AWG-GUI dashboard: server resources, peers, and connection status" width="720">
@@ -20,11 +33,13 @@ Downloads a pre-built release bundle from GitHub Releases. No source checkout, `
 curl -fsSL https://raw.githubusercontent.com/alt-plus-255/awg-gui/refs/heads/main/dist/install.sh | sudo bash
 ```
 
-Non-interactive (panel port **8877**, upgrade if already installed):
+Non-interactive (panel port **8877**, upgrade if already installed; installs **AmneziaWG kernel module** by default):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/alt-plus-255/awg-gui/refs/heads/main/dist/install.sh | sudo bash -s -- --yes
 ```
+
+Skip the kernel module (userspace `amneziawg-go`): `--no-awg-kernel` or `AWG_GUI_SKIP_KERNEL=1`. An already-installed module is not reinstalled. Manage later under **Settings → Panel**.
 
 Specific version:
 
@@ -43,13 +58,21 @@ sudo bash /tmp/awg-gui-install.sh --yes
 
 ### Multiple AWG configs
 
-Up to **20** AmneziaWG configs (UDP **51820–51839**): each with its own interface, subnet, and port. Types **Server** (internet VPN) and **Virtual network** (isolated LAN).
+Up to **20** AmneziaWG configs (UDP **51820–51839**): each with its own interface, subnet, port, and **protocol version** (**1.0** / **1.5** / **2.0** — different configs may use different versions). Types **Server** (internet VPN) and **Virtual network** (isolated LAN).
 
 → [Details: configs & peers](readme/en/configs-and-peers.md)
 
+### AmneziaWG protocol versions
+
+When creating a config, choose **1.0**, **1.5**, or **2.0** (default: latest). Versions are **not compatible** with each other; the version is **fixed** after create. Obfuscation parameters and exports (**`.conf`**, **QR**, **`vpn://`**) follow the selected profile.
+
+→ [Details: configs & peers](readme/en/configs-and-peers.md#amneziawg-protocol-versions)
+
 ### Peers and rebind
 
-A peer (`vpn_client`) is a separate entity. **Attach** to a config, **detach** (peer stays in the panel), **rebind** to another config. Export **`.conf`** and **QR** for clients.
+A peer (`vpn_client`) is a separate entity. **Attach** to a config, **detach** (peer stays in the panel), **rebind** to another config. Export **`.conf`**, **QR**, and **`vpn://`** for clients.
+
+For **Server** configs with the resolver off: if a peer has AllowedIPs CIDRs, the client `.conf` uses the tunnel subnet (`10.66.66.0/24`) + those CIDRs (split-tunnel) instead of full tunnel; general internet stays off-VPN. Enabling the resolver asks for confirmation and switches to `0.0.0.0/0`.
 
 → [Details: configs & peers](readme/en/configs-and-peers.md)
 
@@ -61,7 +84,7 @@ Virtual network configs: isolated subnet, “allow all” / “isolation” poli
 
 ### Resolver
 
-For **Server** configs (not virtual networks): route traffic by domain and subnet via sing-box — community lists ([allow-domains](https://github.com/itdoginfo/allow-domains)), custom domains and CIDR. Internet exit point is a **Connection** (VLESS, subscription, etc.).
+For **Server** configs (not virtual networks): route traffic by domain and subnet via sing-box — community lists ([allow-domains](https://github.com/itdoginfo/allow-domains)), custom domains and CIDR. Internet exit point is a **Connection**: VLESS / subscription, outbound JSON, or **WG/AWG** (remote AmneziaWG / WireGuard `.conf` with a matching protocol version).
 
 Resolver on the **Resolver** page:
 
@@ -78,9 +101,21 @@ Resolver on the **Resolver** page:
 
 Use when you want a classic “full VPN via server”, with blocked resources exiting through a separate upstream connection.
 
+<<<<<<< HEAD
 **After enabling or disabling:** delete the server in AmneziaWG and **re-import** QR/`.conf` — lists will not work without re-import.
+=======
+For ABR video (YouTube/Instagram) you need **kernel AmneziaWG** on the VDS host plus working QUIC (Block QUIC off + UDP-capable outbound) or a solid TCP path. Delivery: FakeIP/list TCP via **NAT REDIRECT** `:1602`, FakeIP UDP via **TPROXY** `:1603` (sing-box **1.13.x**).
+
+**After enabling or disabling:** delete the server in AmneziaWG and **re-import** QR/`.conf` — lists will not work without re-import. If peers had custom AllowedIPs, enabling the resolver shows a dialog: full tunnel replaces split-tunnel.
+>>>>>>> a34ec4d81547d4963b761827020a578f3957b1c6
 
 → [Details: resolver, diagnostics, re-import](readme/en/resolver.md)
+
+### Telegram bot
+
+Remote panel control from Telegram: configs, peers, connections and resolver, peer online/offline alerts. Only the configured Admin ID can operate the bot. Modes: **long polling** (with SOCKS/HTTP or resolver-connection proxy pool) and **webhook**.
+
+→ [Details: Telegram bot](readme/en/telegram.md)
 
 ## Documentation
 
@@ -89,11 +124,17 @@ Use when you want a classic “full VPN via server”, with blocked resources ex
 | [Install](readme/en/install.md) | Requirements, production and dev install, upgrade |
 | [Uninstall](readme/en/uninstall.md) | Production and dev uninstall |
 | [Build release](readme/en/build-release.md) | `./build.sh`, `.run`, GitHub Releases |
-| [CLI](readme/en/cli.md) | `awg-gui`: endpoint, password, 2FA, systemd |
+| [CLI](readme/en/cli.md) | `awg-gui`: info, endpoint, password, 2FA, systemd |
 | [Webhook](readme/en/webhook.md) | Failure notification JSON schema |
-| [Configs & peers](readme/en/configs-and-peers.md) | Multi-config, attach/detach, export |
+| [Telegram bot](readme/en/telegram.md) | Setup, polling/webhook, menus, notifications, proxies |
+| [Use cases](readme/en/use-cases.md) | Server→client, resolver/cascade, VN routers, home behind VPN |
+| [Configs & peers](readme/en/configs-and-peers.md) | Multi-config, protocol versions, attach/detach, export |
 | [Virtual networks](readme/en/virtual-networks.md) | VN, zones, exclusions |
+<<<<<<< HEAD
 | [Resolver](readme/en/resolver.md) | Full tunnel, lists, connections, diagnostics |
+=======
+| [Resolver](readme/en/resolver.md) | Full tunnel, lists, connections (incl. WG/AWG), diagnostics |
+>>>>>>> a34ec4d81547d4963b761827020a578f3957b1c6
 | [Project structure](readme/en/project-structure.md) | Directories, Docker containers |
 
 Русский: [readme/ru/](readme/ru/)

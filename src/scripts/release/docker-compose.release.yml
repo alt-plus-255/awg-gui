@@ -1,10 +1,17 @@
 name: awggui
 
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "2"
+
 services:
   caddy:
     image: awggui-caddy:__VERSION__
     container_name: awggui-caddy
     restart: unless-stopped
+    logging: *default-logging
     ports:
       - "${PANEL_PORT:-8877}:80"
       - "${PANEL_HTTPS_PORT:-7443}:443"
@@ -20,6 +27,7 @@ services:
     image: awggui-app:__VERSION__
     container_name: awggui-app
     restart: unless-stopped
+    logging: *default-logging
     env_file:
       - .env
     environment:
@@ -27,6 +35,10 @@ services:
       APP_DEBUG: ${APP_DEBUG:-false}
       APP_URL: ${APP_URL:-http://localhost:8877}
       APP_KEY: ${APP_KEY}
+      LOG_CHANNEL: ${LOG_CHANNEL:-stack}
+      LOG_STACK: ${LOG_STACK:-daily}
+      LOG_LEVEL: ${LOG_LEVEL:-warning}
+      LOG_DAILY_DAYS: ${LOG_DAILY_DAYS:-7}
       DB_CONNECTION: mysql
       DB_HOST: db
       DB_PORT: 3306
@@ -36,7 +48,10 @@ services:
       DOCKER_HOST: tcp://docker-proxy:2375
       PANEL_OPS_URL: http://panel-ops:8090
       PANEL_OPS_TOKEN: ${PANEL_OPS_TOKEN}
+<<<<<<< HEAD
       CERTBOT_CONTAINER: awggui-certbot
+=======
+>>>>>>> a34ec4d81547d4963b761827020a578f3957b1c6
       AWG_CONTAINER: awggui-awg
       AWG_CONFIG_DIR: /awg
       HOST_AWG_CONFIG_DIR: /var/lib/docker/volumes/awggui_awg_config/_data
@@ -72,16 +87,19 @@ services:
     image: mariadb:11.4
     container_name: awggui-db
     restart: unless-stopped
+    logging: *default-logging
     environment:
-      MYSQL_DATABASE: ${DB_DATABASE:-awggui}
-      MYSQL_USER: ${DB_USERNAME:-awggui}
-      MYSQL_PASSWORD: ${DB_PASSWORD}
-      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
+      MARIADB_DATABASE: ${DB_DATABASE:-awggui}
+      MARIADB_USER: ${DB_USERNAME:-awggui}
+      MARIADB_PASSWORD: ${DB_PASSWORD}
+      MARIADB_ROOT_PASSWORD: ${DB_PASSWORD}
+      MARIADB_AUTO_UPGRADE: "1"
       TZ: ${TZ:-UTC}
     volumes:
       - db_data:/var/lib/mysql
     healthcheck:
       test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      start_period: 60s
       interval: 5s
       timeout: 5s
       retries: 20
@@ -92,6 +110,7 @@ services:
     image: awggui-awg:__VERSION__
     container_name: awggui-awg
     restart: unless-stopped
+    logging: *default-logging
     cap_add:
       - NET_ADMIN
     devices:
@@ -105,7 +124,58 @@ services:
     sysctls:
       - net.ipv4.ip_forward=1
       - net.ipv4.conf.all.src_valid_mark=1
+      # TPROXY to 127.0.0.1 requires route_localnet on lo (all alone is not enough).
       - net.ipv4.conf.all.route_localnet=1
+      - net.ipv4.conf.default.route_localnet=1
+      # Set at container create time (runtime sysctl from inside is often denied).
+      - net.ipv4.conf.lo.route_localnet=1
+      # Do NOT set net.core.rmem_max/wmem_max or tcp_rmem/wmem/bbr here:
+      # modern runc rejects them ("unsafe procfs") and the awg container fails to start.
+    networks:
+      - awggui
+
+  docker-proxy:
+    image: tecnativa/docker-socket-proxy:0.3.0
+    container_name: awggui-docker-proxy
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      CONTAINERS: 1
+      EXEC: 1
+      POST: 1
+      LOGS: 1
+      CONTAINERS_CREATE: 0
+      IMAGES: 0
+      NETWORKS: 0
+      VOLUMES: 0
+      BUILD: 0
+      COMMIT: 0
+      SWARM: 0
+      SYSTEM: 0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:2375/_ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - awggui
+
+  panel-ops:
+    image: awggui-panel-ops:__VERSION__
+    container_name: awggui-panel-ops
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      PANEL_OPS_TOKEN: ${PANEL_OPS_TOKEN}
+      COMPOSE_PROJECT: awggui
+      COMPOSE_FILE: /compose/docker-compose.yml
+      COMPOSE_ENV_FILE: /compose/.env
+    volumes:
+      - /etc/awg-gui:/host-awg-gui
+      - /var/run/docker.sock:/var/run/docker.sock
+      - .:/compose:ro
     networks:
       - awggui
 

@@ -8,7 +8,13 @@ use App\Models\Setting;
 use App\Models\VpnClient;
 use App\Services\Resolver\ResolverService;
 use App\Services\Docker\DockerRuntime;
+<<<<<<< HEAD
+=======
+use App\Services\AmneziaWg\Versions\AwgVersionProfile;
+use App\Services\AmneziaWg\Versions\AwgVersionRegistry;
+>>>>>>> a34ec4d81547d4963b761827020a578f3957b1c6
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
@@ -20,7 +26,28 @@ class AmneziaWgService
     /** @var array<string, string> */
     private array $clientAllowedIpsStringCache = [];
 
+<<<<<<< HEAD
     public function __construct(private DockerRuntime $docker) {}
+=======
+    public function __construct(
+        private DockerRuntime $docker,
+        private ?AwgVersionRegistry $versions = null,
+    ) {}
+
+    public function versions(): AwgVersionRegistry
+    {
+        return $this->versions ??= app(AwgVersionRegistry::class);
+    }
+
+    public function profileFor(AwgConfig|string|null $configOrVersion): AwgVersionProfile
+    {
+        if ($configOrVersion instanceof AwgConfig) {
+            return $this->versions()->profileForConfig($configOrVersion->protocol_version);
+        }
+
+        return $this->versions()->profileForConfig($configOrVersion);
+    }
+>>>>>>> a34ec4d81547d4963b761827020a578f3957b1c6
 
     public function primeConfigPeerCache(AwgConfig $config): void
     {
@@ -184,6 +211,8 @@ class AmneziaWgService
             'server_endpoint' => env('SERVER_ENDPOINT', 'auto'),
             'panel_domain' => '',
             'endpoint_use_domain' => '0',
+            // Off by default: keep panel reachable by IP and by domain after SSL.
+            'redirect_ip_to_domain' => '0',
             'panel_port' => (string) env('PANEL_PORT', '8877'),
             'panel_https_port' => (string) env('PANEL_HTTPS_PORT', '7443'),
             'ssl_email' => '',
@@ -191,9 +220,53 @@ class AmneziaWgService
             'ssl_status' => 'disabled',
             'ssl_error' => '',
             'ssl_expires_at' => '',
+            'ssl_pending_challenge' => '',
             'failure_webhook_url' => '',
             'timezone' => (string) env('TZ', 'UTC'),
+            'telegram_bot_token' => '',
+            'telegram_admin_id' => '',
+            'telegram_mode' => 'polling',
+            'telegram_proxies' => '[]',
+            'telegram_proxy_strategy' => 'fastest',
+            'telegram_notifications_enabled' => '1',
+            'telegram_daily_report_enabled' => '1',
+            'telegram_webhook_secret' => '',
+            'telegram_mixed_auth_user' => '',
+            'telegram_mixed_auth_pass' => '',
+            // auto = detect default-route NIC inside AWG container; or explicit iface name.
+            'singbox_egress_interface' => 'auto',
         ];
+    }
+
+    public const CLIENT_IMPORT_NAME_PEER = 'peer_name';
+
+    public const CLIENT_IMPORT_NAME_VERSION_HOST = 'version_host';
+
+    /** @return list<string> */
+    public function clientImportNameStyles(): array
+    {
+        return [self::CLIENT_IMPORT_NAME_PEER, self::CLIENT_IMPORT_NAME_VERSION_HOST];
+    }
+
+    public function resolveClientImportNameStyle(?AwgConfig $config = null, ?string $style = null): string
+    {
+        if ($style !== null) {
+            $style = trim($style);
+
+            return in_array($style, $this->clientImportNameStyles(), true)
+                ? $style
+                : self::CLIENT_IMPORT_NAME_PEER;
+        }
+
+        if ($config !== null) {
+            $style = trim((string) ($config->client_import_name_style ?? ''));
+
+            return in_array($style, $this->clientImportNameStyles(), true)
+                ? $style
+                : self::CLIENT_IMPORT_NAME_PEER;
+        }
+
+        return self::CLIENT_IMPORT_NAME_PEER;
     }
 
     public function resolveTimezone(): string
@@ -273,6 +346,7 @@ class AmneziaWgService
             'client_allowed_ips' => env('ALLOWED_IPS', '0.0.0.0/0, ::/0'),
             'persistent_keepalive' => (int) env('PERSISTENT_KEEPALIVE', 25),
             'enabled' => true,
+            'client_import_name_style' => self::CLIENT_IMPORT_NAME_PEER,
         ];
     }
 
@@ -295,6 +369,36 @@ class AmneziaWgService
     }
 
     /**
+     * Detect the server's current public IPv4 (same sources as the host installer).
+     */
+    public function detectPublicIpv4(): string
+    {
+        foreach (['https://ifconfig.me', 'https://api.ipify.org'] as $url) {
+            try {
+                $response = Http::timeout(5)
+                    ->withHeaders(['Accept' => 'text/plain'])
+                    ->get($url);
+                if (! $response->successful()) {
+                    continue;
+                }
+                $ip = trim((string) $response->body());
+                if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+                    return $ip;
+                }
+            } catch (\Throwable) {
+                // try next source
+            }
+        }
+
+        $host = trim((string) (request()?->getHost() ?: ''));
+        if (filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+            return $host;
+        }
+
+        return '';
+    }
+
+    /**
      * Host written into client VPN Endpoint (IP or panel domain by setting).
      */
     public function resolveEndpointHost(): string
@@ -310,6 +414,19 @@ class AmneziaWgService
     public function resolvePanelDomain(): string
     {
         return trim((string) Setting::getValue('panel_domain', ''));
+    }
+
+    /**
+     * When SSL is on and this is true, Caddy sends IP (non-domain) hosts to https://domain.
+     * Default false — panel stays reachable by IP and by domain.
+     */
+    public function shouldRedirectIpToDomain(): bool
+    {
+        if ($this->resolvePanelDomain() === '') {
+            return false;
+        }
+
+        return filter_var(Setting::getValue('redirect_ip_to_domain', '0'), FILTER_VALIDATE_BOOLEAN);
     }
 
     public function resolvePanelHost(): string
@@ -391,6 +508,83 @@ class AmneziaWgService
         }
     }
 
+    /**
+     * Validate panel domain against the server's real public IPv4.
+     * WireGuard SERVER_ENDPOINT may be a LAN address on NAT/home installs —
+     * that must not be used for DNS matching.
+     *
+     * Intentionally does NOT probe http://{domain} (would be SSRF).
+     *
+     * @throws \InvalidArgumentException
+     */
+    public function assertPanelDomainDns(string $domain): void
+    {
+        $domain = trim($domain);
+        if ($domain === '') {
+            return;
+        }
+
+        $resolved = $this->resolveIpv4Addresses($domain);
+        if ($resolved === []) {
+            throw new \InvalidArgumentException(
+                __('settings.domain_no_a_record', ['domain' => $domain])
+            );
+        }
+
+        // Reject private/reserved targets — domain must point at a public address.
+        foreach ($resolved as $ip) {
+            if (! $this->isPublicIpv4($ip)) {
+                throw new \InvalidArgumentException(
+                    __('settings.domain_points_private', [
+                        'domain' => $domain,
+                        'got' => implode(', ', $resolved),
+                    ])
+                );
+            }
+        }
+
+        $candidates = [];
+        $detected = $this->detectPublicIpv4();
+        if ($detected !== '' && $this->isPublicIpv4($detected)) {
+            $candidates[] = $detected;
+        }
+        $endpoint = $this->resolveServerEndpointHost();
+        if ($this->isPublicIpv4($endpoint)) {
+            $candidates[] = $endpoint;
+        }
+        $candidates = array_values(array_unique($candidates));
+
+        if ($candidates === []) {
+            throw new \InvalidArgumentException(__('settings.public_ip_detect_failed'));
+        }
+
+        foreach ($candidates as $ip) {
+            if (in_array($ip, $resolved, true)) {
+                return;
+            }
+        }
+
+        $got = implode(', ', $resolved);
+        throw new \InvalidArgumentException(
+            __('settings.domain_points_elsewhere', [
+                'domain' => $domain,
+                'got' => $got,
+                'host' => $candidates[0],
+            ])
+        );
+    }
+
+    public function isPublicIpv4(string $ip): bool
+    {
+        $ip = trim($ip);
+
+        return (bool) filter_var(
+            $ip,
+            FILTER_VALIDATE_IP,
+            FILTER_FLAG_IPV4 | FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE
+        );
+    }
+
     /** @return list<string> */
     public function resolveSanctumStatefulDomains(): array
     {
@@ -440,6 +634,17 @@ class AmneziaWgService
     public function serverPeerAllowedIps(AwgConfigPeer $membership): array
     {
         $ips = [$membership->address];
+
+        // Server configs: extra_allowed_ips are client-side split-tunnel routes
+        // (resources behind/near the server). Putting them on the server [Peer]
+        // steals the route into awgN (cryptokey loop). VN keeps LAN-behind-peer.
+        if (! $membership->relationLoaded('config') && $membership->awg_config_id) {
+            $membership->loadMissing('config');
+        }
+        if ($membership->relationLoaded('config') && $membership->getRelation('config')?->type === 'server') {
+            return array_values(array_unique(array_filter($ips)));
+        }
+
         $extras = $membership->extra_allowed_ips ?? [];
         if (! is_array($extras)) {
             $extras = [];
@@ -580,14 +785,131 @@ class AmneziaWgService
         }
 
         if ($config->isResolverEnabled()) {
+<<<<<<< HEAD
             // Full tunnel to VDS — non-list MASQUERADE → VDS IP.
             // List domains use FakeIP → sing-box → user VPN. Never put list CIDRs here.
             return ['0.0.0.0/0', '::/0'];
+=======
+            // Client → AWG full tunnel. On the VDS, non-list traffic MASQUERADE → VDS IP (direct).
+            // List domains: FakeIP → selective TPROXY → sing-box → connection. Never put list CIDRs in AllowedIPs.
+            return ['0.0.0.0/0', '::/0'];
+        }
+
+        // Server without resolver: peer extras → split-tunnel (tunnel subnet + CIDRs).
+        // Use network-aligned CIDR (internal_subnet / canonicalized server_address).
+        // Android WireGuard rejects host addresses like 10.66.66.1/24 → Error 1000.
+        $extras = $membership->extra_allowed_ips ?? [];
+        if (! is_array($extras)) {
+            $extras = [];
+        }
+        $splitCidrs = [];
+        foreach ($extras as $cidr) {
+            $cidr = trim((string) $cidr);
+            if ($cidr === '' || $cidr === '0.0.0.0/0' || $cidr === '::/0') {
+                continue;
+            }
+            $canonical = $this->canonicalNetworkCidr($cidr) ?? $cidr;
+            if ($canonical === '0.0.0.0/0' || $canonical === '::/0') {
+                continue;
+            }
+            $splitCidrs[] = $canonical;
+        }
+        $splitCidrs = array_values(array_unique($splitCidrs));
+        if ($splitCidrs !== []) {
+            $ips = [];
+            $tunnel = trim((string) ($config->internal_subnet ?? ''));
+            if ($tunnel === '') {
+                $tunnel = trim((string) ($config->server_address ?? ''));
+            }
+            $tunnelCidr = $this->canonicalNetworkCidr($tunnel);
+            if ($tunnelCidr !== null && $tunnelCidr !== '0.0.0.0/0' && $tunnelCidr !== '::/0') {
+                $ips[] = $tunnelCidr;
+            }
+            foreach ($splitCidrs as $cidr) {
+                if (! in_array($cidr, $ips, true)) {
+                    $ips[] = $cidr;
+                }
+            }
+
+            return array_values($ips);
+>>>>>>> a34ec4d81547d4963b761827020a578f3957b1c6
         }
 
         $raw = $config->client_allowed_ips ?: '0.0.0.0/0, ::/0';
 
         return array_values(array_filter(array_map('trim', explode(',', $raw))));
+    }
+
+    /**
+     * Normalize a CIDR to network form (host bits cleared) for AllowedIPs.
+     * Android WireGuard rejects non-canonical routes like 10.66.66.1/24.
+     */
+    public function canonicalNetworkCidr(string $cidr): ?string
+    {
+        $cidr = trim($cidr);
+        if ($cidr === '' || ! str_contains($cidr, '/')) {
+            return null;
+        }
+
+        [$ip, $prefixRaw] = explode('/', $cidr, 2);
+        $ip = trim($ip);
+        if (! ctype_digit($prefixRaw)) {
+            return null;
+        }
+        $prefix = (int) $prefixRaw;
+
+        if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+            if ($prefix < 0 || $prefix > 32) {
+                return null;
+            }
+            $ipLong = ip2long($ip);
+            if ($ipLong === false) {
+                return null;
+            }
+            $mask = $prefix === 0 ? 0 : (~((1 << (32 - $prefix)) - 1) & 0xFFFFFFFF);
+            $network = long2ip($ipLong & $mask);
+            if ($network === false) {
+                return null;
+            }
+
+            return $network.'/'.$prefix;
+        }
+
+        if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)) {
+            if ($prefix < 0 || $prefix > 128) {
+                return null;
+            }
+            $binary = inet_pton($ip);
+            if ($binary === false) {
+                return null;
+            }
+            $bits = unpack('C*', $binary);
+            if (! is_array($bits)) {
+                return null;
+            }
+            $bytes = array_values($bits);
+            for ($i = 0; $i < 16; $i++) {
+                $bitStart = $i * 8;
+                if ($prefix >= $bitStart + 8) {
+                    continue;
+                }
+                if ($prefix <= $bitStart) {
+                    $bytes[$i] = 0;
+                    continue;
+                }
+                $keep = $prefix - $bitStart;
+                $bytes[$i] = $bytes[$i] & (0xFF << (8 - $keep) & 0xFF);
+            }
+            $packed = pack('C*', ...$bytes);
+            $network = inet_ntop($packed);
+            if ($network === false) {
+                return null;
+            }
+
+            return $network.'/'.$prefix;
+        }
+
+        return null;
     }
 
     public function clientAllowedIpsString(AwgConfig $config, AwgConfigPeer $membership): string
@@ -601,67 +923,14 @@ class AmneziaWgService
     }
 
     /** @return array<string, string> */
-    public function generateJunkParams(): array
+    public function generateJunkParams(?string $protocolVersion = null): array
     {
-        $jc = (string) random_int(1, 10);
-        $jmin = random_int(64, 1023);
-        $jmax = (string) random_int($jmin + 1, 1024);
-        $jmin = (string) $jmin;
-
-        $s1 = (string) random_int(0, 64);
-        do {
-            $s2 = (string) random_int(0, 64);
-        } while ((int) $s1 + 56 === (int) $s2);
-        $s3 = (string) random_int(0, 64);
-        $s4 = (string) random_int(0, 32);
-
-        $hs = [];
-        while (count($hs) < 4) {
-            $h = (string) random_int(1, 2147483647);
-            if (! in_array($h, $hs, true)) {
-                $hs[] = $h;
-            }
-        }
-
-        return [
-            'jc' => $jc,
-            'jmin' => $jmin,
-            'jmax' => $jmax,
-            's1' => $s1,
-            's2' => $s2,
-            's3' => $s3,
-            's4' => $s4,
-            'h1' => $hs[0],
-            'h2' => $hs[1],
-            'h3' => $hs[2],
-            'h4' => $hs[3],
-            'i1' => '',
-            'i2' => '',
-            'i3' => '',
-            'i4' => '',
-            'i5' => '',
-        ];
+        return $this->profileFor($protocolVersion)->generateJunkParams();
     }
 
     public function needsObfuscationParams(AwgConfig $config): bool
     {
-        foreach (['jc', 'jmin', 'jmax', 's1', 's2', 's3', 's4', 'h1', 'h2', 'h3', 'h4'] as $field) {
-            if (trim((string) $config->{$field}) === '') {
-                return true;
-            }
-        }
-
-        return $config->jc === '4'
-            && $config->jmin === '64'
-            && $config->jmax === '80'
-            && $config->s1 === '0'
-            && $config->s2 === '0'
-            && $config->s3 === '0'
-            && $config->s4 === '0'
-            && $config->h1 === '1'
-            && $config->h2 === '2'
-            && $config->h3 === '3'
-            && $config->h4 === '4';
+        return $this->profileFor($config)->needsObfuscationParams($config);
     }
 
     public function applyObfuscationParams(AwgConfig $config): bool
@@ -670,7 +939,7 @@ class AmneziaWgService
             return false;
         }
 
-        $config->fill($this->generateJunkParams());
+        $config->fill($this->generateJunkParams($config->protocol_version));
         $config->save();
 
         return true;
@@ -737,11 +1006,13 @@ class AmneziaWgService
 
         if (! AwgConfig::query()->exists()) {
             $keys = $this->generateKeyPair();
-            $junk = $this->generateJunkParams();
+            $version = $this->versions()->latest();
+            $junk = $this->generateJunkParams($version);
             $attrs = array_merge($this->defaultConfigAttributes(), [
                 'name' => 'Default',
                 'iface' => 'awg0',
                 'listen_port' => (int) env('AWG_PORT', 51820),
+                'protocol_version' => $version,
                 'server_private_key' => $keys['private'],
                 'server_public_key' => $keys['public'],
             ], $junk);
@@ -771,7 +1042,21 @@ class AmneziaWgService
     public function bootstrapRuntime(): void
     {
         $this->writeWebhookConf();
-        app(SslCertificateService::class)->ensureHttpCaddyfile();
+        $ssl = app(SslCertificateService::class);
+        // After package updates the installer may seed a default HTTP Caddyfile.
+        // Re-apply the SSL site block when the panel still has SSL enabled so
+        // Caddy picks it up on start (bind-mount) or after a best-effort reload.
+        if ($ssl->isSslEnabled()) {
+            $ssl->writeCaddyfile(true);
+            try {
+                $ssl->reloadOrRecreateCaddy();
+            } catch (\Throwable) {
+                // Caddy often is not up yet during app entrypoint; file is enough.
+            }
+        } else {
+            $ssl->ensureHttpCaddyfile();
+        }
+        $this->syncPanelUrlToHostEnv();
         $this->applyConfig();
     }
 
@@ -858,25 +1143,8 @@ class AmneziaWgService
             'PrivateKey = '.$config->server_private_key,
             'Address = '.$config->server_address,
             'ListenPort = '.$config->listen_port,
-            'Jc = '.$config->jc,
-            'Jmin = '.$config->jmin,
-            'Jmax = '.$config->jmax,
-            'S1 = '.$config->s1,
-            'S2 = '.$config->s2,
-            'S3 = '.$config->s3,
-            'S4 = '.$config->s4,
-            'H1 = '.$config->h1,
-            'H2 = '.$config->h2,
-            'H3 = '.$config->h3,
-            'H4 = '.$config->h4,
         ];
-
-        foreach (['i1', 'i2', 'i3', 'i4', 'i5'] as $ikey) {
-            $val = trim((string) ($config->{$ikey} ?? ''));
-            if ($val !== '') {
-                $lines[] = strtoupper($ikey).' = '.$val;
-            }
-        }
+        array_push($lines, ...$this->profileFor($config)->confObfuscationLines($config));
 
         $lines[] = 'PostUp = '.$this->buildPostUp($config);
         $lines[] = 'PostDown = '.$this->buildPostDown($config);
@@ -906,6 +1174,45 @@ class AmneziaWgService
         return implode("\n", $lines)."\n";
     }
 
+    /**
+     * Display name for Amnezia / AmneziaWG when importing QR, vpn:// or .conf (# Name =).
+     */
+    public function clientImportLabel(AwgConfigPeer $membership, ?string $endpointHost = null, ?string $style = null): string
+    {
+        $membership->loadMissing(['config', 'client']);
+        $config = $membership->config;
+        if (! $config) {
+            throw new RuntimeException('Config not found for membership');
+        }
+
+        $style = $this->resolveClientImportNameStyle($config, $style);
+
+        if ($style === self::CLIENT_IMPORT_NAME_VERSION_HOST) {
+            $version = trim((string) ($config->protocol_version ?: '2.0'));
+            $host = trim($endpointHost ?? $this->resolveEndpointHost());
+            if ($host === '') {
+                $host = '127.0.0.1';
+            }
+
+            return 'AWG-v'.$version.'-'.$host;
+        }
+
+        $peerName = trim((string) ($membership->client?->name ?? ''));
+        if ($peerName === '') {
+            $peerName = 'peer';
+        }
+
+        return 'awg-'.$peerName;
+    }
+
+    public function clientImportFilename(AwgConfigPeer $membership, ?string $endpointHost = null, ?string $style = null): string
+    {
+        $base = $this->clientImportLabel($membership, $endpointHost, $style);
+        $safe = preg_replace('/[^a-zA-Z0-9._-]+/', '-', $base) ?: 'awg-client';
+
+        return $safe.'.conf';
+    }
+
     public function buildClientConfig(AwgConfigPeer $membership): string
     {
         $membership->loadMissing(['config', 'client']);
@@ -927,32 +1234,19 @@ class AmneziaWgService
             : ($config->peer_dns ?: '1.1.1.1');
         $allowed = $this->clientAllowedIpsString($config, $membership);
         $keepalive = $membership->keepalive ?? $config->persistent_keepalive ?? 25;
+        $importLabel = $this->clientImportLabel($membership, $endpointHost);
 
+        // Field order matches awg-web-gui build_client_conf: Address/DNS before AWG params.
         $lines = [
+            '# Name = '.$importLabel,
             '[Interface]',
             'PrivateKey = '.$membership->private_key,
-            'Jc = '.$config->jc,
-            'Jmin = '.$config->jmin,
-            'Jmax = '.$config->jmax,
-            'S1 = '.$config->s1,
-            'S2 = '.$config->s2,
-            'S3 = '.$config->s3,
-            'S4 = '.$config->s4,
-            'H1 = '.$config->h1,
-            'H2 = '.$config->h2,
-            'H3 = '.$config->h3,
-            'H4 = '.$config->h4,
+            'Address = '.$membership->address,
+            'DNS = '.$dns,
+            'MTU = 1420',
         ];
+        array_push($lines, ...$this->profileFor($config)->confObfuscationLines($config));
 
-        foreach (['i1', 'i2', 'i3', 'i4', 'i5'] as $ikey) {
-            $val = trim((string) ($config->{$ikey} ?? ''));
-            if ($val !== '') {
-                $lines[] = strtoupper($ikey).' = '.$val;
-            }
-        }
-
-        $lines[] = 'Address = '.$membership->address;
-        $lines[] = 'DNS = '.$dns;
         $lines[] = '';
         $lines[] = '[Peer]';
         $lines[] = 'PublicKey = '.$config->server_public_key;
@@ -990,6 +1284,10 @@ class AmneziaWgService
 
             foreach (glob($dir.'/awg*.conf') ?: [] as $path) {
                 $iface = basename($path, '.conf');
+                // Only manage server ifaces (awg0, awg1, …). Client exit tunnels awgc{id} are owned by ResolverService.
+                if (! preg_match('/^awg\d+$/', $iface)) {
+                    continue;
+                }
                 if (! in_array($iface, $activeIfaces, true)) {
                     @unlink($path);
                 }
@@ -1007,6 +1305,12 @@ class AmneziaWgService
         }
     }
 
+    /**
+     * Drop obsolete pre-chain FakeIP rules from older resolver builds.
+     * Do NOT touch DIVERT here — UDP FakeIP TPROXY needs FakeIP-scoped DIVERT from resolver-mark.sh.
+     *
+     * @return list<string>
+     */
     private function legacyResolverIptablesCleanup(): array
     {
         $dnsPort = ResolverService::DNS_REDIRECT_PORT;
@@ -1014,41 +1318,44 @@ class AmneziaWgService
         $fakeip = ResolverService::FAKEIP_CIDR;
 
         return [
+            // Flat FakeIP TPROXY (before RS_<iface> chain)
             "iptables -t mangle -D PREROUTING -i %i -d {$fakeip} -p tcp -j TPROXY --on-port {$tproxy} --on-ip 127.0.0.1 --tproxy-mark 0x1/0x1 2>/dev/null || true",
             "iptables -t mangle -D PREROUTING -i %i -d {$fakeip} -p udp -j TPROXY --on-port {$tproxy} --on-ip 127.0.0.1 --tproxy-mark 0x1/0x1 2>/dev/null || true",
             "iptables -t mangle -D PREROUTING -i %i -d {$fakeip} -p tcp -j TPROXY --on-port {$tproxy} --on-ip 0.0.0.0 --tproxy-mark 0x1/0x1 2>/dev/null || true",
             "iptables -t mangle -D PREROUTING -i %i -d {$fakeip} -p udp -j TPROXY --on-port {$tproxy} --on-ip 0.0.0.0 --tproxy-mark 0x1/0x1 2>/dev/null || true",
             "iptables -t mangle -D PREROUTING -i %i -d {$fakeip} -p tcp -j TPROXY --on-port {$tproxy} --tproxy-mark 0x1/0x1 2>/dev/null || true",
             "iptables -t mangle -D PREROUTING -i %i -d {$fakeip} -p udp -j TPROXY --on-port {$tproxy} --tproxy-mark 0x1/0x1 2>/dev/null || true",
+            // Old DNS TPROXY to 5353
             "iptables -t mangle -D PREROUTING -i %i -p udp --dport 53 -j TPROXY --on-port {$dnsPort} --on-ip 127.0.0.1 --tproxy-mark 0x1/0x1 2>/dev/null || true",
             "iptables -t mangle -D PREROUTING -i %i -p tcp --dport 53 -j TPROXY --on-port {$dnsPort} --on-ip 127.0.0.1 --tproxy-mark 0x1/0x1 2>/dev/null || true",
-            'iptables -t mangle -D PREROUTING -p tcp -m socket -j DIVERT 2>/dev/null || true',
-            'iptables -t mangle -D PREROUTING -p udp -m socket -j DIVERT 2>/dev/null || true',
-            'iptables -t mangle -F DIVERT 2>/dev/null || true',
-            'iptables -t mangle -X DIVERT 2>/dev/null || true',
+            // Old NAT REDIRECT of FakeIP to tproxy port
             'iptables -t nat -D PREROUTING -i %i -d '.$fakeip.' -p tcp -j REDIRECT --to-ports '.$tproxy.' 2>/dev/null || true',
+            // Legacy TUN forward leftovers
+            'iptables -D FORWARD -i %i -o '.ResolverService::TUN_IFACE.' -j ACCEPT 2>/dev/null || true',
+            'iptables -D FORWARD -i '.ResolverService::TUN_IFACE.' -o %i -j ACCEPT 2>/dev/null || true',
         ];
     }
 
     private function buildPostUp(AwgConfig $config): string
     {
+        $egress = app(\App\Services\Resolver\EgressInterfaceResolver::class)->resolve();
         $parts = [
             'iptables -A FORWARD -i %i -j ACCEPT',
             'iptables -A FORWARD -o %i -j ACCEPT',
-            'iptables -t nat -A POSTROUTING -o eth+ -j MASQUERADE',
+            'iptables -t nat -A POSTROUTING -o '.$egress.' -j MASQUERADE',
         ];
 
         if ($config->isResolverEnabled()) {
-            // Force ALL DNS from VPN clients into sing-box :53 (Amnezia often ignores tunnel DNS=)
+            // Resolver ON: AWG still owns the tunnel; DNS + selective FakeIP REDIRECT (+ optional UDP TPROXY) are side-cars.
+            // Resolver OFF: PostUp is only FORWARD+MASQUERADE (all client traffic = direct / VDS IP).
             $parts[] = 'iptables -t nat -A PREROUTING -i %i -p udp --dport 53 -j REDIRECT --to-ports '.ResolverService::DNS_LISTEN_PORT;
             $parts[] = 'iptables -t nat -A PREROUTING -i %i -p tcp --dport 53 -j REDIRECT --to-ports '.ResolverService::DNS_LISTEN_PORT;
 
-            // FakeIP → MARK → sing-box TUN; rest of full-tunnel traffic MASQUERADE on eth0
-            app(ResolverService::class)->ensureResolverMarkScripts();
-            $parts[] = 'sh /config/resolver-mark.sh %i';
-            $parts[] = 'iptables -A FORWARD -i %i -o '.ResolverService::TUN_IFACE.' -j ACCEPT 2>/dev/null || true';
-            $parts[] = 'iptables -A FORWARD -i '.ResolverService::TUN_IFACE.' -o %i -j ACCEPT 2>/dev/null || true';
+            // Strip obsolete flat rules first, then install current REDIRECT (+ UDP TPROXY or REJECT) path.
             $parts = array_merge($parts, $this->legacyResolverIptablesCleanup());
+            app(ResolverService::class)->ensureResolverMarkScripts();
+            $rejectQuic = $config->resolver_reject_quic ? '1' : '0';
+            $parts[] = 'sh /config/resolver-mark.sh %i '.$rejectQuic;
         }
 
         return implode('; ', $parts);
@@ -1056,18 +1363,20 @@ class AmneziaWgService
 
     private function buildPostDown(AwgConfig $config): string
     {
+        $egress = app(\App\Services\Resolver\EgressInterfaceResolver::class)->resolve();
         $parts = [
             'iptables -D FORWARD -i %i -j ACCEPT',
             'iptables -D FORWARD -o %i -j ACCEPT',
-            'iptables -t nat -D POSTROUTING -o eth+ -j MASQUERADE',
+            'iptables -t nat -D POSTROUTING -o '.$egress.' -j MASQUERADE',
+            // Legacy wildcard MASQUERADE from older builds.
+            'iptables -t nat -D POSTROUTING -o eth+ -j MASQUERADE 2>/dev/null || true',
         ];
 
         if ($config->isResolverEnabled()) {
             $parts[] = 'iptables -t nat -D PREROUTING -i %i -p udp --dport 53 -j REDIRECT --to-ports '.ResolverService::DNS_LISTEN_PORT.' 2>/dev/null || true';
             $parts[] = 'iptables -t nat -D PREROUTING -i %i -p tcp --dport 53 -j REDIRECT --to-ports '.ResolverService::DNS_LISTEN_PORT.' 2>/dev/null || true';
             $parts[] = 'sh /config/resolver-unmark.sh %i 2>/dev/null || true';
-            $parts[] = 'iptables -D FORWARD -i %i -o '.ResolverService::TUN_IFACE.' -j ACCEPT 2>/dev/null || true';
-            $parts[] = 'iptables -D FORWARD -i '.ResolverService::TUN_IFACE.' -o %i -j ACCEPT 2>/dev/null || true';
+            // Do not wipe DIVERT — other resolver ifaces (or next PostUp) still need it.
             $parts = array_merge($parts, $this->legacyResolverIptablesCleanup());
         }
 
@@ -1385,11 +1694,31 @@ class AmneziaWgService
         $httpPort = (string) Setting::getValue('panel_port', env('PANEL_PORT', '8877'));
         $httpsPort = $this->resolvePanelHttpsPort();
         $appUrl = $this->resolvePanelUrl();
+        $sslEnabled = filter_var(Setting::getValue('ssl_enabled', '0'), FILTER_VALIDATE_BOOLEAN);
+        // Secure cookies only when IP is forced onto HTTPS domain; otherwise HTTP-by-IP login must work.
+        $secureCookie = $sslEnabled && $this->shouldRedirectIpToDomain();
+
+        $statefulDomains = array_values(array_filter(
+            $this->resolveSanctumStatefulDomains(),
+            static function (string $domain): bool {
+                if ($domain === '') {
+                    return false;
+                }
+                if (class_exists(\Laravel\Sanctum\Sanctum::class)
+                    && $domain === \Laravel\Sanctum\Sanctum::$currentRequestHostPlaceholder) {
+                    return false;
+                }
+
+                return true;
+            }
+        ));
 
         $values = array_merge([
             'PANEL_PORT' => $httpPort,
             'PANEL_HTTPS_PORT' => $httpsPort,
             'APP_URL' => $appUrl,
+            'SESSION_SECURE_COOKIE' => $secureCookie ? 'true' : 'false',
+            'SANCTUM_STATEFUL_DOMAINS' => implode(',', $statefulDomains),
         ], $extra);
 
         $candidates = [];
@@ -1413,6 +1742,11 @@ class AmneziaWgService
                 continue;
             }
             foreach ($values as $key => $value) {
+                // Prevent .env injection via unexpected newlines in values.
+                $value = str_replace(["\r", "\n"], '', (string) $value);
+                if (! preg_match('/^[A-Z][A-Z0-9_]*$/', (string) $key)) {
+                    continue;
+                }
                 if (preg_match('/^'.preg_quote($key, '/').'=.*/m', $raw)) {
                     $raw = preg_replace('/^'.preg_quote($key, '/').'=.*/m', $key.'='.$value, $raw, 1);
                 } else {
@@ -1585,7 +1919,7 @@ class AmneziaWgService
     /** @return array<string, string> */
     public function regenerateConfigJunk(AwgConfig $config): array
     {
-        $junk = $this->generateJunkParams();
+        $junk = $this->generateJunkParams($config->protocol_version);
         $config->fill($junk);
         $config->save();
         $this->applyConfig();

@@ -37,7 +37,7 @@ export default configure((ctx) => {
           warning: '#d29922'
         },
         notify: {
-          position: 'top-right'
+          position: 'bottom-left'
         }
       },
       plugins: ['Notify', 'Dialog', 'Loading']

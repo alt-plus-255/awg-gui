@@ -29,3 +29,5 @@ In **Settings** set **Failure notification URL**. On boot failure (Docker down /
 Stable `code` values: `docker_unavailable`, `compose_up_failed`, `service_unhealthy`, `awg_gui.test`.
 
 Contract: `POST`, `Content-Type: application/json`.
+
+This is **not** the Telegram bot webhook — see [Telegram bot](telegram.md).

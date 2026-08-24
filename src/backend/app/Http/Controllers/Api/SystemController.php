@@ -5,6 +5,10 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Services\AmneziaWg\AmneziaWgService;
 use App\Services\Docker\DockerRuntime;
+<<<<<<< HEAD
+=======
+use App\Services\Resolver\ResolverService;
+>>>>>>> a34ec4d81547d4963b761827020a578f3957b1c6
 use App\Services\System\HostMetricsService;
 use Illuminate\Http\Request;
 
@@ -14,6 +18,10 @@ class SystemController extends Controller
         private AmneziaWgService $awg,
         private HostMetricsService $hostMetrics,
         private DockerRuntime $docker,
+<<<<<<< HEAD
+=======
+        private ResolverService $resolver,
+>>>>>>> a34ec4d81547d4963b761827020a578f3957b1c6
     ) {}
 
     public function status()
@@ -84,6 +92,19 @@ class SystemController extends Controller
             'message' => __('api.awg_restart_ok'),
             'details' => $result,
         ]);
+    }
+
+    public function restartSingBox()
+    {
+        $result = $this->resolver->restartSingBox();
+
+        return response()->json([
+            'ok' => (bool) ($result['ok'] ?? false),
+            'running' => (bool) ($result['running'] ?? false),
+            'config_exists' => (bool) ($result['config_exists'] ?? false),
+            'message' => (string) ($result['message'] ?? ''),
+            'details' => $result,
+        ], ($result['ok'] ?? false) ? 200 : 422);
     }
 
     public function restartAll()

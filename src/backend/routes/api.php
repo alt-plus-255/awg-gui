@@ -11,6 +11,8 @@ use App\Http\Controllers\Api\ResolverSettingsController;
 use App\Http\Controllers\Api\StatsController;
 use App\Http\Controllers\Api\SystemController;
 use App\Http\Controllers\Api\SettingsController;
+use App\Http\Controllers\Api\SpeedTestController;
+use App\Http\Controllers\Api\TelegramWebhookController;
 use App\Http\Controllers\Api\TwoFactorController;
 use App\Http\Controllers\Api\WsTokenController;
 use Illuminate\Support\Facades\Route;
@@ -19,6 +21,7 @@ Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:30
 Route::get('/login/status', [AuthController::class, 'loginStatus'])->middleware('throttle:60,1');
 Route::get('/login/info', [AuthController::class, 'loginInfo'])->middleware('throttle:60,1');
 Route::get('/login/captcha', [AuthController::class, 'captcha'])->middleware('throttle:30,1');
+Route::post('/telegram/webhook/{secret}', TelegramWebhookController::class)->middleware('throttle:120,1');
 Route::post('/logout', [AuthController::class, 'logout']);
 Route::get('/me', [AuthController::class, 'me']);
 
@@ -30,6 +33,7 @@ Route::delete('/2fa', [TwoFactorController::class, 'destroy']);
 Route::get('/system/status', [SystemController::class, 'status']);
 Route::get('/system/processes', [SystemController::class, 'processes']);
 Route::post('/system/restart-awg', [SystemController::class, 'restartAwg']);
+Route::post('/system/restart-singbox', [SystemController::class, 'restartSingBox']);
 Route::post('/system/restart-all', [SystemController::class, 'restartAll']);
 
 Route::get('/diagnostics/status', [DiagnosticsController::class, 'status']);
@@ -48,6 +52,7 @@ Route::post('/clients', [ClientController::class, 'store']);
 Route::put('/clients/{client}', [ClientController::class, 'update']);
 Route::delete('/clients/{client}', [ClientController::class, 'destroy']);
 
+Route::get('/awg-protocol-versions', [ConfigController::class, 'protocolVersions']);
 Route::get('/configs', [ConfigController::class, 'index']);
 Route::post('/configs', [ConfigController::class, 'store']);
 Route::get('/configs/{config}', [ConfigController::class, 'show']);
@@ -71,6 +76,11 @@ Route::get('/configs/{config}/peers/{client}/qr', [ConfigController::class, 'pee
 Route::post('/configs/{config}/peers/{client}/regenerate-keys', [ConfigController::class, 'regeneratePeerKeys']);
 Route::post('/configs/{config}/peers/{client}/regenerate-psk', [ConfigController::class, 'regeneratePeerPsk']);
 Route::post('/configs/{config}/peers/{client}/reveal-keys', [ConfigController::class, 'revealPeerKeys']);
+Route::post('/configs/{config}/peers/{client}/reset-traffic', [ConfigController::class, 'resetPeerTraffic']);
+Route::get('/configs/{config}/peers/{client}/handshake-logs', [ConfigController::class, 'peerHandshakeLogs']);
+Route::get('/configs/{config}/handshake-logs', [ConfigController::class, 'handshakeLogs']);
+Route::delete('/configs/{config}/handshake-logs', [ConfigController::class, 'clearHandshakeLogs']);
+Route::post('/configs/{config}/reset-traffic', [ConfigController::class, 'resetConfigTraffic']);
 
 Route::get('/resolver', [ResolverController::class, 'show']);
 Route::put('/resolver/configs/{config}', [ResolverController::class, 'updateConfig']);
@@ -101,13 +111,27 @@ Route::post('/resolver/connections/{connection}/ping-subscription-stream', [Reso
 Route::post('/resolver/connections/{connection}/ping-subscription-node', [ResolverConnectionController::class, 'pingConnectionSubscriptionNode']);
 Route::post('/resolver/connections/{connection}/sync-best-pick', [ResolverConnectionController::class, 'syncBestPick']);
 Route::post('/resolver/connections/{connection}/test', [ResolverConnectionController::class, 'test']);
+Route::get('/resolver/speed-test/status', [SpeedTestController::class, 'status']);
+Route::post('/resolver/connections/{connection}/speed-test', [SpeedTestController::class, 'runConnection']);
+Route::post('/resolver/speed-test/batch', [SpeedTestController::class, 'runBatch']);
 Route::put('/resolver/connections/{connection}', [ResolverConnectionController::class, 'update']);
 Route::delete('/resolver/connections/{connection}', [ResolverConnectionController::class, 'destroy']);
 
 Route::get('/settings', [SettingsController::class, 'show']);
 Route::put('/settings', [SettingsController::class, 'update']);
+Route::get('/settings/detect-public-ip', [SettingsController::class, 'detectPublicIp']);
 Route::post('/settings/restart-awg', [SettingsController::class, 'restartAwg']);
+Route::get('/settings/update-status', [SettingsController::class, 'updateStatus']);
+Route::post('/settings/check-updates', [SettingsController::class, 'checkProjectUpdates']);
+Route::post('/settings/update', [SettingsController::class, 'startProjectUpdate']);
+Route::post('/settings/update/clear-log', [SettingsController::class, 'clearProjectUpdateLog']);
+Route::post('/settings/update/retry-stuck', [SettingsController::class, 'retryStuckProjectUpdate']);
+Route::get('/settings/awg-kernel', [SettingsController::class, 'awgKernelStatus']);
+Route::post('/settings/awg-kernel/install', [SettingsController::class, 'awgKernelInstall']);
+Route::post('/settings/awg-kernel/uninstall', [SettingsController::class, 'awgKernelUninstall']);
 Route::post('/settings/test-webhook', [SettingsController::class, 'testWebhook']);
+Route::post('/settings/test-telegram', [SettingsController::class, 'testTelegram']);
+Route::post('/settings/test-telegram-proxy', [SettingsController::class, 'testTelegramProxy']);
 Route::post('/settings/ssl/issue/start', [SettingsController::class, 'sslIssueStart']);
 Route::post('/settings/ssl/issue/complete', [SettingsController::class, 'sslIssueComplete']);
 Route::post('/settings/ssl/recover', [SettingsController::class, 'sslRecover']);

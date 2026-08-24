@@ -237,6 +237,9 @@ const FIT_MARGIN = 48
 const MINIMAP_W = 180
 const MINIMAP_H = 110
 const MINIMAP_PAD = 8
+/** Fixed minimap viewport indicator size (independent of graph zoom). */
+const MINIMAP_VIEWPORT_W = 44
+const MINIMAP_VIEWPORT_H = 28
 const ZONE_FOCUS_MARGIN = 32
 
 const nodes = reactive({})
@@ -1145,28 +1148,19 @@ const minimapModel = computed(() => {
     }
   })
 
-  // Fixed screen-sized indicator: cancel zoom so the block does not
-  // shrink/grow when zooming; only its position follows the camera.
+  // Fixed-size pan indicator: only the center follows the camera;
+  // size stays constant at any graph zoom.
   let viewport = null
   const vb = viewportBox.value
-  const zoom = viewZoom.value
-  if (
-    vb &&
-    Number.isFinite(vb.left) &&
-    Number.isFinite(vb.top) &&
-    Number.isFinite(zoom) &&
-    zoom > 0
-  ) {
+  if (vb && Number.isFinite(vb.left) && Number.isFinite(vb.top)) {
     const cx = (vb.left + vb.right) / 2
     const cy = (vb.top + vb.bottom) / 2
     const center = toMini(cx, cy)
-    const vw = Math.max(8, (vb.right - vb.left) * zoom * s)
-    const vh = Math.max(8, (vb.bottom - vb.top) * zoom * s)
     viewport = {
-      x: center.x - vw / 2,
-      y: center.y - vh / 2,
-      width: vw,
-      height: vh
+      x: center.x - MINIMAP_VIEWPORT_W / 2,
+      y: center.y - MINIMAP_VIEWPORT_H / 2,
+      width: MINIMAP_VIEWPORT_W,
+      height: MINIMAP_VIEWPORT_H
     }
   }
 

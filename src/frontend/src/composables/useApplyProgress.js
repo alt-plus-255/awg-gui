@@ -15,6 +15,16 @@ function buildScenarios (t) {
       ],
       stepIntervalMs: 3000
     },
+    'resolver-lists-initial': {
+      title: t('resolver.progressInitialLists'),
+      steps: [
+        t('resolver.progressDownloadCommunity'),
+        t('resolver.progressWriteRulesets'),
+        t('resolver.progressAlmostReady')
+      ],
+      footnote: t('resolver.progressInitialListsFootnote'),
+      stepIntervalMs: 4000
+    },
     'connection-save-proxy': {
       title: t('connections.progressSaveConnection'),
       steps: [
@@ -58,6 +68,9 @@ function buildScenarios (t) {
 function buildMessage (scenario, stepIndex, showLongHint, longWaitHint) {
   const step = scenario.steps[Math.min(stepIndex, scenario.steps.length - 1)]
   const lines = [`<div class="text-subtitle1 q-mb-sm">${scenario.title}</div>`, `<div>${step}</div>`]
+  if (scenario.footnote) {
+    lines.push(`<div class="text-caption text-grey-4 q-mt-md" style="max-width: 360px; margin-inline: auto;">${scenario.footnote}</div>`)
+  }
   if (showLongHint) {
     lines.push(`<div class="text-caption text-grey-4 q-mt-md">${longWaitHint}</div>`)
   }

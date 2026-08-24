@@ -143,6 +143,7 @@ class MergedRulesetWriter
 
     /**
      * Collect string matchers from decompiled rules (any list: domains and/or IPs).
+     * sing-box source / decompile may emit a single string or a list for the same field.
      *
      * @param  list<array<string, mixed>>  $rules
      * @return list<string>
@@ -154,7 +155,13 @@ class MergedRulesetWriter
             if (! is_array($rule)) {
                 continue;
             }
-            foreach ($rule[$key] ?? [] as $value) {
+            $raw = $rule[$key] ?? [];
+            if (is_string($raw)) {
+                $raw = $raw === '' ? [] : [$raw];
+            } elseif (! is_array($raw)) {
+                continue;
+            }
+            foreach ($raw as $value) {
                 if (! is_string($value) || $value === '') {
                     continue;
                 }
@@ -163,6 +170,25 @@ class MergedRulesetWriter
         }
 
         return $out;
+    }
+
+    /**
+     * @param  mixed  $value
+     * @return list<mixed>
+     */
+    public function asList(mixed $value): array
+    {
+        if ($value === null || $value === '') {
+            return [];
+        }
+        if (is_array($value)) {
+            return array_values($value);
+        }
+        if (is_string($value)) {
+            return [$value];
+        }
+
+        return [];
     }
 
     /**
@@ -179,7 +205,7 @@ class MergedRulesetWriter
         $domainRegex = [];
         $ipCidrs = [];
 
-        foreach ($config->community_lists ?? [] as $tag) {
+        foreach ($this->asList($config->community_lists) as $tag) {
             if (! is_string($tag) || $tag === '') {
                 continue;
             }
@@ -191,14 +217,14 @@ class MergedRulesetWriter
             $ipCidrs = [...$ipCidrs, ...$this->collectRuleField($rules, 'ip_cidr')];
         }
 
-        foreach ($config->user_domains ?? [] as $d) {
+        foreach ($this->asList($config->user_domains) as $d) {
             $d = strtolower(trim((string) $d));
             if ($d !== '') {
                 $domainSuffix[] = $d;
             }
         }
 
-        foreach ($config->user_subnets ?? [] as $cidr) {
+        foreach ($this->asList($config->user_subnets) as $cidr) {
             $cidr = trim((string) $cidr);
             if ($cidr !== '') {
                 $ipCidrs[] = $cidr;

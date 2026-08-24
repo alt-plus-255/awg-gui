@@ -2,23 +2,34 @@ import { watch } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { useSystemStore } from '@/stores/system'
 import { useSettingsStore } from '@/stores/settings'
+import { useProjectUpdateStore } from '@/stores/projectUpdate'
+import { useSpeedTestStore } from '@/stores/speedTest'
+import { stopAuthenticatedBackgroundWork } from '@/utils/stopAuthenticatedBackground'
 
 export function useAppBootstrap () {
   const auth = useAuthStore()
   const system = useSystemStore()
   const settings = useSettingsStore()
+  const projectUpdate = useProjectUpdateStore()
+  const speedTest = useSpeedTestStore()
 
   async function bootstrap () {
     await Promise.all([
       system.checkStatus(),
       settings.fetch()
     ])
+    void projectUpdate.checkForUpdates({ silent: true })
+    void speedTest.fetchStatus({ silent: true })
   }
 
   watch(
     () => auth.checked && !!auth.user,
     (ready) => {
-      if (ready) void bootstrap()
+      if (ready) {
+        void bootstrap()
+      } else if (auth.checked) {
+        void stopAuthenticatedBackgroundWork()
+      }
     },
     { immediate: true }
   )

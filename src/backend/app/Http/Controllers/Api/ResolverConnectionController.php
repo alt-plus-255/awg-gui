@@ -4,6 +4,9 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\ResolverConnection;
+use App\Services\AmneziaWg\Versions\AwgVersionRegistry;
+use App\Services\Resolver\AmneziaWgClientConfBuilder;
+use App\Services\Resolver\AmneziaWgConfParser;
 use App\Services\Resolver\PingProbeConfigSync;
 use App\Services\Resolver\PingProbeManager;
 use App\Services\Resolver\PingSessionBusyException;
@@ -28,6 +31,9 @@ class ResolverConnectionController extends Controller
         private PingProbeConfigSync $pingProbeSync,
         private PingProbeManager $pingProbe,
         private ResolverConnectionSingBoxFingerprint $singBoxFingerprint,
+        private AmneziaWgConfParser $awgConfParser,
+        private AmneziaWgClientConfBuilder $awgClientConf,
+        private AwgVersionRegistry $awgVersions,
     ) {}
 
     public function warmupPingProbe()
@@ -325,6 +331,8 @@ class ResolverConnectionController extends Controller
 
         if ($kind === ResolverConnection::KIND_SUBSCRIPTION) {
             $conn = $this->createSubscriptionConnection($data);
+        } elseif (($data['config_type'] ?? '') === 'awg') {
+            $conn = $this->createAwgConnection($data);
         } else {
             $outbound = $this->parser->fromRequest(
                 $data['config_type'],
@@ -339,6 +347,8 @@ class ResolverConnectionController extends Controller
                 'config_type' => $data['config_type'],
                 'share_url' => $data['config_type'] === 'url' ? ($data['share_url'] ?? null) : null,
                 'outbound' => $outbound,
+                'awg_conf' => null,
+                'protocol_version' => null,
                 'enabled' => $data['enabled'] ?? true,
                 'ping_check_interval_min' => (int) ($data['ping_check_interval_min'] ?? 5),
             ]);
@@ -375,23 +385,31 @@ class ResolverConnectionController extends Controller
         } else {
             $connection->kind = ResolverConnection::KIND_PROXY;
             $connection->subscription_url = null;
+            $connection->subscription_body = null;
             $connection->subscription_mode = null;
             $connection->subscription_selected = null;
             $connection->subscription_nodes = null;
             $connection->subscription_fetched_at = null;
 
             $configType = $data['config_type'] ?? $connection->config_type;
-            $needsParse = isset($data['config_type'])
-                || array_key_exists('share_url', $data)
-                || array_key_exists('outbound_json', $data);
 
-            if ($needsParse) {
-                $shareUrl = $data['share_url'] ?? $connection->share_url;
-                $outboundJson = $data['outbound_json'] ?? json_encode($connection->outbound, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-                $outbound = $this->parser->fromRequest($configType, $shareUrl, is_string($outboundJson) ? $outboundJson : json_encode($outboundJson));
-                $connection->config_type = $configType;
-                $connection->share_url = $configType === 'url' ? $shareUrl : null;
-                $connection->outbound = $outbound;
+            if ($configType === 'awg') {
+                $this->applyAwgFields($connection, $data);
+            } else {
+                $needsParse = isset($data['config_type'])
+                    || array_key_exists('share_url', $data)
+                    || array_key_exists('outbound_json', $data);
+
+                if ($needsParse) {
+                    $shareUrl = $data['share_url'] ?? $connection->share_url;
+                    $outboundJson = $data['outbound_json'] ?? json_encode($connection->outbound, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+                    $outbound = $this->parser->fromRequest($configType, $shareUrl, is_string($outboundJson) ? $outboundJson : json_encode($outboundJson));
+                    $connection->config_type = $configType;
+                    $connection->share_url = $configType === 'url' ? $shareUrl : null;
+                    $connection->outbound = $outbound;
+                    $connection->awg_conf = null;
+                    $connection->protocol_version = null;
+                }
             }
         }
 
@@ -457,12 +475,75 @@ class ResolverConnectionController extends Controller
             $rules['subscription_mode'] = [$updating ? 'sometimes' : 'required', Rule::in([ResolverConnection::MODE_SINGLE, ResolverConnection::MODE_URLTEST])];
             $rules['subscription_selected'] = ['nullable', 'string', 'max:64'];
         } else {
-            $rules['config_type'] = [$updating ? 'sometimes' : 'required', Rule::in(['url', 'json'])];
-            $rules['share_url'] = ['nullable', 'string', 'max:8000'];
-            $rules['outbound_json'] = ['nullable', 'string', 'max:50000'];
+            $rules['config_type'] = [$updating ? 'sometimes' : 'required', Rule::in(['url', 'json', 'awg'])];
+            $configType = $request->input('config_type');
+            if ($configType === null && $updating && $connection) {
+                $configType = $connection->config_type;
+            }
+            if ($configType === 'awg') {
+                $rules['awg_conf'] = [$updating ? 'sometimes' : 'required', 'string', 'max:100000'];
+                $rules['protocol_version'] = [$updating ? 'sometimes' : 'required', 'string', Rule::in($this->awgVersions->ids())];
+            } else {
+                $rules['share_url'] = ['nullable', 'string', 'max:8000'];
+                $rules['outbound_json'] = ['nullable', 'string', 'max:50000'];
+            }
         }
 
         return $request->validate($rules);
+    }
+
+    /** @param  array<string, mixed>  $data */
+    private function createAwgConnection(array $data): ResolverConnection
+    {
+        $raw = (string) ($data['awg_conf'] ?? '');
+        $this->awgConfParser->parse($raw);
+        $version = (string) ($data['protocol_version'] ?? $this->awgVersions->latest());
+
+        $conn = ResolverConnection::query()->create([
+            'name' => $data['name'],
+            'comment' => $data['comment'] ?? null,
+            'kind' => ResolverConnection::KIND_PROXY,
+            'config_type' => 'awg',
+            'share_url' => null,
+            'awg_conf' => $raw,
+            'protocol_version' => $version,
+            'outbound' => ['type' => 'direct'],
+            'enabled' => $data['enabled'] ?? true,
+            'ping_check_interval_min' => (int) ($data['ping_check_interval_min'] ?? 5),
+        ]);
+
+        $conn->outbound = $this->awgClientConf->outboundFor((int) $conn->id);
+        $conn->save();
+
+        return $conn;
+    }
+
+    /** @param  array<string, mixed>  $data */
+    private function applyAwgFields(ResolverConnection $connection, array $data): void
+    {
+        $connection->config_type = 'awg';
+        $connection->share_url = null;
+
+        $raw = array_key_exists('awg_conf', $data)
+            ? (string) ($data['awg_conf'] ?? '')
+            : (string) ($connection->awg_conf ?? '');
+        if (trim($raw) === '') {
+            throw ValidationException::withMessages([
+                'awg_conf' => [__('resolver.awg_conf_required')],
+            ]);
+        }
+        $this->awgConfParser->parse($raw);
+
+        $version = (string) ($data['protocol_version'] ?? $connection->protocol_version ?? $this->awgVersions->latest());
+        if (! $this->awgVersions->has($version)) {
+            throw ValidationException::withMessages([
+                'protocol_version' => [__('resolver.awg_protocol_version_invalid')],
+            ]);
+        }
+
+        $connection->awg_conf = $raw;
+        $connection->protocol_version = $version;
+        $connection->outbound = $this->awgClientConf->outboundFor((int) $connection->id);
     }
 
     /** @param  array<string, mixed>  $data */
@@ -482,6 +563,8 @@ class ResolverConnectionController extends Controller
             'kind' => ResolverConnection::KIND_SUBSCRIPTION,
             'config_type' => 'url',
             'share_url' => null,
+            'awg_conf' => null,
+            'protocol_version' => null,
             'subscription_url' => $data['subscription_url'],
             'subscription_body' => $this->normalizedSubscriptionBody($data['subscription_body'] ?? null),
             'subscription_mode' => $mode,
@@ -499,6 +582,8 @@ class ResolverConnectionController extends Controller
         $connection->kind = ResolverConnection::KIND_SUBSCRIPTION;
         $connection->config_type = 'url';
         $connection->share_url = null;
+        $connection->awg_conf = null;
+        $connection->protocol_version = null;
 
         $url = $data['subscription_url'] ?? $connection->subscription_url;
         if ($url === null || $url === '') {
@@ -972,6 +1057,8 @@ class ResolverConnectionController extends Controller
             'kind' => $kind,
             'config_type' => $c->config_type,
             'share_url' => $c->share_url,
+            'awg_conf' => $c->awg_conf,
+            'protocol_version' => $c->protocol_version,
             'subscription_url' => $c->subscription_url,
             'subscription_body' => $c->subscription_body,
             'subscription_mode' => $c->subscription_mode,

@@ -80,6 +80,23 @@
                 </q-item-section>
               </q-item>
 
+              <q-item
+                clickable
+                v-close-popup
+                :active="route.name === 'resolver-speed-test'"
+                class="resolver-dropdown-item"
+                active-class="resolver-dropdown-item--active"
+                @click="router.push({ name: 'resolver-speed-test' })"
+              >
+                <q-item-section avatar>
+                  <q-icon name="speed" size="18px" />
+                </q-item-section>
+                <q-item-section>
+                  <q-item-label>{{ t('nav.speedTest') }}</q-item-label>
+                  <q-item-label caption class="text-grey-5">{{ t('nav.speedTestCaption') }}</q-item-label>
+                </q-item-section>
+              </q-item>
+
               <q-separator />
 
               <q-item
@@ -123,6 +140,22 @@
 
         <q-space />
 
+        <q-btn
+          v-if="showHeaderUpdate"
+          flat
+          dense
+          no-caps
+          color="warning"
+          class="update-available-btn q-mr-sm"
+          :to="{ name: 'settings', query: { tab: 'update' } }"
+        >
+          <span class="update-available-btn__label gt-xs">{{ t('nav.updateAvailable') }}</span>
+          <span class="mono update-available-btn__ver">{{ projectUpdate.current_version || '—' }}</span>
+          <q-icon name="arrow_forward" size="18px" class="q-mx-xs" />
+          <span class="mono text-weight-bold update-available-btn__ver">{{ projectUpdate.latest_version }}</span>
+          <q-tooltip>{{ t('nav.updateAvailableTooltip') }}</q-tooltip>
+        </q-btn>
+
         <q-select
           v-if="showLiveInterval"
           v-model="liveInterval"
@@ -148,10 +181,53 @@
           <q-tooltip>{{ liveStatus.hint }}</q-tooltip>
         </q-badge>
 
-        <LanguageSwitcher class="q-mr-sm" :compact="$q.screen.lt.md" />
-        <ThemeSwitcher class="q-mr-sm" :compact="$q.screen.lt.md" />
-        <div class="q-mr-md text-caption text-grey-5 gt-sm">{{ auth.user?.username }}</div>
-        <q-btn flat dense icon="logout" :label="t('nav.logout')" class="gt-sm" @click="onLogout" />
+        <LanguageSwitcher
+          v-if="uiChrome.prefs.showLanguage"
+          class="q-mr-sm"
+          :compact="$q.screen.lt.md"
+        />
+        <ThemeSwitcher
+          v-if="uiChrome.prefs.showTheme"
+          class="q-mr-sm"
+          :compact="$q.screen.lt.md"
+        />
+        <q-btn
+          v-if="canInstallPwa && uiChrome.prefs.showInstallApp"
+          flat
+          dense
+          no-caps
+          icon="install_mobile"
+          :label="t('nav.installApp')"
+          class="q-mr-sm gt-xs"
+          @click="installPwa"
+        >
+          <q-tooltip>{{ t('nav.installAppTooltip') }}</q-tooltip>
+        </q-btn>
+        <q-btn
+          v-if="canInstallPwa && uiChrome.prefs.showInstallApp"
+          flat
+          dense
+          round
+          icon="install_mobile"
+          class="q-mr-sm lt-sm"
+          :aria-label="t('nav.installApp')"
+          @click="installPwa"
+        >
+          <q-tooltip>{{ t('nav.installAppTooltip') }}</q-tooltip>
+        </q-btn>
+        <div
+          v-if="uiChrome.prefs.showUsername && auth.user?.username"
+          class="q-mr-md text-caption text-grey-5 gt-sm"
+        >{{ auth.user.username }}</div>
+        <q-btn
+          v-if="uiChrome.prefs.showLogout"
+          flat
+          dense
+          icon="logout"
+          :label="t('nav.logout')"
+          class="gt-sm"
+          @click="onLogout"
+        />
       </q-toolbar>
     </q-header>
 
@@ -202,14 +278,49 @@
           </q-item-section>
         </q-item>
 
-        <q-separator class="q-my-sm" />
+        <q-separator
+          v-if="(canInstallPwa && uiChrome.prefs.showInstallApp) || uiChrome.prefs.showLogout || uiChrome.prefs.showUsername"
+          class="q-my-sm"
+        />
 
-        <q-item clickable v-ripple @click="onLogout">
+        <q-item
+          v-if="canInstallPwa && uiChrome.prefs.showInstallApp"
+          clickable
+          v-ripple
+          @click="onInstallPwaFromDrawer"
+        >
+          <q-item-section avatar>
+            <q-icon name="install_mobile" />
+          </q-item-section>
+          <q-item-section>
+            <q-item-label>{{ t('nav.installApp') }}</q-item-label>
+            <q-item-label caption class="text-grey-5">{{ t('nav.installAppTooltip') }}</q-item-label>
+          </q-item-section>
+        </q-item>
+
+        <q-item
+          v-if="uiChrome.prefs.showUsername && auth.user?.username && !uiChrome.prefs.showLogout"
+          dense
+        >
+          <q-item-section avatar>
+            <q-icon name="person" />
+          </q-item-section>
+          <q-item-section class="text-grey-5">
+            {{ auth.user.username }}
+          </q-item-section>
+        </q-item>
+
+        <q-item
+          v-if="uiChrome.prefs.showLogout"
+          clickable
+          v-ripple
+          @click="onLogout"
+        >
           <q-item-section avatar>
             <q-icon name="logout" />
           </q-item-section>
           <q-item-section>
-            {{ auth.user?.username
+            {{ uiChrome.prefs.showUsername && auth.user?.username
               ? t('nav.logoutWithUser', { username: auth.user.username })
               : t('nav.logout') }}
           </q-item-section>
@@ -235,8 +346,11 @@ import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useSettingsStore } from '@/stores/settings'
+import { useProjectUpdateStore } from '@/stores/projectUpdate'
 import { useSystemStore } from '@/stores/system'
+import { useUiChromeStore } from '@/stores/uiChrome'
 import { useAppBootstrap } from '@/composables/useAppBootstrap'
+import { usePwaInstall } from '@/composables/usePwaInstall'
 import {
   getLiveIntervalOptions,
   setLiveInterval,
@@ -249,10 +363,13 @@ import SystemBootOverlay from '@/components/SystemBootOverlay.vue'
 const { t } = useI18n()
 const auth = useAuthStore()
 const settingsStore = useSettingsStore()
+const projectUpdate = useProjectUpdateStore()
 const systemStore = useSystemStore()
+const uiChrome = useUiChromeStore()
 const liveState = useLiveStatsState()
 const router = useRouter()
 const route = useRoute()
+const { canInstall: canInstallPwa, install: installPwa } = usePwaInstall()
 
 useAppBootstrap()
 
@@ -262,6 +379,12 @@ const liveInterval = ref(liveState.intervalMs)
 
 const showLiveInterval = computed(() =>
   liveState.active && liveState.transport === 'http' && !liveState.failed
+)
+
+const showHeaderUpdate = computed(() =>
+  projectUpdate.update_available
+  && !projectUpdate.running
+  && !!projectUpdate.latest_version
 )
 
 watch(() => liveState.intervalMs, (ms) => {
@@ -328,6 +451,13 @@ const resolverNavItems = computed(() => [
     to: { name: 'resolver-connections' }
   },
   {
+    name: 'resolver-speed-test',
+    label: t('nav.speedTest'),
+    caption: t('nav.speedTestCaption'),
+    icon: 'speed',
+    to: { name: 'resolver-speed-test' }
+  },
+  {
     name: 'diagnostics',
     label: t('nav.diagnostics'),
     caption: t('nav.diagnosticsCaption'),
@@ -344,7 +474,7 @@ const resolverNavItems = computed(() => [
 ])
 
 const resolverMenuActive = computed(() =>
-  ['resolver', 'resolver-connections', 'diagnostics', 'resolver-settings'].includes(route.name)
+  ['resolver', 'resolver-connections', 'resolver-speed-test', 'diagnostics', 'resolver-settings'].includes(route.name)
 )
 
 function go (to) {
@@ -356,9 +486,13 @@ watch(() => route.fullPath, () => {
   drawerOpen.value = false
 })
 
+async function onInstallPwaFromDrawer () {
+  drawerOpen.value = false
+  await installPwa()
+}
+
 async function onLogout () {
   drawerOpen.value = false
-  systemStore.stopBlockedPoll()
   await auth.logout()
   router.push({ name: 'login' })
 }
@@ -379,6 +513,22 @@ async function onLogout () {
   flex-shrink: 0;
   min-width: 96px;
   max-width: 120px;
+}
+.update-available-btn {
+  flex-shrink: 0;
+  border: 1px solid rgba(var(--q-warning-rgb), 0.45);
+  border-radius: var(--surface-radius);
+  padding: 4px 10px;
+  max-width: min(100%, 320px);
+}
+.update-available-btn__label {
+  margin-right: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.update-available-btn__ver {
+  font-size: 12px;
 }
 .resolver-menu-btn {
   margin: 0 2px;

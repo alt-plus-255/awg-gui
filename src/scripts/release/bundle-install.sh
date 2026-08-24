@@ -9,13 +9,18 @@ ENV_FILE="${RUNTIME_DIR}/.env"
 ENV_EXAMPLE="${RUNTIME_DIR}/.env.example"
 PROJECT_NAME=awggui
 YES=0
+SKIP_KERNEL=0
+DEBUG=0
 UPGRADE_MODE=0
 REPAIR_MODE=0
+BUNDLE_VERSION=""
 PANEL_PORT_DEFAULT=8877
+PANEL_HTTPS_PORT_DEFAULT=7443
 AWG_PORT_DEFAULT=51820
 INTERNAL_SUBNET_DEFAULT="10.66.66.0/24"
 PEER_DNS_DEFAULT="1.1.1.1"
 ALLOWED_IPS_DEFAULT="0.0.0.0/0, ::/0"
+KERNEL_HOST_SCRIPT_SRC="${SCRIPT_DIR}/host/awg-kernel-host.sh"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -24,132 +29,143 @@ YELLOW='\033[1;33m'
 BOLD='\033[1m'
 NC='\033[0m'
 
-log() { echo -e "${CYAN}[awg-gui-install]${NC} $*"; }
-ok() { echo -e "${GREEN}[ok]${NC} $*"; }
-warn() { echo -e "${YELLOW}[warn]${NC} $*"; }
+log() { echo -e "${CYAN}[awg-gui-install]${NC} $*" >&2; }
+ok() { echo -e "${GREEN}[ok]${NC} $*" >&2; }
+warn() { echo -e "${YELLOW}[warn]${NC} $*" >&2; }
 die() { echo -e "${RED}[error]${NC} $*" >&2; exit 1; }
 
+_I18N=""
+if [[ -f "${SCRIPT_DIR}/lib/install-i18n.sh" ]]; then
+  _I18N="${SCRIPT_DIR}/lib/install-i18n.sh"
+elif [[ -f "${SCRIPT_DIR}/../lib/install-i18n.sh" ]]; then
+  _I18N="${SCRIPT_DIR}/../lib/install-i18n.sh"
+fi
+if [[ -n "${_I18N}" ]]; then
+  # shellcheck disable=SC1090
+  source "${_I18N}"
+fi
+unset _I18N
+
+_PORTS=""
+if [[ -f "${SCRIPT_DIR}/lib/install-ports.sh" ]]; then
+  _PORTS="${SCRIPT_DIR}/lib/install-ports.sh"
+elif [[ -f "${SCRIPT_DIR}/../lib/install-ports.sh" ]]; then
+  _PORTS="${SCRIPT_DIR}/../lib/install-ports.sh"
+fi
+if [[ -n "${_PORTS}" ]]; then
+  # shellcheck disable=SC1090
+  source "${_PORTS}"
+else
+  die "$(t err_missing_path "install-ports.sh")"
+fi
+unset _PORTS
+
 usage() {
-  cat <<EOF
-Usage: $0 [--yes] [--help]
+  if [[ "${AWG_GUI_LANG:-ru}" == "en" ]]; then
+    cat <<EOF
+Usage: $0 [--yes] [--no-awg-kernel] [--debug] [--lang=ru|en] [--help]
 
 Production install: loads pre-built Docker images and starts awggui stack.
+Asks about AmneziaWG kernel module (recommended for YouTube/Instagram; default Y).
+
+  $(t usage_opt_yes)
+  $(t usage_opt_no_kernel)
+  $(t usage_opt_debug)
+  $(t opt_lang)
 EOF
+  else
+    cat <<EOF
+Usage: $0 [--yes] [--no-awg-kernel] [--debug] [--lang=ru|en] [--help]
+
+Production-установка: загружает готовые Docker-образы и запускает стек awggui.
+Спрашивает про модуль ядра AmneziaWG (рекомендуется для YouTube/Instagram; по умолчанию Y).
+
+  $(t usage_opt_yes)
+  $(t usage_opt_no_kernel)
+  $(t usage_opt_debug)
+  $(t opt_lang)
+EOF
+  fi
 }
 
 for arg in "$@"; do
   case "$arg" in
     --yes|-y) YES=1 ;;
-    --help|-h) usage; exit 0 ;;
-    *) die "Unknown argument: $arg" ;;
+    --no-awg-kernel) SKIP_KERNEL=1 ;;
+    --debug) DEBUG=1 ;;
+    --lang=*) set_awg_gui_lang "${arg#*=}" ;;
+    --help|-h) normalize_awg_gui_lang; usage; exit 0 ;;
+    *) die "$(t err_unknown_arg "$arg")" ;;
   esac
 done
 
-[[ "$(id -u)" -eq 0 ]] || die "Run as root (sudo)"
+normalize_awg_gui_lang
+export AWG_GUI_LANG
+
+if [[ "${AWG_GUI_SKIP_KERNEL:-0}" == "1" ]]; then
+  SKIP_KERNEL=1
+fi
+if [[ "${AWG_GUI_DEBUG:-0}" == "1" ]]; then
+  DEBUG=1
+fi
+
+[[ "$(id -u)" -eq 0 ]] || die "$(t err_run_as_root)"
+
+# Language was already chosen by online installer / run-header when --lang is explicit;
+# otherwise ask here (interactive) before Docker work.
+select_install_lang
+export AWG_GUI_LANG
 
 compose() {
   docker compose -p "${PROJECT_NAME}" --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" "$@"
 }
 
-detect_os() {
-  # shellcheck disable=SC1091
-  source /etc/os-release
-  OS_ID="${ID:-}"
-  OS_VERSION_CODENAME="${VERSION_CODENAME:-}"
-}
-
-detect_arch() {
-  local m
-  m="$(uname -m)"
-  case "$m" in
-    x86_64|amd64) ARCH=amd64 ;;
-    aarch64|arm64) ARCH=arm64 ;;
-    armv7l) ARCH=armhf ;;
-    *) die "Unsupported architecture: $m" ;;
-  esac
-}
+_ENSURE_DOCKER=""
+if [[ -f "${SCRIPT_DIR}/lib/ensure-docker.sh" ]]; then
+  _ENSURE_DOCKER="${SCRIPT_DIR}/lib/ensure-docker.sh"
+elif [[ -f "${SCRIPT_DIR}/../lib/ensure-docker.sh" ]]; then
+  _ENSURE_DOCKER="${SCRIPT_DIR}/../lib/ensure-docker.sh"
+else
+  die "$(t err_missing_ensure_docker)"
+fi
+# shellcheck source=../lib/ensure-docker.sh
+source "${_ENSURE_DOCKER}"
+unset _ENSURE_DOCKER
 
 ensure_curl() {
-  command -v curl >/dev/null 2>&1 || die "curl is required"
-  ok "curl present"
+  command -v curl >/dev/null 2>&1 || die "$(t err_curl_required)"
+  ok "$(t ok_curl_present)"
 }
 
-install_docker() {
-  if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
-    ok "Docker and Compose already installed"
-    systemctl enable --now docker 2>/dev/null || true
-    return
+read_tty() {
+  local prompt="$1"
+  local ans=""
+  if [[ -r /dev/tty ]]; then
+    printf '%s' "${prompt}" > /dev/tty
+    read -r ans < /dev/tty || true
+  elif [[ -t 0 ]]; then
+    read -r -p "${prompt}" ans || true
+  else
+    die "$(t err_no_tty_use_yes)"
   fi
-
-  if ! confirm "Docker не установлен. Установить из официальных репозиториев?"; then
-    die "Docker is required. https://docs.docker.com/engine/install/"
-  fi
-
-  log "Installing Docker Engine ..."
-  detect_os
-  detect_arch
-
-  case "${OS_ID}" in
-    ubuntu)
-      apt-get update -y
-      apt-get install -y ca-certificates curl
-      install -m 0755 -d /etc/apt/keyrings
-      curl -fsSL "https://download.docker.com/linux/ubuntu/gpg" -o /etc/apt/keyrings/docker.asc
-      chmod a+r /etc/apt/keyrings/docker.asc
-      echo "deb [arch=${ARCH} signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu ${OS_VERSION_CODENAME} stable" \
-        > /etc/apt/sources.list.d/docker.list
-      apt-get update -y
-      apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-      ;;
-    debian|raspbian)
-      apt-get update -y
-      apt-get install -y ca-certificates curl
-      install -m 0755 -d /etc/apt/keyrings
-      curl -fsSL "https://download.docker.com/linux/debian/gpg" -o /etc/apt/keyrings/docker.asc
-      chmod a+r /etc/apt/keyrings/docker.asc
-      echo "deb [arch=${ARCH} signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian ${OS_VERSION_CODENAME} stable" \
-        > /etc/apt/sources.list.d/docker.list
-      apt-get update -y
-      apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-      ;;
-    fedora)
-      dnf -y install dnf-plugins-core
-      dnf config-manager --add-repo https://download.docker.com/linux/fedora/docker-ce.repo
-      dnf install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-      ;;
-    centos|rhel|rocky|almalinux)
-      if command -v dnf >/dev/null 2>&1; then
-        dnf -y install dnf-plugins-core
-        dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
-        dnf install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-      else
-        yum install -y yum-utils
-        yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
-        yum install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-      fi
-      ;;
-    *)
-      die "Unsupported OS '${OS_ID}'. Install Docker manually."
-      ;;
-  esac
-
-  systemctl enable --now docker
-  docker compose version >/dev/null 2>&1 || die "docker compose plugin missing"
-  ok "Docker installed"
+  printf '%s' "${ans}"
 }
 
 confirm() {
   local msg="$1"
-  local ans
+  local default="${2:-n}"
+  local ans hint
   if [[ "${YES}" -eq 1 ]]; then
-    log "${msg} → yes (--yes)"
+    log "$(t log_confirm_yes "${msg}")"
     return 0
   fi
-  read -r -p "${msg} [y/N]: " ans || true
-  case "${ans}" in
-    y|Y|yes|YES) return 0 ;;
-    *) return 1 ;;
-  esac
+  hint="$(confirm_hint "${default}")"
+  ans="$(read_tty "${msg} ${hint}: ")"
+  ans="${ans:-${default}}"
+  if is_yes_answer "${ans}"; then
+    return 0
+  fi
+  return 1
 }
 
 prompt() {
@@ -159,11 +175,61 @@ prompt() {
     printf -v "${var}" '%s' "${def}"
     return
   fi
-  read -r -p "${msg} [${def}]: " val || true
+  val="$(read_tty "${msg} [${def}]: ")"
   if [[ -z "${val}" ]]; then
     printf -v "${var}" '%s' "${def}"
   else
     printf -v "${var}" '%s' "${val}"
+  fi
+}
+
+install_awg_kernel_module() {
+  mkdir -p /etc/awg-gui
+  if [[ -f "${KERNEL_HOST_SCRIPT_SRC}" ]]; then
+    install -m 0755 "${KERNEL_HOST_SCRIPT_SRC}" /etc/awg-gui/awg-kernel-host.sh
+  else
+    warn "$(t warn_kernel_helper_missing "${KERNEL_HOST_SCRIPT_SRC}")"
+    env_set "AWG_KERNEL_WANTED" "0" "${ENV_FILE}" 2>/dev/null || true
+    return 0
+  fi
+
+  if [[ "${SKIP_KERNEL}" -eq 1 ]]; then
+    log "$(t log_skip_kernel)"
+    env_set "AWG_KERNEL_WANTED" "0" "${ENV_FILE}" 2>/dev/null || true
+    return 0
+  fi
+
+  local kernel_status=""
+  kernel_status="$(/etc/awg-gui/awg-kernel-host.sh status 2>/dev/null || true)"
+  if echo "${kernel_status}" | grep -qE '"package_installed":true|"module_loaded":true'; then
+    ok "$(t ok_kernel_already)"
+    env_set "AWG_KERNEL_WANTED" "1" "${ENV_FILE}" 2>/dev/null || true
+    return 0
+  fi
+
+  # Non-interactive upgrade (GUI / --yes): never force-install kernel if it was not present.
+  # Only install when the user previously opted in (AWG_KERNEL_WANTED=1).
+  if [[ "${YES}" -eq 1 && "${UPGRADE_MODE}" -eq 1 ]]; then
+    local wanted
+    wanted="$(env_get "AWG_KERNEL_WANTED" "${ENV_FILE}" "0")"
+    if [[ "${wanted}" != "1" ]]; then
+      log "$(t log_kernel_skip_upgrade_not_installed)"
+      env_set "AWG_KERNEL_WANTED" "0" "${ENV_FILE}" 2>/dev/null || true
+      return 0
+    fi
+  fi
+
+  if confirm "$(t confirm_install_kernel)" "y"; then
+    env_set "AWG_KERNEL_WANTED" "1" "${ENV_FILE}" 2>/dev/null || true
+    log "$(t log_installing_kernel)"
+    if /etc/awg-gui/awg-kernel-host.sh install; then
+      ok "$(t ok_kernel_installed)"
+    else
+      warn "$(t warn_kernel_failed)"
+    fi
+  else
+    env_set "AWG_KERNEL_WANTED" "0" "${ENV_FILE}" 2>/dev/null || true
+    log "$(t log_kernel_skipped_user)"
   fi
 }
 
@@ -172,6 +238,13 @@ env_get() {
   local val=""
   if [[ -f "${file}" ]]; then
     val="$(grep -E "^${key}=" "${file}" 2>/dev/null | tail -1 | cut -d= -f2- || true)"
+    if [[ "${val}" =~ ^\"(.*)\"$ ]]; then
+      val="${BASH_REMATCH[1]}"
+      val="${val//\\\"/\"}"
+      val="${val//\\\\/\\}"
+    elif [[ "${val}" =~ ^\'(.*)\'$ ]]; then
+      val="${BASH_REMATCH[1]}"
+    fi
   fi
   if [[ -n "${val}" ]]; then
     echo "${val}"
@@ -182,10 +255,17 @@ env_get() {
 
 EXPECTED_CONTAINERS=(
   awggui-caddy awggui-app awggui-db awggui-awg
+<<<<<<< HEAD
   awggui-docker-proxy awggui-panel-ops awggui-certbot
 )
 
 detect_existing_install() {
+=======
+  awggui-docker-proxy awggui-panel-ops
+)
+
+has_awggui_containers() {
+>>>>>>> a34ec4d81547d4963b761827020a578f3957b1c6
   local c names
   names="$(docker ps -a --format '{{.Names}}' 2>/dev/null || true)"
   for c in "${EXPECTED_CONTAINERS[@]}"; do
@@ -193,6 +273,11 @@ detect_existing_install() {
       return 0
     fi
   done
+  return 1
+}
+
+detect_existing_install() {
+  has_awggui_containers && return 0
   if [[ -f "${ENV_FILE}" ]]; then
     [[ -n "$(env_get DB_PASSWORD "${ENV_FILE}")" ]] && return 0
   fi
@@ -224,10 +309,18 @@ choose_install_mode() {
     return
   fi
 
+  # Leftover .env after uninstall (no containers): do not reuse old ADMIN_PASSWORD.
+  if ! has_awggui_containers; then
+    warn "$(t warn_leftover_env "${ENV_FILE}")"
+    UPGRADE_MODE=0
+    REPAIR_MODE=0
+    return
+  fi
+
   if detect_incomplete_install; then
     REPAIR_MODE=1
     UPGRADE_MODE=1
-    warn "Обнаружена незавершённая установка — продолжаем восстановление автоматически ..."
+    warn "$(t warn_incomplete_repair)"
     return
   fi
 
@@ -235,32 +328,93 @@ choose_install_mode() {
 
   if [[ "${YES}" -eq 1 ]]; then
     UPGRADE_MODE=1
-    log "Existing install detected → upgrade mode (--yes)"
+    log "$(t log_existing_upgrade_yes)"
     return
   fi
 
   echo
-  warn "Обнаружена существующая установка awggui."
-  echo "  [1] Прервать"
-  echo "  [2] Обновить (сохранить .env, volumes, данные БД/AWG)"
+  warn "$(t warn_existing_install)"
+  echo "$(t choice_abort)"
+  echo "$(t choice_upgrade)"
   local choice=""
-  read -r -p "Выбор [1/2]: " choice || true
+  choice="$(read_tty "$(t prompt_choice_1_2)")"
   case "${choice}" in
     2) UPGRADE_MODE=1 ;;
-    *) log "Установка прервана."; exit 0 ;;
+    *) log "$(t log_install_aborted)"; exit 0 ;;
   esac
 }
 
+<<<<<<< HEAD
 mark_install_complete() {
   local version=""
   local tar_file=""
+=======
+detect_bundle_version() {
+  local tar_file="" version=""
+>>>>>>> a34ec4d81547d4963b761827020a578f3957b1c6
   for tar_file in "${SCRIPT_DIR}"/images/awggui-all-*.tar.gz "${SCRIPT_DIR}"/images/awggui-all-*.tar; do
     [[ -f "${tar_file}" ]] || continue
     version="$(basename "${tar_file}" .tar.gz)"
     version="$(basename "${version}" .tar)"
     version="${version#awggui-all-}"
-    break
+    BUNDLE_VERSION="${version}"
+    return 0
   done
+  if [[ -f "${COMPOSE_FILE}" ]]; then
+    version="$(grep -Eo 'image:[[:space:]]*awggui-app:[^[:space:]]+' "${COMPOSE_FILE}" | head -1 | sed 's/.*awggui-app://')"
+    if [[ -n "${version}" ]]; then
+      BUNDLE_VERSION="${version}"
+      return 0
+    fi
+  fi
+  return 1
+}
+
+# Panel update-runner may die when panel-ops is recreated; finalize its state from the host install.
+finalize_running_update_state() {
+  local new_status="$1"
+  local message="$2"
+  local state_file=/etc/awg-gui/update.state
+  local raw pid target started finished
+
+  [[ -f "${state_file}" ]] || return 0
+  raw="$(cat "${state_file}" 2>/dev/null || true)"
+  [[ "${raw}" == *'"status": "running"'* || "${raw}" == *'"status":"running"'* ]] || return 0
+
+  pid="$(printf '%s' "${raw}" | tr -d '\n' | sed -n 's/.*"pid"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p')"
+  target="$(printf '%s' "${raw}" | tr -d '\n' | sed -n 's/.*"target_version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
+  started="$(printf '%s' "${raw}" | tr -d '\n' | sed -n 's/.*"started_at"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
+  finished="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+  # Keep JSON simple (messages are fixed English strings without quotes).
+  cat > "${state_file}" <<EOF
+{
+  "pid": ${pid:-0},
+  "status": "${new_status}",
+  "target_version": "${target}",
+  "started_at": "${started}",
+  "finished_at": "${finished}",
+  "message": "${message}"
+}
+EOF
+}
+
+on_install_exit() {
+  local ec=$?
+  if [[ "${UPGRADE_MODE}" -eq 1 && "${ec}" -ne 0 ]]; then
+    finalize_running_update_state "failed" "Update failed with exit code ${ec}."
+    # Free disk for a retry: drop download/extract leftovers and loaded archives.
+    cleanup_tmp_install_artifacts || true
+    cleanup_loaded_image_archives || true
+  fi
+}
+
+mark_install_complete() {
+  local version="${BUNDLE_VERSION}"
+  if [[ -z "${version}" ]]; then
+    detect_bundle_version || true
+    version="${BUNDLE_VERSION}"
+  fi
   mkdir -p /etc/awg-gui
   cat > /etc/awg-gui/install.state <<EOF
 completed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -272,10 +426,64 @@ EOF
 detect_public_ip() {
   local ip=""
   ip="$(curl -4 -fsS --max-time 5 https://ifconfig.me 2>/dev/null || true)"
-  if [[ -z "${ip}" ]]; then
+  ip="$(printf '%s' "${ip}" | tr -d '[:space:]')"
+  if [[ ! "${ip}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    ip="$(curl -4 -fsS --max-time 5 https://api.ipify.org 2>/dev/null || true)"
+    ip="$(printf '%s' "${ip}" | tr -d '[:space:]')"
+  fi
+  if [[ ! "${ip}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
   fi
   echo "${ip:-127.0.0.1}"
+}
+
+resolve_endpoint_host() {
+  local endpoint="${1:-}"
+  if [[ -z "${endpoint}" || "${endpoint}" == "auto" ]]; then
+    detect_public_ip
+  else
+    printf '%s\n' "${endpoint}"
+  fi
+}
+
+sync_panel_access_env() {
+  local endpoint="$1" panel_port="$2" file="$3"
+  local host existing_app_url ssl_enabled panel_domain https_port domains app_host
+  host="$(resolve_endpoint_host "${endpoint}")"
+  existing_app_url="$(env_get APP_URL "${file}" 2>/dev/null || true)"
+  ssl_enabled="$(env_get SSL_ENABLED /etc/awg-gui/webhook.conf 2>/dev/null || true)"
+  panel_domain="$(env_get PANEL_DOMAIN /etc/awg-gui/webhook.conf 2>/dev/null || true)"
+  https_port="$(env_get PANEL_HTTPS_PORT "${file}" 2>/dev/null || true)"
+  if [[ -z "${https_port}" ]]; then
+    https_port="$(env_get PANEL_HTTPS_PORT /etc/awg-gui/webhook.conf 2>/dev/null || true)"
+  fi
+  https_port="${https_port:-${PANEL_HTTPS_PORT_DEFAULT}}"
+  # Drop stale https APP_URL left after a failed/disabled SSL attempt.
+  if [[ "${ssl_enabled}" != "1" && "${existing_app_url}" =~ ^https:// ]]; then
+    existing_app_url=""
+  fi
+  if [[ -z "${existing_app_url}" \
+     || "${existing_app_url}" == "http://localhost:${panel_port}" \
+     || "${existing_app_url}" =~ ^http://[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+:[0-9]+$ ]]; then
+    env_set "APP_URL" "http://${host}:${panel_port}" "${file}"
+    existing_app_url="http://${host}:${panel_port}"
+  fi
+  domains="${host},${host}:${panel_port},${host}:${https_port},localhost,localhost:${panel_port},localhost:${https_port},127.0.0.1,127.0.0.1:${panel_port},127.0.0.1:${https_port}"
+  if [[ -n "${panel_domain}" ]]; then
+    domains="${panel_domain},${panel_domain}:${panel_port},${panel_domain}:${https_port},${domains}"
+  fi
+  # Keep host from an existing HTTPS APP_URL (domain installs).
+  if [[ "${existing_app_url}" =~ ^https://([^/:]+) ]]; then
+    app_host="${BASH_REMATCH[1]}"
+    if [[ -n "${app_host}" && "${domains}" != *"${app_host}"* ]]; then
+      domains="${app_host},${app_host}:${panel_port},${app_host}:${https_port},${domains}"
+    elif [[ -n "${app_host}" && "${domains}" != *"${app_host}:${https_port}"* ]]; then
+      domains="${app_host}:${https_port},${domains}"
+    fi
+  fi
+  env_set "SANCTUM_STATEFUL_DOMAINS" "${domains}" "${file}"
+  # Keep HTTP-by-IP login working even when SSL/domain is enabled.
+  env_set "SESSION_SECURE_COOKIE" "false" "${file}"
 }
 
 rand_secret() {
@@ -291,26 +499,50 @@ gen_app_key() {
   echo "base64:$(head -c 32 /dev/urandom | base64 -w0 2>/dev/null || head -c 32 /dev/urandom | base64)"
 }
 
+# Quote values that break `source .env` (e.g. ALLOWED_IPS with "0.0.0.0/0, ::/0").
+env_quote_value() {
+  local val="$1"
+  # Never write multiline values — they break Docker Compose .env parsing.
+  val="${val//$'\n'/ }"
+  val="${val//$'\r'/}"
+  if [[ "${val}" =~ [[:space:]\#\$\`\"\'\\\&\;\|\(\)\<\>] ]]; then
+    val="${val//\\/\\\\}"
+    val="${val//\"/\\\"}"
+    printf '"%s"' "${val}"
+  else
+    printf '%s' "${val}"
+  fi
+}
+
 env_set() {
   local key="$1" val="$2" file="$3"
-  local tmp
+  local tmp rendered
+  rendered="$(env_quote_value "${val}")"
   tmp="$(mktemp)"
   if grep -q "^${key}=" "${file}" 2>/dev/null; then
-    awk -v k="${key}" -v v="${val}" '
-      BEGIN { found=0 }
-      $0 ~ "^" k "=" { print k "=" v; found=1; next }
+    # Replace key and drop orphan continuation lines from a prior multiline write.
+    awk -v k="${key}" -v v="${rendered}" '
+      BEGIN { found=0; skipping=0 }
+      skipping {
+        if ($0 ~ /^[A-Za-z_][A-Za-z0-9_]*=/ || $0 ~ /^[[:space:]]*#/ || $0 ~ /^[[:space:]]*$/) {
+          skipping=0
+        } else {
+          next
+        }
+      }
+      $0 ~ "^" k "=" { print k "=" v; found=1; skipping=1; next }
       { print }
       END { if (!found) print k "=" v }
     ' "${file}" > "${tmp}"
   else
     cp "${file}" "${tmp}"
-    printf '%s=%s\n' "${key}" "${val}" >> "${tmp}"
+    printf '%s=%s\n' "${key}" "${rendered}" >> "${tmp}"
   fi
   mv "${tmp}" "${file}"
 }
 
 env_merge_missing_keys() {
-  [[ -f "${ENV_EXAMPLE}" ]] || die "Missing ${ENV_EXAMPLE}"
+  [[ -f "${ENV_EXAMPLE}" ]] || die "$(t err_missing_path "${ENV_EXAMPLE}")"
   if [[ ! -f "${ENV_FILE}" ]]; then
     cp "${ENV_EXAMPLE}" "${ENV_FILE}"
     chmod 600 "${ENV_FILE}"
@@ -333,15 +565,15 @@ write_env_from_example() {
   local panel_port="$1" awg_port="$2" endpoint="$3"
   local internal_subnet="$4" peer_dns="$5" allowed_ips="$6"
   local admin_pass="$7" db_pass="$8" app_key="$9"
+  local panel_https_port="${10:-${PANEL_HTTPS_PORT_DEFAULT}}"
 
-  [[ -f "${ENV_EXAMPLE}" ]] || die "Missing ${ENV_EXAMPLE}"
+  [[ -f "${ENV_EXAMPLE}" ]] || die "$(t err_missing_path "${ENV_EXAMPLE}")"
   cp "${ENV_EXAMPLE}" "${ENV_FILE}"
   chmod 600 "${ENV_FILE}"
 
   env_set "PANEL_PORT" "${panel_port}" "${ENV_FILE}"
-  env_set "PANEL_HTTPS_PORT" "7443" "${ENV_FILE}"
+  env_set "PANEL_HTTPS_PORT" "${panel_https_port}" "${ENV_FILE}"
   env_set "AWG_PORT" "${awg_port}" "${ENV_FILE}"
-  env_set "APP_URL" "http://${endpoint}:${panel_port}" "${ENV_FILE}"
   env_set "APP_KEY" "${app_key}" "${ENV_FILE}"
   env_set "ADMIN_PASSWORD" "${admin_pass}" "${ENV_FILE}"
   env_set "DB_PASSWORD" "${db_pass}" "${ENV_FILE}"
@@ -350,9 +582,94 @@ write_env_from_example() {
   env_set "PEER_DNS" "${peer_dns}" "${ENV_FILE}"
   env_set "ALLOWED_IPS" "${allowed_ips}" "${ENV_FILE}"
   env_set "PANEL_OPS_TOKEN" "$(openssl rand -hex 32 2>/dev/null || rand_secret 64)" "${ENV_FILE}"
+<<<<<<< HEAD
   env_set "SANCTUM_STATEFUL_DOMAINS" \
     "${endpoint},${endpoint}:${panel_port},${endpoint}:7443,localhost,localhost:${panel_port},127.0.0.1,127.0.0.1:${panel_port}" \
     "${ENV_FILE}"
+=======
+  sync_panel_access_env "${endpoint}" "${panel_port}" "${ENV_FILE}"
+}
+
+ensure_panel_ops_token() {
+  [[ -f "${ENV_FILE}" ]] || return 0
+  local token
+  token="$(env_get PANEL_OPS_TOKEN "${ENV_FILE}")"
+  if [[ -n "${token}" ]]; then
+    return 0
+  fi
+  token="$(openssl rand -hex 32 2>/dev/null || rand_secret 64)"
+  env_set "PANEL_OPS_TOKEN" "${token}" "${ENV_FILE}"
+  ok "$(t ok_panel_ops_token "${ENV_FILE}")"
+}
+
+remove_legacy_certbot_container() {
+  docker rm -f awggui-certbot 2>/dev/null || true
+}
+
+cleanup_loaded_image_archives() {
+  local tar_file removed=0
+  for tar_file in "${SCRIPT_DIR}"/images/awggui-all-*.tar.gz "${SCRIPT_DIR}"/images/awggui-all-*.tar; do
+    [[ -f "${tar_file}" ]] || continue
+    rm -f "${tar_file}"
+    removed=1
+  done
+  if [[ "${removed}" -eq 1 ]]; then
+    ok "$(t ok_removed_archives "${SCRIPT_DIR}")"
+  fi
+}
+
+# Drop previous awggui:* tags left after upgrade. In-use images stay (docker rmi refuses without -f).
+cleanup_unused_project_images() {
+  local img cid removed=0
+  log "$(t log_removing_unused_images)"
+
+  # Stopped containers from prior versions can pin old tags and block docker rmi.
+  while read -r cid; do
+    [[ -n "${cid}" ]] || continue
+    docker rm "${cid}" >/dev/null 2>&1 || true
+  done < <(
+    {
+      docker ps -aq --filter "name=awggui" --filter "status=exited" 2>/dev/null || true
+      docker ps -aq --filter "name=awggui" --filter "status=dead" 2>/dev/null || true
+    } | awk 'NF && !seen[$0]++'
+  )
+
+  while read -r img; do
+    [[ -n "${img}" ]] || continue
+    [[ "${img}" == *":<none>" ]] && continue
+    if docker rmi "${img}" >/dev/null 2>&1; then
+      removed=$((removed + 1))
+      log "$(t log_removed_unused_image "${img}")"
+    fi
+  done < <(docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep -E '^awggui-' || true)
+
+  docker image prune -f >/dev/null 2>&1 || true
+
+  if [[ "${removed}" -gt 0 ]]; then
+    ok "$(t ok_removed_n_images "${removed}")"
+  else
+    ok "$(t ok_no_unused_images)"
+  fi
+}
+
+# Installer download/extract dirs, helper scripts, GUI update job leftovers.
+cleanup_tmp_install_artifacts() {
+  find /tmp -maxdepth 1 -type d \( -name 'awg-gui-install.*' -o -name 'awg-gui-extract.*' \) \
+    -exec rm -rf {} + 2>/dev/null || true
+  find /tmp -maxdepth 1 -type f \
+    \( -name 'awg-gui-install.sh' -o -name 'awg-gui-install.*' \
+       -o -name 'awg-gui-install-i18n.*' -o -name 'awg-gui-ensure-docker.*' \
+       -o -name 'awg-gui*.log' -o -name 'awg-gui-*.log' \) \
+    -delete 2>/dev/null || true
+  rm -f /etc/awg-gui/update-job.sh 2>/dev/null || true
+  docker rmi alpine:3.20 >/dev/null 2>&1 || true
+}
+
+cleanup_after_install() {
+  cleanup_loaded_image_archives
+  cleanup_unused_project_images
+  cleanup_tmp_install_artifacts
+>>>>>>> a34ec4d81547d4963b761827020a578f3957b1c6
 }
 
 ensure_panel_ops_token() {
@@ -376,21 +693,32 @@ load_images() {
   for tar_file in "${SCRIPT_DIR}"/images/awggui-all-*.tar.gz "${SCRIPT_DIR}"/images/awggui-all-*.tar; do
     [[ -f "${tar_file}" ]] && break
   done
+<<<<<<< HEAD
   [[ -f "${tar_file}" ]] || die "Missing ${SCRIPT_DIR}/images/awggui-all-*.tar.gz"
+=======
+  [[ -f "${tar_file}" ]] || die "$(t err_missing_image_archive "${SCRIPT_DIR}")"
+>>>>>>> a34ec4d81547d4963b761827020a578f3957b1c6
 
-  log "Loading Docker images from ${tar_file} ..."
+  detect_bundle_version || true
+
+  log "$(t log_loading_images "${tar_file}")"
   docker load -i "${tar_file}"
-  ok "Images loaded"
+  ok "$(t ok_images_loaded)"
+  cleanup_loaded_image_archives
 }
 
 seed_host_ssl_files() {
-  mkdir -p /etc/awg-gui/certs/panel /etc/awg-gui/certbot/hooks /etc/awg-gui/certbot/challenge
-  if [[ -f "${RUNTIME_DIR}/caddy/Caddyfile" ]]; then
+  mkdir -p /etc/awg-gui/certs/panel /etc/awg-gui/certs/live/panel \
+    /etc/awg-gui/acme/account /etc/awg-gui/acme/pending /etc/awg-gui/acme/challenge
+  # App container writes these as www-data (UID/GID 33 on Debian php images).
+  chown -R 33:33 /etc/awg-gui/acme /etc/awg-gui/certs 2>/dev/null || true
+  chmod -R a+rwX /etc/awg-gui/acme /etc/awg-gui/certs
+  # Never clobber an existing Caddyfile on upgrade — it may contain the live TLS site.
+  # Fresh installs get the HTTP template; awg:bootstrap restores SSL when enabled in DB.
+  if [[ ! -f /etc/awg-gui/Caddyfile && -f "${RUNTIME_DIR}/caddy/Caddyfile" ]]; then
     cp "${RUNTIME_DIR}/caddy/Caddyfile" /etc/awg-gui/Caddyfile
-  fi
-  if [[ -d "${RUNTIME_DIR}/caddy/host-files/certbot/hooks" ]]; then
-    cp "${RUNTIME_DIR}/caddy/host-files/certbot/hooks/"*.sh /etc/awg-gui/certbot/hooks/ 2>/dev/null || true
-    chmod +x /etc/awg-gui/certbot/hooks/*.sh 2>/dev/null || true
+    chown 33:33 /etc/awg-gui/Caddyfile 2>/dev/null || true
+    chmod a+rw /etc/awg-gui/Caddyfile
   fi
 }
 
@@ -404,35 +732,56 @@ ENV_FILE=${ENV_FILE}
 PROJECT_NAME=${PROJECT_NAME}
 EOF
   touch /etc/awg-gui/webhook.conf
-  chmod 644 /etc/awg-gui/awg-gui.conf /etc/awg-gui/webhook.conf
+  chmod 644 /etc/awg-gui/awg-gui.conf
+  chown 33:33 /etc/awg-gui/webhook.conf 2>/dev/null || true
+  chmod a+rw /etc/awg-gui/webhook.conf
   install -m 0644 "${RUNTIME_DIR}/systemd/awg-gui.service" /etc/systemd/system/awg-gui.service
+  if [[ -f "${RUNTIME_DIR}/logrotate/awg-gui" ]]; then
+    install -m 0644 "${RUNTIME_DIR}/logrotate/awg-gui" /etc/logrotate.d/awg-gui
+  fi
+  if [[ -f "${RUNTIME_DIR}/logrotate/awg-gui-hourly" ]]; then
+    install -m 0755 "${RUNTIME_DIR}/logrotate/awg-gui-hourly" /etc/cron.hourly/awg-gui-logrotate
+  fi
   systemctl daemon-reload
   systemctl enable --now awg-gui.service
-  ok "CLI /usr/local/bin/awg-gui and systemd awg-gui.service installed"
+  ok "$(t ok_cli_systemd)"
 }
 
 print_helper() {
   local repo="${AWG_GUI_GITHUB_REPO:-alt-plus-255/awg-gui}"
   echo
   echo -e "${BOLD}────────────────────────────────────────${NC}"
-  echo -e "${BOLD}Management:${NC}"
+  echo -e "${BOLD}$(t helper_management)${NC}"
   echo "  awg-gui help"
   echo "  awg-gui status"
   echo "  awg-gui ensure-up"
   echo
-  echo -e "${BOLD}Uninstall (production):${NC}"
+  echo -e "${BOLD}$(t helper_uninstall_prod)${NC}"
   echo "  curl -fsSL https://raw.githubusercontent.com/${repo}/refs/heads/main/dist/uninstall.sh | sudo bash"
   echo -e "${BOLD}────────────────────────────────────────${NC}"
   echo
 }
 
+print_install_result_json() {
+  local url="$1" port="$2" pass="$3" ok="${4:-true}"
+  local pass_json="null"
+  if [[ -n "${pass}" ]]; then
+    pass_json="$(printf '%s' "${pass}" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))' 2>/dev/null \
+      || printf '"%s"' "${pass//\"/\\\"}")"
+  fi
+  printf 'AWG_GUI_RESULT={"ok":%s,"panel_port":%s,"username":"admin","password":%s,"url":"%s"}\n' \
+    "${ok}" "${port}" "${pass_json}" "${url}"
+}
+
 print_credentials() {
   local url="$1" port="$2" pass="$3"
+  local title
   echo -e "${GREEN}"
   if [[ -n "${pass}" ]]; then
+    title="$(t banner_established)"
     cat <<EOF
 ╔══════════════════════════════════════════════╗
-║  AmneziaWG GUI established                   ║
+║  ${title}
 ║  URL:      ${url}
 ║  Port:     ${port}
 ║  Login:    admin
@@ -440,21 +789,23 @@ print_credentials() {
 ╚══════════════════════════════════════════════╝
 EOF
   else
+    title="$(t banner_upgraded)"
     cat <<EOF
 ╔══════════════════════════════════════════════╗
-║  AmneziaWG GUI upgraded                      ║
+║  ${title}
 ║  URL:      ${url}
 ║  Port:     ${port}
 ║  Login:    admin
-║  Password: (unchanged — use awg-gui password) ║
+║  Password: $(t banner_password_unchanged)
 ╚══════════════════════════════════════════════╝
 EOF
   fi
   echo -e "${NC}"
+  print_install_result_json "${url}" "${port}" "${pass}" "true"
 }
 
 wait_for_app() {
-  log "Waiting for app container..."
+  log "$(t log_waiting_app)"
   local i
   for i in $(seq 1 60); do
     if compose exec -T app php -v >/dev/null 2>&1; then
@@ -462,20 +813,117 @@ wait_for_app() {
     fi
     sleep 3
   done
-  warn "App container not ready — bootstrap steps may fail"
+  warn "$(t warn_app_not_ready)"
   return 1
 }
 
+container_state() {
+  local name="$1"
+  docker inspect -f '{{.State.Status}}' "${name}" 2>/dev/null || true
+}
+
+container_health() {
+  local name="$1"
+  docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{end}}' "${name}" 2>/dev/null || true
+}
+
+wait_for_runtime_services() {
+  log "$(t log_waiting_runtime)"
+  local attempts="${1:-60}" sleep_sec="${2:-3}" i c state health pending status
+  for i in $(seq 1 "${attempts}"); do
+    pending=0
+    for c in "${EXPECTED_CONTAINERS[@]}"; do
+      state="$(container_state "${c}")"
+      health="$(container_health "${c}")"
+      status="${state}"
+      [[ -n "${health}" ]] && status="${status}/${health}"
+
+      if [[ "${state}" != "running" ]]; then
+        pending=1
+        continue
+      fi
+      if [[ -n "${health}" && "${health}" != "healthy" ]]; then
+        pending=1
+        continue
+      fi
+    done
+
+    if [[ "${pending}" -eq 0 ]]; then
+      ok "$(t ok_all_containers)"
+      return 0
+    fi
+
+    sleep "${sleep_sec}"
+  done
+
+  return 1
+}
+
+verify_public_http() {
+  local panel_port="$1"
+  local url="http://127.0.0.1:${panel_port}/api/login/info"
+  local body_file http_code attempt
+  body_file="$(mktemp)"
+  # Caddy/app may still be binding right after compose up — retry quietly.
+  for attempt in $(seq 1 20); do
+    http_code="$(curl -sS -o "${body_file}" -w '%{http_code}' --max-time 5 "${url}" 2>/dev/null || true)"
+    if [[ "${http_code}" == "200" ]] && grep -q '"panel_url"' "${body_file}" 2>/dev/null; then
+      rm -f "${body_file}"
+      ok "$(t ok_public_api "${url}")"
+      return 0
+    fi
+    sleep 2
+  done
+  rm -f "${body_file}"
+  return 1
+}
+
+print_startup_diagnostics() {
+  [[ "${DEBUG}" -eq 1 ]] || return 0
+  echo
+  warn "$(t warn_startup_diag)"
+  compose ps || true
+  local c
+  for c in "${EXPECTED_CONTAINERS[@]}"; do
+    echo
+    warn "$(t warn_recent_logs "${c}")"
+    docker logs --tail 60 "${c}" 2>&1 || true
+  done
+}
+
+maybe_hint_debug() {
+  if [[ "${DEBUG}" -eq 1 ]]; then
+    return 0
+  fi
+  warn "$(t warn_debug_hint)"
+}
+
+verify_installation_runtime() {
+  local panel_port="$1"
+
+  wait_for_runtime_services 60 3 || {
+    print_startup_diagnostics
+    maybe_hint_debug
+    die "$(t err_services_not_ready)"
+  }
+
+  verify_public_http "${panel_port}" || {
+    print_startup_diagnostics
+    maybe_hint_debug
+    die "$(t err_panel_unreachable)"
+  }
+}
+
 wait_for_migrate_lock() {
-  log "Waiting for in-container migrations to finish (if any)..."
+  log "$(t log_waiting_migrations)"
   compose exec -T app bash -c '
     mkdir -p /var/www/html/storage/framework
     flock -w "${AWG_GUI_MIGRATE_LOCK_TIMEOUT:-300}" /var/www/html/storage/framework/migrate.lock true
-  ' || warn "Timed out waiting for migration lock"
+  ' || warn "$(t warn_migrate_lock)"
 }
 
 run_migrations() {
-  log "Running migrations..."
+  log "$(t log_running_migrations)"
   compose exec -T app awg-migrate-locked
 }
 
@@ -483,22 +931,35 @@ run_bootstrap() {
   local panel_port="$1" awg_port="$2" endpoint="$3"
   local internal_subnet="$4" peer_dns="$5" allowed_ips="$6"
   local admin_pass="$7"
+  local panel_https_port="${8:-${PANEL_HTTPS_PORT_DEFAULT}}"
 
   run_migrations
 
-  if [[ -n "${admin_pass}" ]]; then
-    log "Ensuring admin user..."
+  if [[ "${UPGRADE_MODE}" -eq 1 ]]; then
+    # Create admin only if missing; existing password is never overwritten.
+    log "$(t log_ensuring_admin_preserve)"
+    if [[ -n "${admin_pass}" ]]; then
+      compose exec -T \
+        -e ADMIN_PASSWORD="${admin_pass}" \
+        app php artisan admin:ensure --username=admin --password="${admin_pass}" --email=admin@localhost \
+        || warn "$(t warn_admin_ensure_skipped)"
+    else
+      compose exec -T app php artisan admin:ensure --username=admin --email=admin@localhost \
+        || warn "$(t warn_admin_ensure_skipped)"
+    fi
+  elif [[ -n "${admin_pass}" ]]; then
+    log "$(t log_ensuring_admin)"
     compose exec -T \
       -e ADMIN_PASSWORD="${admin_pass}" \
       app php artisan admin:ensure --username=admin --password="${admin_pass}" --email=admin@localhost
   fi
 
-  log "Bootstrapping AmneziaWG config..."
+  log "$(t log_bootstrapping_awg)"
   compose exec -T \
     -e SERVER_ENDPOINT="${endpoint}" \
     -e AWG_PORT="${awg_port}" \
     -e PANEL_PORT="${panel_port}" \
-    -e PANEL_HTTPS_PORT=7443 \
+    -e PANEL_HTTPS_PORT="${panel_https_port}" \
     -e INTERNAL_SUBNET="${internal_subnet}" \
     -e PEER_DNS="${peer_dns}" \
     -e ALLOWED_IPS="${allowed_ips}" \
@@ -506,78 +967,119 @@ run_bootstrap() {
 }
 
 main() {
-  [[ -f "${COMPOSE_FILE}" ]] || die "Missing ${COMPOSE_FILE}"
-  [[ -d /dev/net/tun ]] || warn "/dev/net/tun not found — AWG userspace may still work"
+  [[ -f "${COMPOSE_FILE}" ]] || die "$(t err_missing_path "${COMPOSE_FILE}")"
+  [[ -d /dev/net/tun ]] || warn "$(t warn_tun_missing)"
+
+  trap on_install_exit EXIT
 
   ensure_curl
-  install_docker
+  ensure_docker_engine
   choose_install_mode
 
-  local panel_port awg_port endpoint internal_subnet peer_dns allowed_ips
-  local detected_ip admin_pass db_pass app_key
+  local panel_port panel_https_port awg_port endpoint internal_subnet peer_dns allowed_ips
+  local display_host admin_pass db_pass app_key
 
   if [[ "${UPGRADE_MODE}" -eq 1 ]]; then
     env_merge_missing_keys
-    ok "Using existing ${ENV_FILE}"
+    ok "$(t ok_using_existing_env "${ENV_FILE}")"
     panel_port="$(env_get PANEL_PORT "${ENV_FILE}" "${PANEL_PORT_DEFAULT}")"
+    panel_https_port="$(env_get PANEL_HTTPS_PORT "${ENV_FILE}" "${PANEL_HTTPS_PORT_DEFAULT}")"
     awg_port="$(env_get AWG_PORT "${ENV_FILE}" "${AWG_PORT_DEFAULT}")"
-    endpoint="$(env_get SERVER_ENDPOINT "${ENV_FILE}" "$(detect_public_ip)")"
+    endpoint="$(env_get SERVER_ENDPOINT "${ENV_FILE}" "auto")"
+    [[ -n "${endpoint}" ]] || endpoint="auto"
+    if [[ "${REPAIR_MODE}" -eq 1 ]]; then
+      endpoint="auto"
+      env_set "SERVER_ENDPOINT" "auto" "${ENV_FILE}"
+    fi
     internal_subnet="$(env_get INTERNAL_SUBNET "${ENV_FILE}" "${INTERNAL_SUBNET_DEFAULT}")"
     peer_dns="$(env_get PEER_DNS "${ENV_FILE}" "${PEER_DNS_DEFAULT}")"
     allowed_ips="$(env_get ALLOWED_IPS "${ENV_FILE}" "${ALLOWED_IPS_DEFAULT}")"
     admin_pass="$(env_get ADMIN_PASSWORD "${ENV_FILE}")"
   else
-    detected_ip="$(detect_public_ip)"
-    prompt panel_port "Panel port" "${PANEL_PORT_DEFAULT}"
-    prompt awg_port "AmneziaWG UDP port (AWG_PORT)" "${AWG_PORT_DEFAULT}"
-    prompt endpoint "Server endpoint (public IP/DNS)" "${detected_ip}"
-    prompt internal_subnet "Internal subnet (INTERNAL_SUBNET)" "${INTERNAL_SUBNET_DEFAULT}"
-    prompt peer_dns "Peer DNS (PEER_DNS)" "${PEER_DNS_DEFAULT}"
-    prompt allowed_ips "AllowedIPs for clients (ALLOWED_IPS)" "${ALLOWED_IPS_DEFAULT}"
+    prompt panel_port "$(t prompt_panel_port)" "${PANEL_PORT_DEFAULT}"
+    prompt awg_port "$(t prompt_awg_port)" "${AWG_PORT_DEFAULT}"
+    prompt endpoint "$(t prompt_endpoint)" "auto"
+    prompt internal_subnet "$(t prompt_internal_subnet)" "${INTERNAL_SUBNET_DEFAULT}"
+    prompt peer_dns "$(t prompt_peer_dns)" "${PEER_DNS_DEFAULT}"
+    prompt allowed_ips "$(t prompt_allowed_ips)" "${ALLOWED_IPS_DEFAULT}"
+    panel_https_port="${PANEL_HTTPS_PORT_DEFAULT}"
 
     admin_pass="$(rand_secret 20)"
     db_pass="$(rand_secret 32)"
     app_key="$(gen_app_key)"
+  fi
 
+  # Avoid "address already in use" on compose up — remap busy ports and warn.
+  reset_install_ports_reserved
+  panel_port="$(ensure_host_port "${panel_port}" tcp "PANEL_PORT")"
+  panel_https_port="$(ensure_host_port "${panel_https_port}" tcp "PANEL_HTTPS_PORT")"
+  awg_port="$(ensure_host_port "${awg_port}" udp "AWG_PORT")"
+
+  if [[ "${UPGRADE_MODE}" -eq 1 ]]; then
+    env_set "PANEL_PORT" "${panel_port}" "${ENV_FILE}"
+    env_set "PANEL_HTTPS_PORT" "${panel_https_port}" "${ENV_FILE}"
+    env_set "AWG_PORT" "${awg_port}" "${ENV_FILE}"
+  else
     write_env_from_example \
       "${panel_port}" "${awg_port}" "${endpoint}" \
       "${internal_subnet}" "${peer_dns}" "${allowed_ips}" \
-      "${admin_pass}" "${db_pass}" "${app_key}"
-    ok "Created ${ENV_FILE}"
+      "${admin_pass}" "${db_pass}" "${app_key}" \
+      "${panel_https_port}"
+    ok "$(t ok_created_env "${ENV_FILE}")"
   fi
+
+  display_host="$(resolve_endpoint_host "${endpoint}")"
+  sync_panel_access_env "${endpoint}" "${panel_port}" "${ENV_FILE}"
+  cleanup_env_file_orphans "${ENV_FILE}"
 
   mkdir -p /etc/awg-gui
   seed_host_ssl_files
   env_merge_missing_keys
   ensure_panel_ops_token
+<<<<<<< HEAD
+=======
+  install_awg_kernel_module
+>>>>>>> a34ec4d81547d4963b761827020a578f3957b1c6
   remove_legacy_certbot_container
   load_images
 
-  log "Starting containers ..."
-  compose up -d
+  log "$(t log_starting_containers)"
+  compose up -d --remove-orphans
 
   wait_for_app || true
   wait_for_migrate_lock
   run_bootstrap \
     "${panel_port}" "${awg_port}" "${endpoint}" \
     "${internal_subnet}" "${peer_dns}" "${allowed_ips}" \
-    "${admin_pass:-}"
+    "${admin_pass:-}" "${panel_https_port}"
+  verify_installation_runtime "${panel_port}"
 
   if [[ "${UPGRADE_MODE}" -eq 0 || ! -f /etc/awg-gui/webhook.conf ]] || ! grep -q '^PANEL_PORT=' /etc/awg-gui/webhook.conf 2>/dev/null; then
     cat > /etc/awg-gui/webhook.conf <<EOF
 WEBHOOK_URL=
 PANEL_PORT=${panel_port}
-PANEL_HTTPS_PORT=7443
+PANEL_HTTPS_PORT=${panel_https_port}
 SERVER_ENDPOINT=${endpoint}
 PANEL_DOMAIN=
 SSL_ENABLED=0
 EOF
+  else
+    env_set "PANEL_PORT" "${panel_port}" /etc/awg-gui/webhook.conf
+    env_set "PANEL_HTTPS_PORT" "${panel_https_port}" /etc/awg-gui/webhook.conf
+    if [[ "${REPAIR_MODE}" -eq 1 ]]; then
+      env_set "SERVER_ENDPOINT" "${endpoint}" /etc/awg-gui/webhook.conf
+    fi
   fi
 
   install_cli_and_systemd
   mark_install_complete
+  cleanup_after_install
 
-  local url="http://${endpoint}:${panel_port}"
+  if [[ "${UPGRADE_MODE}" -eq 1 ]]; then
+    finalize_running_update_state "success" "Update completed successfully."
+  fi
+
+  local url="http://${display_host}:${panel_port}"
   print_helper
   if [[ "${REPAIR_MODE}" -eq 1 ]]; then
     if [[ -n "${admin_pass}" ]]; then
@@ -585,13 +1087,13 @@ EOF
     else
       print_credentials "${url}" "${panel_port}" ""
     fi
-    ok "Восстановление установки завершено"
+    ok "$(t ok_repair_complete)"
   elif [[ "${UPGRADE_MODE}" -eq 1 ]]; then
     print_credentials "${url}" "${panel_port}" ""
-    ok "Upgrade complete"
+    ok "$(t ok_upgrade_complete)"
   else
     print_credentials "${url}" "${panel_port}" "${admin_pass}"
-    ok "Installation complete"
+    ok "$(t ok_install_complete)"
   fi
 }
 
