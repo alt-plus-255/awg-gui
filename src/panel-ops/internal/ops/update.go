@@ -204,6 +204,10 @@ if systemctl is-active --quiet awg-gui-update.service; then
 fi
 systemctl stop awg-gui-update.service >/dev/null 2>&1 || true
 systemctl reset-failed awg-gui-update.service >/dev/null 2>&1 || true
-systemd-run --no-block --collect --unit=awg-gui-update.service --property=Type=oneshot /bin/bash /etc/awg-gui/update-job.sh
+systemd-run --no-block --collect --unit=awg-gui-update.service \
+  --property=Type=oneshot \
+  --property=TimeoutStartSec=infinity \
+  --property=TimeoutStopSec=300 \
+  /bin/bash /etc/awg-gui/update-job.sh
 `
 }

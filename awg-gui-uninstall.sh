@@ -133,9 +133,9 @@ remove_project_logs() {
   find /tmp -maxdepth 1 -type d -name 'awg-gui-extract.*' -exec rm -rf {} + 2>/dev/null || true
   find /tmp -maxdepth 1 -type f \( -name 'awg-gui*.log' -o -name 'awg-gui-*.log' \) -delete 2>/dev/null || true
 
-  # Dev tree: wipe Laravel logs without deleting the repo.
-  if [[ -d "${SCRIPT_DIR}/src/backend/storage/logs" ]]; then
-    find "${SCRIPT_DIR}/src/backend/storage/logs" -type f \( -name '*.log' -o -name 'laravel-*.log' \) -delete 2>/dev/null || true
+  # Dev tree: wipe leftover app logs without deleting the repo.
+  if [[ -d "${SCRIPT_DIR}/src/backend/logs" ]]; then
+    find "${SCRIPT_DIR}/src/backend/logs" -type f -name '*.log' -delete 2>/dev/null || true
   fi
 
   # systemd journal entries for awg-gui.service (best-effort; journal mixes units).
@@ -197,6 +197,13 @@ remove_project_images() {
     [[ -n "${img}" ]] || continue
     docker rmi -f "${img}" 2>/dev/null || true
   done < <(docker images --format '{{.ID}} {{.Repository}}' 2>/dev/null | awk '$2 ~ /^awggui-/ { print $1 }' || true)
+
+  while read -r img; do
+    [[ -n "${img}" ]] || continue
+    docker rmi -f "${img}" 2>/dev/null || true
+  done < <(
+    docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep -E '^(php|docker\.io/library/php)(:|$)' || true
+  )
 }
 
 prune_docker_junk() {

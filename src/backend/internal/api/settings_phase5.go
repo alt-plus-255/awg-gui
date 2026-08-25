@@ -299,6 +299,21 @@ func (c *SettingsController) ClearProjectUpdateLog(w http.ResponseWriter, r *htt
 	writeJSON(w, http.StatusOK, state)
 }
 
+func (c *SettingsController) DownloadProjectUpdateLog(w http.ResponseWriter, r *http.Request) {
+	if c.Updates == nil {
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"message": i18n.T(auth.LocaleFromContext(r.Context()), "settings.update_not_available")})
+		return
+	}
+	raw, err := c.Updates.ReadFullLog()
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{
+			"message": i18n.T(auth.LocaleFromContext(r.Context()), "settings.update_log_download_failed"),
+		})
+		return
+	}
+	writeText(w, string(raw), "text/plain; charset=utf-8", `attachment; filename="awg-gui-update.log"`)
+}
+
 func (c *SettingsController) RetryStuckProjectUpdate(w http.ResponseWriter, r *http.Request) {
 	if c.Updates == nil {
 		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"message": i18n.T(auth.LocaleFromContext(r.Context()), "settings.update_not_available")})

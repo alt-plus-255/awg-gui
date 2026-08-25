@@ -1,5 +1,11 @@
 src/.env
 
+# Go build artifacts
+src/backend/awggui
+src/backend/awgctl
+src/backend/*.exe
+src/backend/*.test
+
 # Dependencies (anywhere in the repo)
 node_modules/
 

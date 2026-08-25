@@ -255,17 +255,10 @@ env_get() {
 
 EXPECTED_CONTAINERS=(
   awggui-caddy awggui-app awggui-db awggui-awg
-<<<<<<< HEAD
-  awggui-docker-proxy awggui-panel-ops awggui-certbot
-)
-
-detect_existing_install() {
-=======
   awggui-docker-proxy awggui-panel-ops
 )
 
 has_awggui_containers() {
->>>>>>> a34ec4d81547d4963b761827020a578f3957b1c6
   local c names
   names="$(docker ps -a --format '{{.Names}}' 2>/dev/null || true)"
   for c in "${EXPECTED_CONTAINERS[@]}"; do
@@ -344,14 +337,8 @@ choose_install_mode() {
   esac
 }
 
-<<<<<<< HEAD
-mark_install_complete() {
-  local version=""
-  local tar_file=""
-=======
 detect_bundle_version() {
   local tar_file="" version=""
->>>>>>> a34ec4d81547d4963b761827020a578f3957b1c6
   for tar_file in "${SCRIPT_DIR}"/images/awggui-all-*.tar.gz "${SCRIPT_DIR}"/images/awggui-all-*.tar; do
     [[ -f "${tar_file}" ]] || continue
     version="$(basename "${tar_file}" .tar.gz)"
@@ -582,11 +569,6 @@ write_env_from_example() {
   env_set "PEER_DNS" "${peer_dns}" "${ENV_FILE}"
   env_set "ALLOWED_IPS" "${allowed_ips}" "${ENV_FILE}"
   env_set "PANEL_OPS_TOKEN" "$(openssl rand -hex 32 2>/dev/null || rand_secret 64)" "${ENV_FILE}"
-<<<<<<< HEAD
-  env_set "SANCTUM_STATEFUL_DOMAINS" \
-    "${endpoint},${endpoint}:${panel_port},${endpoint}:7443,localhost,localhost:${panel_port},127.0.0.1,127.0.0.1:${panel_port}" \
-    "${ENV_FILE}"
-=======
   sync_panel_access_env "${endpoint}" "${panel_port}" "${ENV_FILE}"
 }
 
@@ -619,6 +601,7 @@ cleanup_loaded_image_archives() {
 }
 
 # Drop previous awggui:* tags left after upgrade. In-use images stay (docker rmi refuses without -f).
+# Also drop unused php / php:* base images left from the former panel-ops PHP runtime.
 cleanup_unused_project_images() {
   local img cid removed=0
   log "$(t log_removing_unused_images)"
@@ -642,6 +625,18 @@ cleanup_unused_project_images() {
       log "$(t log_removed_unused_image "${img}")"
     fi
   done < <(docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep -E '^awggui-' || true)
+
+  # Former panel-ops base (php:8.4-cli-alpine etc.). Skip if still referenced.
+  while read -r img; do
+    [[ -n "${img}" ]] || continue
+    [[ "${img}" == *":<none>" ]] && continue
+    if docker rmi "${img}" >/dev/null 2>&1; then
+      removed=$((removed + 1))
+      log "$(t log_removed_unused_image "${img}")"
+    fi
+  done < <(
+    docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep -E '^(php|docker\.io/library/php)(:|$)' || true
+  )
 
   docker image prune -f >/dev/null 2>&1 || true
 
@@ -669,23 +664,6 @@ cleanup_after_install() {
   cleanup_loaded_image_archives
   cleanup_unused_project_images
   cleanup_tmp_install_artifacts
->>>>>>> a34ec4d81547d4963b761827020a578f3957b1c6
-}
-
-ensure_panel_ops_token() {
-  [[ -f "${ENV_FILE}" ]] || return 0
-  local token
-  token="$(env_get PANEL_OPS_TOKEN "${ENV_FILE}")"
-  if [[ -n "${token}" ]]; then
-    return 0
-  fi
-  token="$(openssl rand -hex 32 2>/dev/null || rand_secret 64)"
-  env_set "PANEL_OPS_TOKEN" "${token}" "${ENV_FILE}"
-  ok "Generated PANEL_OPS_TOKEN in ${ENV_FILE}"
-}
-
-remove_legacy_certbot_container() {
-  docker rm -f awggui-certbot 2>/dev/null || true
 }
 
 load_images() {
@@ -693,11 +671,7 @@ load_images() {
   for tar_file in "${SCRIPT_DIR}"/images/awggui-all-*.tar.gz "${SCRIPT_DIR}"/images/awggui-all-*.tar; do
     [[ -f "${tar_file}" ]] && break
   done
-<<<<<<< HEAD
-  [[ -f "${tar_file}" ]] || die "Missing ${SCRIPT_DIR}/images/awggui-all-*.tar.gz"
-=======
   [[ -f "${tar_file}" ]] || die "$(t err_missing_image_archive "${SCRIPT_DIR}")"
->>>>>>> a34ec4d81547d4963b761827020a578f3957b1c6
 
   detect_bundle_version || true
 
@@ -710,7 +684,7 @@ load_images() {
 seed_host_ssl_files() {
   mkdir -p /etc/awg-gui/certs/panel /etc/awg-gui/certs/live/panel \
     /etc/awg-gui/acme/account /etc/awg-gui/acme/pending /etc/awg-gui/acme/challenge
-  # App container writes these as www-data (UID/GID 33 on Debian php images).
+  # App container writes these as UID/GID 33 (same as former www-data).
   chown -R 33:33 /etc/awg-gui/acme /etc/awg-gui/certs 2>/dev/null || true
   chmod -R a+rwX /etc/awg-gui/acme /etc/awg-gui/certs
   # Never clobber an existing Caddyfile on upgrade — it may contain the live TLS site.
@@ -808,7 +782,7 @@ wait_for_app() {
   log "$(t log_waiting_app)"
   local i
   for i in $(seq 1 60); do
-    if compose exec -T app php -v >/dev/null 2>&1; then
+    if compose exec -T app curl -fsS http://127.0.0.1:8000/up >/dev/null 2>&1; then
       return 0
     fi
     sleep 3
@@ -917,8 +891,7 @@ verify_installation_runtime() {
 wait_for_migrate_lock() {
   log "$(t log_waiting_migrations)"
   compose exec -T app bash -c '
-    mkdir -p /var/www/html/storage/framework
-    flock -w "${AWG_GUI_MIGRATE_LOCK_TIMEOUT:-300}" /var/www/html/storage/framework/migrate.lock true
+    flock -w "${AWG_GUI_MIGRATE_LOCK_TIMEOUT:-300}" /var/lock/awg-migrate.lock true
   ' || warn "$(t warn_migrate_lock)"
 }
 
@@ -941,17 +914,17 @@ run_bootstrap() {
     if [[ -n "${admin_pass}" ]]; then
       compose exec -T \
         -e ADMIN_PASSWORD="${admin_pass}" \
-        app php artisan admin:ensure --username=admin --password="${admin_pass}" --email=admin@localhost \
+        app awgctl admin ensure --username=admin --password="${admin_pass}" --email=admin@localhost \
         || warn "$(t warn_admin_ensure_skipped)"
     else
-      compose exec -T app php artisan admin:ensure --username=admin --email=admin@localhost \
+      compose exec -T app awgctl admin ensure --username=admin --email=admin@localhost \
         || warn "$(t warn_admin_ensure_skipped)"
     fi
   elif [[ -n "${admin_pass}" ]]; then
     log "$(t log_ensuring_admin)"
     compose exec -T \
       -e ADMIN_PASSWORD="${admin_pass}" \
-      app php artisan admin:ensure --username=admin --password="${admin_pass}" --email=admin@localhost
+      app awgctl admin ensure --username=admin --password="${admin_pass}" --email=admin@localhost
   fi
 
   log "$(t log_bootstrapping_awg)"
@@ -963,7 +936,7 @@ run_bootstrap() {
     -e INTERNAL_SUBNET="${internal_subnet}" \
     -e PEER_DNS="${peer_dns}" \
     -e ALLOWED_IPS="${allowed_ips}" \
-    app php artisan awg:bootstrap || true
+    app awgctl bootstrap || true
 }
 
 main() {
@@ -1036,10 +1009,7 @@ main() {
   seed_host_ssl_files
   env_merge_missing_keys
   ensure_panel_ops_token
-<<<<<<< HEAD
-=======
   install_awg_kernel_module
->>>>>>> a34ec4d81547d4963b761827020a578f3957b1c6
   remove_legacy_certbot_container
   load_images
 

@@ -11,10 +11,6 @@ STAGING="${DIST}/.staging.$$"
 SING_BOX_VERSION=1.13.14
 MARIADB_IMAGE=mariadb:11.4
 DOCKER_PROXY_IMAGE=tecnativa/docker-socket-proxy:0.3.0
-<<<<<<< HEAD
-CERTBOT_IMAGE=certbot/certbot:v3.0.0
-=======
->>>>>>> a34ec4d81547d4963b761827020a578f3957b1c6
 PROJECT_NAME=awggui
 
 VERSION=""
@@ -96,18 +92,11 @@ compose_build() {
 tag_images() {
   local svc
   for svc in caddy app awg panel-ops; do
-<<<<<<< HEAD
-=======
     docker rmi "awggui-${svc}:${VERSION}" 2>/dev/null || true
->>>>>>> a34ec4d81547d4963b761827020a578f3957b1c6
     docker tag "${PROJECT_NAME}-${svc}" "awggui-${svc}:${VERSION}"
   done
   docker pull "${MARIADB_IMAGE}"
   docker pull "${DOCKER_PROXY_IMAGE}"
-<<<<<<< HEAD
-  docker pull "${CERTBOT_IMAGE}"
-=======
->>>>>>> a34ec4d81547d4963b761827020a578f3957b1c6
 }
 
 export_images() {
@@ -124,10 +113,6 @@ export_images() {
     "awggui-panel-ops:${VERSION}" \
     "${MARIADB_IMAGE}" \
     "${DOCKER_PROXY_IMAGE}" \
-<<<<<<< HEAD
-    "${CERTBOT_IMAGE}" \
-=======
->>>>>>> a34ec4d81547d4963b761827020a578f3957b1c6
     | gzip -1 > "${tar}"
 }
 
@@ -281,13 +266,10 @@ main() {
 
   trap cleanup EXIT
 
-<<<<<<< HEAD
-=======
   # Free Docker layers from previous versions before checking disk budget
   log "Pruning old build images ..."
   prune_build_disk 0
 
->>>>>>> a34ec4d81547d4963b761827020a578f3957b1c6
   require_free_gb 3
   ensure_sing_box_vendor
   compose_build
@@ -295,8 +277,6 @@ main() {
   assemble_runtime
   export_images
   make_run_bundle
-  # staging cleaned by EXIT trap; prune again after heavy export
-  docker builder prune -af >/dev/null 2>&1 || true
 
   # After success: drop other version tags, old .run files, dangling layers, build cache
   log "Reclaiming disk after export ..."

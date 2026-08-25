@@ -29,10 +29,10 @@ src/
     build-dist.sh
     host/             # awg-kernel-host.sh (helper kernel-модуля на хосте)
     release/          # prod bundle templates
-  panel-ops/          # привилегированные ops (update, awg-kernel)
+  panel-ops/          # привилегированные ops на Go (update, awg-kernel)
   caddy/
   awg/
-  backend/     # Laravel 12
+  backend/     # Go API
   frontend/    # Quasar (Vite)
 ```
 
@@ -43,10 +43,10 @@ src/
 | Контейнер | Назначение |
 |-----------|------------|
 | `awggui-caddy` | Reverse proxy, TLS, статика frontend |
-| `awggui-app` | Laravel API |
+| `awggui-app` | Go API |
 | `awggui-db` | MariaDB |
 | `awggui-awg` | AmneziaWG + sing-box (резолвер) |
-| `awggui-panel-ops` | Операции на хосте: обновление панели, установка/удаление kernel-модуля AmneziaWG |
+| `awggui-panel-ops` | Go-сервис: обновление панели, установка/удаление kernel-модуля AmneziaWG |
 | `awggui-docker-proxy` | Ограниченный Docker socket proxy для приложения |
 
 ## Связанные разделы

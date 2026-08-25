@@ -11,7 +11,7 @@
 | `awg-gui info` | URL панели, хост, порт и логин (без пароля) |
 | `awg-gui ensure-up` | Если контейнеры остановлены — `compose up -d` |
 | `awg-gui restart awg` | Перезапуск контейнера AmneziaWG |
-| `awg-gui restart panel` | Перезапуск Caddy + Laravel app |
+| `awg-gui restart panel` | Перезапуск Caddy + Go app |
 | `awg-gui restart all` | Перезапуск всех сервисов |
 | `awg-gui password` | Сгенерировать случайный пароль admin |
 | `awg-gui password --random` | То же явно |
@@ -70,7 +70,7 @@ sudo awg-gui password --random
 sudo awg-gui password --password='MyStr0ng!Pass'
 ```
 
-Команда обновляет пользователя `admin` в БД Laravel. Используйте одинарные кавычки, если пароль содержит символы shell (`$`, `` ` ``, `!`, `&` и т.д.).
+Команда обновляет пользователя `admin` в БД панели. Используйте одинарные кавычки, если пароль содержит символы shell (`$`, `` ` ``, `!`, `&` и т.д.).
 
 ## Служба автозапуска
 

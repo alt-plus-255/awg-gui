@@ -154,129 +154,6 @@
             class="q-virtual-scroll--with-prev"
           >
             <q-td colspan="100%" class="expanded-cell">
-<<<<<<< HEAD
-              <div v-if="forms[props.row.id]" class="q-pa-md expand-inner">
-                <div class="row items-center q-mb-md">
-                  <div class="col text-subtitle1">{{ t('resolver.settingsFor', { name: props.row.name }) }}</div>
-                  <q-toggle
-                    v-model="forms[props.row.id].resolver_enabled"
-                    color="primary"
-                    :label="forms[props.row.id].resolver_enabled ? t('resolver.resolverEnabled') : t('resolver.resolverDisabled')"
-                    :disable="savingId === props.row.id || !props.row.enabled"
-                  />
-                </div>
-
-                <q-banner
-                  v-if="!props.row.enabled"
-                  dense
-                  rounded
-                  class="q-mb-md text-warning surface-warn-bg"
-                >
-                  {{ t('resolver.configDisabledBanner') }}
-                </q-banner>
-
-                <q-select
-                  v-model="forms[props.row.id].connection_id"
-                  :options="connectionOptions"
-                  :label="forms[props.row.id].resolver_enabled ? t('resolver.connectionRequired') : t('resolver.connectionOptional')"
-                  emit-value
-                  map-options
-                  filled
-
-                  :clearable="!forms[props.row.id].resolver_enabled"
-                  class="q-mb-md"
-                  :disable="!connectionOptions.length"
-                  :rules="forms[props.row.id].resolver_enabled
-                    ? [v => !!v || t('resolver.selectConnection')]
-                    : []"
-                  lazy-rules
-                >
-                  <template #no-option>
-                    <q-item>
-                      <q-item-section class="text-grey-5">
-                        {{ t('resolver.noConnections') }}
-                        <router-link :to="{ name: 'resolver-connections' }" class="text-primary">{{ t('resolver.create') }}</router-link>
-                      </q-item-section>
-                    </q-item>
-                  </template>
-                </q-select>
-
-                <q-input
-                  v-model="forms[props.row.id].resolver_dns"
-                  label="DNS (sing-box / upstream)"
-                  filled
-
-                  dense
-                  class="q-mb-md"
-                  placeholder="1.1.1.1"
-                />
-
-                <q-checkbox
-                  v-model="forms[props.row.id].resolver_reject_quic"
-                  :label="t('resolver.blockQuic')"
-                  dense
-
-                  class="q-mb-md"
-                />
-
-                <div class="row q-col-gutter-sm q-mb-md">
-                  <div
-                    v-for="item in selectableLists"
-                    :key="item.tag"
-                    class="col-12 col-sm-6 col-md-4 col-lg-3"
-                  >
-                    <q-checkbox
-                      v-model="forms[props.row.id].community_lists"
-                      :val="item.tag"
-                      :label="item.label"
-                      dense
-
-                      :disable="isListDisabled(props.row.id, item)"
-                      @update:model-value="onListsChange(props.row.id, item)"
-                    />
-                  </div>
-                </div>
-
-                <div class="row q-col-gutter-md q-mb-md">
-                  <div class="col-12 col-md-6">
-                    <TagListInput
-                      v-model="forms[props.row.id].user_domains"
-                      :label="t('resolver.customDomains')"
-                      placeholder="example.com"
-                      :empty-hint="t('resolver.noDomains')"
-                      :normalize="normalizeDomain"
-                      :validate="validateDomain"
-                    />
-                  </div>
-                  <div class="col-12 col-md-6">
-                    <TagListInput
-                      v-model="forms[props.row.id].user_subnets"
-                      :label="t('resolver.customSubnets')"
-                      :placeholder="t('resolver.subnetsPlaceholder')"
-                      :empty-hint="t('resolver.noSubnets')"
-                      :normalize="normalizeSubnet"
-                      :validate="validateSubnet"
-                    />
-                  </div>
-                </div>
-
-                <div v-if="forms[props.row.id].resolver_enabled" class="text-caption text-grey-5 q-mb-md mono">
-                  DNS: {{ props.row.gateway_ip }} · AllowedIPs: {{ previewAllowed(props.row.id) }}
-                </div>
-
-                <div class="row q-gutter-sm items-center">
-                  <q-btn
-                    color="primary"
-                    :label="t('common.save')"
-                    :loading="savingId === props.row.id"
-                    :disable="!isDirty(props.row.id)"
-                    @click="save(props.row.id)"
-                  />
-                  <div v-if="props.row.resolver_updated_at" class="text-caption text-grey-6">
-                    {{ t('resolver.appliedAt', { ts: formatTs(props.row.resolver_updated_at) }) }}
-                  </div>
-                </div>
-=======
               <div class="q-pa-md">
                 <ResolverConfigExpandPanel
                   :config="props.row"
@@ -295,7 +172,6 @@
                   :format-ts="formatTs"
                   @save="save"
                 />
->>>>>>> a34ec4d81547d4963b761827020a578f3957b1c6
               </div>
             </q-td>
           </q-tr>
@@ -642,8 +518,6 @@ const firstEnabledGateway = computed(() => {
   return cfg?.gateway_ip || null
 })
 
-<<<<<<< HEAD
-=======
 const configErrors = computed(() =>
   (status.configs || [])
     .filter(c => c.resolver_enabled && c.resolver_last_error)
@@ -654,7 +528,6 @@ const configErrors = computed(() =>
     }))
 )
 
->>>>>>> a34ec4d81547d4963b761827020a578f3957b1c6
 function formatTs (iso) {
   if (!iso) return '—'
   try {

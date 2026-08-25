@@ -14,11 +14,7 @@ INSTALL_ROOT="${INSTALL_ROOT:-}"
 COMPOSE_FILE="${COMPOSE_FILE:-${INSTALL_ROOT}/src/docker-compose.yml}"
 ENV_FILE="${ENV_FILE:-${INSTALL_ROOT}/src/.env}"
 PROJECT_NAME="${PROJECT_NAME:-awggui}"
-<<<<<<< HEAD
-EXPECTED_SERVICES=(caddy app db awg docker-proxy panel-ops certbot)
-=======
 EXPECTED_SERVICES=(caddy app db awg docker-proxy panel-ops)
->>>>>>> a34ec4d81547d4963b761827020a578f3957b1c6
 
 log() { echo "[awg-gui] $*"; }
 err() { echo "[awg-gui] ERROR: $*" >&2; }
@@ -298,12 +294,7 @@ cmd_info() {
     if [[ -z "${host}" ]]; then
       host="${SERVER_ENDPOINT:-}"
       if [[ -z "${host}" || "${host}" == "auto" ]]; then
-<<<<<<< HEAD
-        host="$(hostname -I 2>/dev/null | awk '{print $1}')"
-        host="${host:-127.0.0.1}"
-=======
         host="$(detect_public_ip)"
->>>>>>> a34ec4d81547d4963b761827020a578f3957b1c6
       fi
     fi
     local port="${PANEL_PORT:-8877}"
@@ -318,7 +309,7 @@ cmd_info() {
     return 0
   fi
 
-  compose exec -T app php artisan panel:info
+  compose exec -T app awgctl panel info
 }
 
 cmd_ensure_up() {
@@ -353,11 +344,7 @@ cmd_ensure_up() {
   sleep 3
   if ! services_running; then
     send_failure_webhook "service_unhealthy" "Services still not running after compose up" \
-<<<<<<< HEAD
-      '{"services":["caddy","app","db","awg","docker-proxy","panel-ops","certbot"]}'
-=======
       '{"services":["caddy","app","db","awg","docker-proxy","panel-ops"]}'
->>>>>>> a34ec4d81547d4963b761827020a578f3957b1c6
     return 1
   fi
 
@@ -426,13 +413,13 @@ EOF
     return 1
   fi
 
-  local artisan_args=(exec -T app php artisan admin:reset-password --no-interaction)
+  local ctl_args=(exec -T app awgctl admin reset-password)
   if [[ -n "${pass_arg}" ]]; then
-    artisan_args+=(--password="${pass_arg}")
+    ctl_args+=(--password="${pass_arg}")
   fi
 
   local out
-  if ! out="$(compose "${artisan_args[@]}" 2>&1)"; then
+  if ! out="$(compose "${ctl_args[@]}" 2>&1)"; then
     printf '%s\n' "${out}"
     return 1
   fi
@@ -528,7 +515,7 @@ EOF
   fi
 
   if [[ ${show} -eq 1 || ( -z "${ip_arg}" && -z "${port_arg}" ) ]]; then
-    compose exec -T app php artisan awg:set-endpoint --show
+    compose exec -T app awgctl set-endpoint --show
     return $?
   fi
 
@@ -539,11 +526,11 @@ EOF
 
   load_webhook
 
-  local artisan_args=(exec -T app php artisan awg:set-endpoint --no-interaction)
+  local ctl_args=(exec -T app awgctl set-endpoint)
   if [[ -n "${ip_arg}" ]]; then
     env_set "SERVER_ENDPOINT" "${ip_arg}" "${ENV_FILE}"
     sync_env_endpoint "${ip_arg}" "${PANEL_PORT:-8877}"
-    artisan_args+=(--endpoint="${ip_arg}")
+    ctl_args+=(--endpoint="${ip_arg}")
   fi
   if [[ -n "${port_arg}" ]]; then
     if ! [[ "${port_arg}" =~ ^[0-9]+$ ]]; then
@@ -551,10 +538,10 @@ EOF
       return 1
     fi
     env_set "AWG_PORT" "${port_arg}" "${ENV_FILE}"
-    artisan_args+=(--port="${port_arg}")
+    ctl_args+=(--port="${port_arg}")
   fi
 
-  compose "${artisan_args[@]}"
+  compose "${ctl_args[@]}"
 }
 
 cmd_2fa() {
@@ -592,10 +579,10 @@ EOF
 
   case "${action}" in
     status)
-      compose exec -T app php artisan admin:2fa-status --username="${username}" --no-interaction
+      compose exec -T app awgctl admin 2fa-status --username="${username}"
       ;;
     disable)
-      compose exec -T app php artisan admin:disable-2fa --username="${username}" --no-interaction
+      compose exec -T app awgctl admin disable-2fa --username="${username}"
       ;;
     ""|-h|--help)
       cat <<'EOF'

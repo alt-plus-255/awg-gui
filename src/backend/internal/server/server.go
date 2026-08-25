@@ -207,6 +207,7 @@ func New(cfg config.Config, db *sql.DB) *App {
 		apiR.Post("/settings/check-updates", settingsCtrl.CheckProjectUpdates)
 		apiR.Post("/settings/update", settingsCtrl.StartProjectUpdate)
 		apiR.Post("/settings/update/clear-log", settingsCtrl.ClearProjectUpdateLog)
+		apiR.Get("/settings/update/log", settingsCtrl.DownloadProjectUpdateLog)
 		apiR.Post("/settings/update/retry-stuck", settingsCtrl.RetryStuckProjectUpdate)
 		apiR.Get("/settings/awg-kernel", settingsCtrl.AWGKernelStatus)
 		apiR.Post("/settings/awg-kernel/install", settingsCtrl.AWGKernelInstall)

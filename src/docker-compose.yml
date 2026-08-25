@@ -52,10 +52,6 @@ services:
       DOCKER_HOST: tcp://docker-proxy:2375
       PANEL_OPS_URL: http://panel-ops:8090
       PANEL_OPS_TOKEN: ${PANEL_OPS_TOKEN}
-<<<<<<< HEAD
-      CERTBOT_CONTAINER: awggui-certbot
-=======
->>>>>>> a34ec4d81547d4963b761827020a578f3957b1c6
       AWG_CONTAINER: awggui-awg
       AWG_CONFIG_DIR: /awg
       HOST_AWG_CONFIG_DIR: /var/lib/docker/volumes/awggui_awg_config/_data
@@ -74,11 +70,16 @@ services:
       QUEUE_CONNECTION: database
       TZ: ${TZ:-UTC}
     volumes:
-      - app_storage:/var/www/html/storage
       - awg_config:/awg
       - /proc:/host/proc:ro
       - /etc/awg-gui:/host-awg-gui
       - .:/compose:ro
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/up"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 20s
     depends_on:
       db:
         condition: service_healthy
@@ -92,6 +93,28 @@ services:
     container_name: awggui-db
     restart: unless-stopped
     logging: *default-logging
+    # Default MariaDB caches (~128M InnoDB + ~128M Aria + ~128M MyISAM key buffer)
+    # idle at 300–400MB+. These flags target ~80–120MB RSS on a small panel VPS.
+    command:
+      - mariadbd
+      - --innodb-buffer-pool-size=32M
+      - --innodb-buffer-pool-instances=1
+      - --innodb-log-buffer-size=8M
+      - --aria-pagecache-buffer-size=8M
+      - --key-buffer-size=1M
+      - --max-connections=32
+      - --table-open-cache=64
+      - --table-definition-cache=64
+      - --tmp-table-size=16M
+      - --max-heap-table-size=16M
+      - --sort-buffer-size=256K
+      - --read-buffer-size=128K
+      - --join-buffer-size=256K
+      - --thread-cache-size=8
+      - --performance-schema=OFF
+      - --skip-name-resolve
+      - --skip-log-bin
+    mem_limit: 192m
     environment:
       MARIADB_DATABASE: ${DB_DATABASE:-awggui}
       MARIADB_USER: ${DB_USERNAME:-awggui}
@@ -187,63 +210,6 @@ services:
     networks:
       - awggui
 
-  docker-proxy:
-    image: tecnativa/docker-socket-proxy:0.3.0
-    container_name: awggui-docker-proxy
-    restart: unless-stopped
-    environment:
-      CONTAINERS: 1
-      EXEC: 1
-      POST: 1
-      LOGS: 1
-      CONTAINERS_CREATE: 0
-      IMAGES: 0
-      NETWORKS: 0
-      VOLUMES: 0
-      BUILD: 0
-      COMMIT: 0
-      SWARM: 0
-      SYSTEM: 0
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-    healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:2375/_ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-    networks:
-      - awggui
-
-  panel-ops:
-    build:
-      context: ./panel-ops
-      dockerfile: Dockerfile
-    container_name: awggui-panel-ops
-    restart: unless-stopped
-    environment:
-      PANEL_OPS_TOKEN: ${PANEL_OPS_TOKEN}
-      COMPOSE_PROJECT: awggui
-      COMPOSE_FILE: /compose/docker-compose.yml
-      COMPOSE_ENV_FILE: /compose/.env
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - .:/compose:ro
-    networks:
-      - awggui
-
-  certbot:
-    image: certbot/certbot:v3.0.0
-    container_name: awggui-certbot
-    restart: unless-stopped
-    entrypoint: ["/bin/sh", "-c"]
-    command: ["sleep infinity"]
-    volumes:
-      - /etc/awg-gui/certs:/etc/letsencrypt
-      - /etc/awg-gui/certbot/hooks:/hooks:ro
-      - /etc/awg-gui/certbot/challenge:/challenge
-    networks:
-      - awggui
-
 networks:
   awggui:
     name: awggui_net
@@ -253,5 +219,3 @@ volumes:
     name: awggui_db_data
   awg_config:
     name: awggui_awg_config
-  app_storage:
-    name: awggui_app_storage

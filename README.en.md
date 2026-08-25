@@ -2,7 +2,7 @@
 
 **Languages / Языки:** [Русский](README.md) | [English](README.en.md)
 
-AmneziaWG VPN server (protocol versions **1.0**, **1.5**, and **2.0**, default **2.0**) with a Laravel 12 API and Quasar Vue admin panel, all in Docker containers prefixed with `awggui`.
+AmneziaWG VPN server (protocol versions **1.0**, **1.5**, and **2.0**, default **2.0**) with a Go API and Quasar Vue admin panel, all in Docker containers prefixed with `awggui`.
 
 ## Use cases
 
@@ -101,13 +101,9 @@ Resolver on the **Resolver** page:
 
 Use when you want a classic “full VPN via server”, with blocked resources exiting through a separate upstream connection.
 
-<<<<<<< HEAD
-**After enabling or disabling:** delete the server in AmneziaWG and **re-import** QR/`.conf` — lists will not work without re-import.
-=======
 For ABR video (YouTube/Instagram) you need **kernel AmneziaWG** on the VDS host plus working QUIC (Block QUIC off + UDP-capable outbound) or a solid TCP path. Delivery: FakeIP/list TCP via **NAT REDIRECT** `:1602`, FakeIP UDP via **TPROXY** `:1603` (sing-box **1.13.x**).
 
 **After enabling or disabling:** delete the server in AmneziaWG and **re-import** QR/`.conf` — lists will not work without re-import. If peers had custom AllowedIPs, enabling the resolver shows a dialog: full tunnel replaces split-tunnel.
->>>>>>> a34ec4d81547d4963b761827020a578f3957b1c6
 
 → [Details: resolver, diagnostics, re-import](readme/en/resolver.md)
 
@@ -130,11 +126,7 @@ Remote panel control from Telegram: configs, peers, connections and resolver, pe
 | [Use cases](readme/en/use-cases.md) | Server→client, resolver/cascade, VN routers, home behind VPN |
 | [Configs & peers](readme/en/configs-and-peers.md) | Multi-config, protocol versions, attach/detach, export |
 | [Virtual networks](readme/en/virtual-networks.md) | VN, zones, exclusions |
-<<<<<<< HEAD
-| [Resolver](readme/en/resolver.md) | Full tunnel, lists, connections, diagnostics |
-=======
 | [Resolver](readme/en/resolver.md) | Full tunnel, lists, connections (incl. WG/AWG), diagnostics |
->>>>>>> a34ec4d81547d4963b761827020a578f3957b1c6
 | [Project structure](readme/en/project-structure.md) | Directories, Docker containers |
 
 Русский: [readme/ru/](readme/ru/)

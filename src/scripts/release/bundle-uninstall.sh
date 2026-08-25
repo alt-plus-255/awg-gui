@@ -201,6 +201,13 @@ remove_project_images() {
     [[ -n "${img}" ]] || continue
     docker rmi -f "${img}" 2>/dev/null || true
   done < <(docker images --format '{{.ID}} {{.Repository}}' 2>/dev/null | awk '$2 ~ /^awggui-/ { print $1 }' || true)
+
+  while read -r img; do
+    [[ -n "${img}" ]] || continue
+    docker rmi -f "${img}" 2>/dev/null || true
+  done < <(
+    docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep -E '^(php|docker\.io/library/php)(:|$)' || true
+  )
 }
 
 prune_docker_junk() {

@@ -2,7 +2,7 @@
 
 **Языки:** [Русский](webhook.md) | [English](../en/webhook.md) | [README](../../README.md)
 
-В **Settings** задайте **Оповещение о сбое (ссылка на эндпоинт)**. При сбое загрузки (Docker недоступен / compose fail / unhealthy services) CLI отправляет JSON через `curl` на этот URL. URL дублируется в `/etc/awg-gui/webhook.conf`, чтобы уведомления работали даже когда Laravel недоступен.
+В **Settings** задайте **Оповещение о сбое (ссылка на эндпоинт)**. При сбое загрузки (Docker недоступен / compose fail / unhealthy services) CLI отправляет JSON через `curl` на этот URL. URL дублируется в `/etc/awg-gui/webhook.conf`, чтобы уведомления работали даже когда API панели недоступен.
 
 ## JSON schema `1.0`
 

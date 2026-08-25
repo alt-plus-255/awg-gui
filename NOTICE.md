@@ -39,15 +39,27 @@ product or fork without permission from the sing-box copyright holder.
 
 ## Bundled in `awggui-app` container
 
-Built from `src/backend/` (Laravel). Runtime PHP dependencies are installed
-via Composer inside the image (`composer install --no-dev`).
+Built from `src/backend/` (Go). Runtime is a static `awggui` / `awgctl` binary.
 
 | Component | License | Notes |
 |-----------|---------|--------|
-| [Laravel](https://laravel.com/) | MIT | Framework |
-| Other Composer packages | MIT / BSD / Apache-2.0 (per package) | See `src/backend/composer.lock` |
+| Go standard library | BSD-3-Clause | Runtime |
+| Direct Go modules (`chi`, `mysql`, `migrate`, `websocket`, `otp`, `cron`, `qrcode`, `x/crypto`) | MIT / BSD | See `src/backend/go.mod` |
 
 Source for the application layer: this repository (`src/backend/`).
+
+---
+
+## Bundled in `awggui-panel-ops` container
+
+Built from `src/panel-ops/` (Go). Runtime is a static `panel-ops` binary plus Docker CLI.
+
+| Component | License | Notes |
+|-----------|---------|--------|
+| Go standard library | BSD-3-Clause | Runtime |
+| Docker CLI / Compose plugin | Apache-2.0 | From Alpine packages (`docker-cli`, `docker-cli-compose`) |
+
+Source: this repository (`src/panel-ops/`).
 
 ---
 

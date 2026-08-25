@@ -667,15 +667,25 @@
 
               <div class="row items-center justify-between q-mb-sm">
                 <div class="text-subtitle2">{{ t('settings.updateLogTitle') }}</div>
-                <q-btn
-                  flat
-                  dense
-                  color="grey-5"
-                  :label="t('settings.updateClearLog')"
-                  :loading="projectUpdate.clearingLog"
-                  :disable="!projectUpdate.can_clear_log"
-                  @click="confirmClearUpdateLog"
-                />
+                <div class="row q-gutter-xs">
+                  <q-btn
+                    flat
+                    dense
+                    color="grey-5"
+                    :label="t('settings.updateDownloadLog')"
+                    :loading="projectUpdate.downloadingLog"
+                    @click="downloadUpdateLog"
+                  />
+                  <q-btn
+                    flat
+                    dense
+                    color="grey-5"
+                    :label="t('settings.updateClearLog')"
+                    :loading="projectUpdate.clearingLog"
+                    :disable="!projectUpdate.can_clear_log"
+                    @click="confirmClearUpdateLog"
+                  />
+                </div>
               </div>
               <pre class="mono update-log-pre">{{ projectUpdate.log_tail || t('settings.updateLogEmpty') }}</pre>
             </q-tab-panel>
@@ -1867,6 +1877,17 @@ async function clearUpdateLog () {
     $q.notify({
       type: 'negative',
       message: e?.response?.data?.message || t('settings.updateClearLogError')
+    })
+  }
+}
+
+async function downloadUpdateLog () {
+  try {
+    await projectUpdate.downloadLog()
+  } catch (e) {
+    $q.notify({
+      type: 'negative',
+      message: e?.response?.data?.message || t('settings.updateDownloadLogError')
     })
   }
 }

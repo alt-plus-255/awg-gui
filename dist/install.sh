@@ -231,6 +231,40 @@ human_mib() {
   awk -v b="${bytes}" 'BEGIN { printf "%.1f MiB", b / 1048576 }'
 }
 
+# Bytes/sec → human rate (e.g. 562 KiB/s).
+human_rate() {
+  local bps="${1:-0}"
+  if (( bps < 0 )); then
+    bps=0
+  fi
+  if (( bps >= 1048576 )); then
+    awk -v b="${bps}" 'BEGIN { printf "%.1f MiB/s", b / 1048576 }'
+  elif (( bps >= 1024 )); then
+    awk -v b="${bps}" 'BEGIN { printf "%.0f KiB/s", b / 1024 }'
+  else
+    printf '%s B/s' "${bps}"
+  fi
+}
+
+# Seconds → compact ETA (e.g. 7m30s, 1h05m).
+human_eta() {
+  local sec="${1:-0}"
+  local h=0 m=0
+  if (( sec < 0 )); then
+    sec=0
+  fi
+  if (( sec >= 3600 )); then
+    h=$((sec / 3600))
+    m=$(((sec % 3600) / 60))
+    printf '%dh%02dm' "${h}" "${m}"
+  elif (( sec >= 60 )); then
+    m=$((sec / 60))
+    printf '%dm%02ds' "${m}" "$((sec % 60))"
+  else
+    printf '%ss' "${sec}"
+  fi
+}
+
 read_tty() {
   local prompt="$1" ans=""
   if [[ -r /dev/tty ]]; then
@@ -406,11 +440,27 @@ resolve_release_asset() {
   [[ "${RELEASE_SIZE_BYTES}" =~ ^[0-9]+$ ]] || RELEASE_SIZE_BYTES=0
 }
 
+# Download with progress spinner, speed, resume, stall recovery, and retries.
+# Designed for very slow / flaky links: no overall max-time; resume forever while
+# bytes keep arriving; only give up after many consecutive attempts with zero progress.
+# Fails hard if size != expected when known.
+#
+# Env overrides:
+#   DOWNLOAD_MAX_ATTEMPTS   consecutive no-progress failures before abort (default 100)
+#   DOWNLOAD_STALL_SECONDS  kill+resume if file size unchanged this long (default 180)
 fetch_url_with_progress() {
   local url="$1" dest="$2" expected="${3:-0}" total is_tty=0
   local spinner='|/-\'
+  local max_attempts="${DOWNLOAD_MAX_ATTEMPTS:-100}"
+  local stall_limit="${DOWNLOAD_STALL_SECONDS:-180}"
+  local consecutive_fail=0 attempt=0 rc=0 cur=0 pct=0 use_curl=0
+  local pid tick frame downloaded_mib total_mib line
+  local start_size=0 prev=0 delta=0 speed_bps=0 rate_s="" eta_s=""
+  local stalled=0 last_progress_ts=0 now_ts=0
+
   [[ "${expected}" -gt 0 ]] && total="$(human_size "${expected}")"
   [[ -t 2 ]] && is_tty=1
+  command -v curl >/dev/null 2>&1 && use_curl=1
 
   if [[ -n "${total:-}" ]]; then
     log "$(t log_download_started " (${total})")"
@@ -418,53 +468,138 @@ fetch_url_with_progress() {
     log "$(t log_download_started "")"
   fi
 
-  if command -v curl >/dev/null 2>&1; then
-    curl -fsSL -o "${dest}" "${url}" &
-  else
-    wget --no-config -q -O "${dest}" "${url}" &
-  fi
+  while (( consecutive_fail < max_attempts )); do
+    attempt=$((attempt + 1))
+    rc=0
+    stalled=0
+    start_size=$(stat -c%s "${dest}" 2>/dev/null || echo 0)
+    prev="${start_size}"
+    last_progress_ts="$(date +%s)"
 
-  local pid=$! tick=0 cur pct frame downloaded_mib total_mib line
-  while kill -0 "${pid}" 2>/dev/null; do
+    # Resume from partial file. No curl --retry / --max-time: we own resume so
+    # GitHub signed redirect URLs are refreshed on each new process.
+    if (( use_curl )); then
+      if [[ "${start_size}" -gt 0 ]]; then
+        curl -fsSL --connect-timeout 30 --retry 0 -C - -o "${dest}" "${url}" &
+      else
+        rm -f "${dest}"
+        curl -fsSL --connect-timeout 30 --retry 0 -o "${dest}" "${url}" &
+      fi
+    else
+      if [[ "${start_size}" -gt 0 ]]; then
+        wget --no-config -q -c -O "${dest}" "${url}" &
+      else
+        rm -f "${dest}"
+        wget --no-config -q -O "${dest}" "${url}" &
+      fi
+    fi
+
+    pid=$!
+    tick=0
+    while kill -0 "${pid}" 2>/dev/null; do
+      cur=$(stat -c%s "${dest}" 2>/dev/null || echo 0)
+      now_ts="$(date +%s)"
+      delta=$((cur - prev))
+      if (( delta < 0 )); then
+        delta=0
+      fi
+      speed_bps="${delta}"
+      if (( cur > prev )); then
+        last_progress_ts="${now_ts}"
+      fi
+      prev="${cur}"
+
+      if (( stall_limit > 0 && now_ts - last_progress_ts >= stall_limit )); then
+        stalled=1
+        kill "${pid}" 2>/dev/null || true
+        wait "${pid}" 2>/dev/null || true
+        rc=124
+        break
+      fi
+
+      frame="${spinner:tick%${#spinner}:1}"
+      downloaded_mib="$(human_mib "${cur}")"
+      rate_s="$(human_rate "${speed_bps}")"
+      eta_s=""
+      if [[ "${expected}" -gt 0 && "${speed_bps}" -gt 0 && "${cur}" -lt "${expected}" ]]; then
+        eta_s=" ETA $(human_eta "$(( (expected - cur) / speed_bps ))")"
+      fi
+
+      if [[ "${expected}" -gt 0 ]]; then
+        pct=$(( cur * 100 / expected ))
+        (( pct > 100 )) && pct=100
+        total_mib="$(human_mib "${expected}")"
+        line="$(printf '[install] [%s] %3s%%  %9s / %-9s  %10s%s' "${frame}" "${pct}" "${downloaded_mib}" "${total_mib}" "${rate_s}" "${eta_s}")"
+      else
+        line="$(printf '[install] [%s]      %9s downloaded  %10s' "${frame}" "${downloaded_mib}" "${rate_s}")"
+      fi
+
+      if (( is_tty )); then
+        printf '\033[2K\r%s' "${line}" >&2
+      elif (( tick % 5 == 0 )); then
+        # File/pipe (GUI update.log): newline progress every ~5s — \r makes one unreadable blob.
+        printf '%s\n' "${line}" >&2
+      fi
+
+      tick=$((tick + 1))
+      sleep 1
+    done
+
+    if (( stalled == 0 )); then
+      set +e
+      wait "${pid}"
+      rc=$?
+      set -e
+    fi
+
     cur=$(stat -c%s "${dest}" 2>/dev/null || echo 0)
-    frame="${spinner:tick%${#spinner}:1}"
     downloaded_mib="$(human_mib "${cur}")"
-
     if [[ "${expected}" -gt 0 ]]; then
       pct=$(( cur * 100 / expected ))
       (( pct > 100 )) && pct=100
       total_mib="$(human_mib "${expected}")"
-      line="$(printf '[install] [%s] %3s%%  %9s / %-9s' "${frame}" "${pct}" "${downloaded_mib}" "${total_mib}")"
+      line="$(printf '[install] [*] %3s%%  %9s / %-9s' "${pct}" "${downloaded_mib}" "${total_mib}")"
     else
-      line="$(printf '[install] [%s]      %9s downloaded' "${frame}" "${downloaded_mib}")"
+      line="$(printf '[install] [*]      %9s downloaded' "${downloaded_mib}")"
     fi
 
     if (( is_tty )); then
-      printf '\033[2K\r%s' "${line}" >&2
-    elif (( tick % 5 == 0 )); then
-      # File/pipe (GUI update.log): newline progress every ~5s — \r makes one unreadable blob.
+      printf '\033[2K\r%s\n' "${line}" >&2
+    else
       printf '%s\n' "${line}" >&2
     fi
 
-    tick=$((tick + 1))
-    sleep 1
+    # Complete when size matches (even if curl exited non-zero after a bad resume
+    # Range request), or unknown size with a successful transfer and data.
+    if [[ "${expected}" -gt 0 && "${cur}" -eq "${expected}" ]]; then
+      return 0
+    fi
+    if [[ "${expected}" -le 0 ]] && (( rc == 0 && cur > 0 )); then
+      return 0
+    fi
+
+    if (( cur > start_size )); then
+      consecutive_fail=0
+    else
+      consecutive_fail=$((consecutive_fail + 1))
+    fi
+
+    if (( consecutive_fail >= max_attempts )); then
+      break
+    fi
+
+    if (( stalled )); then
+      warn "$(t warn_download_stall "${stall_limit}" "$(human_size "${cur}")")"
+    else
+      warn "$(t warn_download_retry "${attempt}" "${consecutive_fail}" "${rc}" "$(human_size "${cur}")")"
+    fi
+    sleep $(( consecutive_fail < 5 ? consecutive_fail * 2 + 1 : 10 ))
   done
 
-  wait "${pid}"
-  cur=$(stat -c%s "${dest}" 2>/dev/null || echo 0)
-  downloaded_mib="$(human_mib "${cur}")"
-  if [[ "${expected}" -gt 0 ]]; then
-    total_mib="$(human_mib "${expected}")"
-    line="$(printf '[install] [*] 100%%  %9s / %-9s' "${downloaded_mib}" "${total_mib}")"
-  else
-    line="$(printf '[install] [*]      %9s downloaded' "${downloaded_mib}")"
+  if [[ "${expected}" -gt 0 && "${cur}" -ne "${expected}" ]]; then
+    die "$(t err_download_incomplete "$(human_size "${cur}")" "$(human_size "${expected}")")"
   fi
-
-  if (( is_tty )); then
-    printf '\033[2K\r%s\n' "${line}" >&2
-  else
-    printf '%s\n' "${line}" >&2
-  fi
+  die "$(t err_download_failed "${rc}")"
 }
 
 download_bundle() {

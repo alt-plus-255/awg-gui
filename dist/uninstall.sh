@@ -136,6 +136,13 @@ remove_project_images() {
     [[ -n "${img}" ]] || continue
     docker rmi -f "${img}" 2>/dev/null || true
   done < <(docker images --format '{{.ID}} {{.Repository}}' 2>/dev/null | awk '$2 ~ /^awggui-/ { print $1 }' || true)
+
+  while read -r img; do
+    [[ -n "${img}" ]] || continue
+    docker rmi -f "${img}" 2>/dev/null || true
+  done < <(
+    docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep -E '^(php|docker\.io/library/php)(:|$)' || true
+  )
 }
 
 prune_docker_junk() {
@@ -289,21 +296,7 @@ if [[ -f "${COMPOSE_FILE}" ]]; then
   fi
 fi
 
-<<<<<<< HEAD
-for c in awggui-caddy awggui-app awggui-db awggui-awg awggui-docker-proxy awggui-panel-ops awggui-certbot; do docker rm -f "$c" 2>/dev/null || true; done
-for v in awggui_db_data awggui_awg_config awggui_app_storage; do docker volume rm -f "$v" 2>/dev/null || true; done
-docker network rm awggui_net 2>/dev/null || true
-rm -f /usr/local/bin/awg-gui
-rm -rf /etc/awg-gui
-
-if [[ "${REMOVE_IMAGES}" -eq 1 ]]; then
-  docker images --format '{{.Repository}}:{{.Tag}}' | grep -E '^awggui-' | while read -r img; do
-    docker rmi -f "${img}" 2>/dev/null || true
-  done
-fi
-=======
 cleanup_project_artifacts
->>>>>>> a34ec4d81547d4963b761827020a578f3957b1c6
 
 if [[ "${PURGE}" -eq 1 && -d "${INSTALL_DIR}" ]]; then
   rm -rf "${INSTALL_DIR}"

@@ -28,10 +28,7 @@ The **Connections** view shows a graph of VN peer connectivity: who can talk to 
 ## Client configs
 
 VN peers get ready-made `.conf` / QR files with the virtual subnet. The resolver is **not** used for VN — see [resolver.md](resolver.md).
-<<<<<<< HEAD
-=======
 
 When connecting **routers**, each peer’s extra AllowedIPs must list **its own** non-overlapping LAN subnet (e.g. `192.168.10.0/24`, `192.168.20.0/24`). See the “virtual network hub” layout in [use cases](use-cases.md#4-virtual-network-hub).
->>>>>>> a34ec4d81547d4963b761827020a578f3957b1c6
 
 Create configs and attach peers on the [Configs & peers](configs-and-peers.md) page.

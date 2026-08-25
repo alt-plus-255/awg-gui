@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
-# Hot-deploy code changes without rebuilding running container images (15GB-disk friendly).
+# Rebuild/restart the Go app container (and optionally frontend) without a full stack rebuild.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 APP_CONTAINER="${APP_CONTAINER:-awggui-app}"
 CADDY_CONTAINER="${CADDY_CONTAINER:-awggui-caddy}"
 FE_BUILD_TAG="${FE_BUILD_TAG:-awggui-frontend-build:tmp}"
+COMPOSE_FILE="${COMPOSE_FILE:-${ROOT}/docker-compose.yml}"
+ENV_FILE="${ENV_FILE:-${ROOT}/.env}"
+PROJECT_NAME="${PROJECT_NAME:-awggui}"
 
 DEPLOY_BACKEND=1
 DEPLOY_FRONTEND=1
@@ -14,11 +17,9 @@ usage() {
   cat <<'EOF'
 Usage: hot-deploy.sh [--backend-only | --frontend-only | --all]
 
-  --backend-only   Copy Laravel PHP sources into awggui-app
+  --backend-only   Rebuild awggui-app (Go) image and recreate the container
   --frontend-only  Build SPA via caddy/Dockerfile (frontend stage) and copy into awggui-caddy
   --all            Backend + frontend (default)
-
-Containers are NOT rebuilt; only files inside running containers are updated.
 EOF
 }
 
@@ -47,29 +48,18 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 
+compose() {
+  if [[ -f "${ENV_FILE}" ]]; then
+    docker compose -p "${PROJECT_NAME}" --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" "$@"
+  else
+    docker compose -p "${PROJECT_NAME}" -f "${COMPOSE_FILE}" "$@"
+  fi
+}
+
 deploy_backend() {
-  echo "==> Backend PHP (app/) -> ${APP_CONTAINER}"
-  docker cp "${ROOT}/backend/app/." "${APP_CONTAINER}:/var/www/html/app/"
-
-  if [[ -d "${ROOT}/backend/lang" ]]; then
-    echo "==> Backend lang/ -> ${APP_CONTAINER}"
-    docker cp "${ROOT}/backend/lang/." "${APP_CONTAINER}:/var/www/html/lang/"
-  fi
-
-  echo "==> Backend bootstrap -> ${APP_CONTAINER}"
-  docker cp "${ROOT}/backend/bootstrap/app.php" "${APP_CONTAINER}:/var/www/html/bootstrap/app.php"
-
-  echo "==> Backend routes -> ${APP_CONTAINER}"
-  docker cp "${ROOT}/backend/routes/." "${APP_CONTAINER}:/var/www/html/routes/"
-
-  if [[ -d "${ROOT}/backend/database/migrations" ]]; then
-    echo "==> Backend database/migrations -> ${APP_CONTAINER}"
-    docker cp "${ROOT}/backend/database/migrations/." "${APP_CONTAINER}:/var/www/html/database/migrations/"
-  fi
-
-  echo "==> Laravel cache clear"
-  docker exec "${APP_CONTAINER}" php artisan config:clear --ansi 2>/dev/null || true
-  docker exec "${APP_CONTAINER}" php artisan route:clear --ansi 2>/dev/null || true
+  echo "==> Rebuild Go backend image and recreate ${APP_CONTAINER}"
+  compose build app
+  compose up -d --no-deps --force-recreate app
 }
 
 deploy_frontend_via_caddy() {
@@ -109,4 +99,4 @@ if [[ "${DEPLOY_FRONTEND}" -eq 1 ]]; then
   deploy_frontend_via_caddy
 fi
 
-echo "==> Done. Running containers were NOT rebuilt."
+echo "==> Done."

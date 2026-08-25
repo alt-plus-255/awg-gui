@@ -11,7 +11,7 @@ Installed to `/usr/local/bin/awg-gui`. Config: `/etc/awg-gui/awg-gui.conf`.
 | `awg-gui info` | Panel URL, host, port, and login (no password) |
 | `awg-gui ensure-up` | If containers are down, `compose up -d` |
 | `awg-gui restart awg` | Restart AmneziaWG container |
-| `awg-gui restart panel` | Restart Caddy + Laravel app |
+| `awg-gui restart panel` | Restart Caddy + Go app |
 | `awg-gui restart all` | Restart all project services |
 | `awg-gui password` | Generate a random admin password and print it |
 | `awg-gui password --random` | Same as above (explicit) |
@@ -70,7 +70,7 @@ sudo awg-gui password --random
 sudo awg-gui password --password='MyStr0ng!Pass'
 ```
 
-The command updates the `admin` user in the Laravel database and prints the new value. Use single quotes if the password contains shell metacharacters (`$`, `` ` ``, `!`, `&`, etc.).
+The command updates the `admin` user in the panel database and prints the new value. Use single quotes if the password contains shell metacharacters (`$`, `` ` ``, `!`, `&`, etc.).
 
 ## Boot service
 

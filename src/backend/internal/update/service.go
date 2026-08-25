@@ -16,10 +16,11 @@ import (
 )
 
 const (
-	logTailLines       = 80
-	stuckAfterSeconds  = 3600
-	timeoutAfterSeconds = 7200
-	githubRepoDefault  = "alt-plus-255/awg-gui"
+	logTailLines        = 80
+	stuckAfterSeconds   = 10800  // 3h wall clock before "stuck" (log activity overrides)
+	timeoutAfterSeconds = 28800  // 8h hard fail if log also idle
+	logActiveWindow     = 15 * time.Minute
+	githubRepoDefault   = "alt-plus-255/awg-gui"
 )
 
 type Service struct {
@@ -136,6 +137,18 @@ func (s *Service) ClearLog(locale string) (map[string]any, error) {
 	return out, nil
 }
 
+func (s *Service) ReadFullLog() ([]byte, error) {
+	path := s.HostGUIDir + "/update.log"
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []byte{}, nil
+		}
+		return nil, err
+	}
+	return raw, nil
+}
+
 func (s *Service) RetryStuck(locale, targetVersion string) (map[string]any, error) {
 	update := s.readJSONFile(s.HostGUIDir + "/update.state")
 	if !s.isStuckRunning(update) {
@@ -218,8 +231,20 @@ func (s *Service) isRunningState(update map[string]any) bool {
 	return strVal(update["status"]) == "running"
 }
 
+func (s *Service) updateLogActive() bool {
+	st, err := os.Stat(s.HostGUIDir + "/update.log")
+	if err != nil {
+		return false
+	}
+	return time.Since(st.ModTime()) < logActiveWindow
+}
+
 func (s *Service) isStuckRunning(update map[string]any) bool {
 	if !s.isRunningState(update) {
+		return false
+	}
+	// Slow downloads keep writing progress into update.log — not stuck.
+	if s.updateLogActive() {
 		return false
 	}
 	started := strings.TrimSpace(strVal(update["started_at"]))
@@ -252,6 +277,10 @@ func (s *Service) reconcileUpdateState(update map[string]any, install map[string
 		return update
 	}
 	if ts, err := parseTime(startedAt); err == nil && time.Since(ts) > timeoutAfterSeconds*time.Second {
+		// Do not fail a slow-but-alive install (log still progressing).
+		if s.updateLogActive() {
+			return update
+		}
 		update["status"] = "failed"
 		update["finished_at"] = time.Now().UTC().Format("2006-01-02T15:04:05Z")
 		update["message"] = "Update timed out or was interrupted."

@@ -16,7 +16,7 @@ Only one user may operate the bot — the numeric **Admin Telegram ID**. Everyon
 6. Save settings and click **Test bot**.
 7. In Telegram send `/start` to the bot from the Admin ID account.
 
-Inside the `awggui-app` Docker container, `php artisan telegram:bot` starts automatically. The scheduler runs `telegram:notify-peers` every minute.
+Inside the `awggui-app` Docker container, the Go process starts a Telegram poller automatically. The scheduler runs peer online/offline checks every minute.
 
 ## Transport modes
 
@@ -80,14 +80,14 @@ Selection strategy in settings: prefer lower latency or first available. The UI 
 | Peer notifications | Online/offline alerts to the admin chat |
 | Proxy pool | Polling mode only |
 
-## Artisan commands
+## Built-in workers
 
-| Command | Purpose |
-|---------|---------|
-| `php artisan telegram:bot` | Long-polling worker (started from the Docker entrypoint) |
-| `php artisan telegram:notify-peers` | One online/offline check (scheduled every minute) |
+| Worker | Purpose |
+|--------|---------|
+| Telegram poller | Long-polling worker (started with the Go API process) |
+| Peer notify | One online/offline check (scheduled every minute) |
 
-If the bot is not configured or webhook mode is selected, `telegram:bot` idles.
+If the bot is not configured or webhook mode is selected, the poller idles.
 
 ## Security
 

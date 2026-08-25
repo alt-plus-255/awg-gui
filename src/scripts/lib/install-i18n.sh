@@ -188,6 +188,10 @@ _awg_gui_msg_en() {
     log_downloading_file) printf '%s' 'Downloading %s ...' ;;
     log_downloading_file_size) printf '%s' 'Downloading %s (%s) ...' ;;
     ok_download_complete) printf '%s' 'Download complete (%s)' ;;
+    warn_download_retry) printf '%s' 'Download incomplete or failed (attempt %s, consecutive no-progress %s, exit %s, got %s) — retrying with resume ...' ;;
+    warn_download_stall) printf '%s' 'Download stalled (no progress for %ss, got %s) — killing transfer and resuming ...' ;;
+    err_download_failed) printf '%s' 'Download failed (exit code %s). Check network and retry.' ;;
+    err_download_incomplete) printf '%s' 'Download incomplete: got %s, expected %s. Check network and retry.' ;;
     ok_using_local_bundle) printf '%s' 'Using local bundle %s' ;;
     log_running_release) printf '%s' 'Running release installer ...' ;;
     label_temp_space) printf '%s' 'installer temp space' ;;
@@ -382,6 +386,10 @@ _awg_gui_msg_ru() {
     log_downloading_file) printf '%s' 'Скачивание %s ...' ;;
     log_downloading_file_size) printf '%s' 'Скачивание %s (%s) ...' ;;
     ok_download_complete) printf '%s' 'Загрузка завершена (%s)' ;;
+    warn_download_retry) printf '%s' 'Загрузка неполная или с ошибкой (попытка %s, без прогресса подряд %s, код %s, получено %s) — повтор с докачкой ...' ;;
+    warn_download_stall) printf '%s' 'Загрузка зависла (нет прогресса %s с, получено %s) — обрыв и докачка ...' ;;
+    err_download_failed) printf '%s' 'Ошибка загрузки (код выхода %s). Проверьте сеть и повторите.' ;;
+    err_download_incomplete) printf '%s' 'Неполная загрузка: получено %s, ожидалось %s. Проверьте сеть и повторите.' ;;
     ok_using_local_bundle) printf '%s' 'Используется локальный бандл %s' ;;
     log_running_release) printf '%s' 'Запуск release-установщика ...' ;;
     label_temp_space) printf '%s' 'временное пространство установщика' ;;

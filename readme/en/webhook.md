@@ -2,7 +2,7 @@
 
 **Languages:** [Русский](../ru/webhook.md) | [English](webhook.md) | [README](../../README.en.md)
 
-In **Settings** set **Failure notification URL**. On boot failure (Docker down / compose fail / unhealthy services) the CLI POSTs JSON via `curl` to that URL. The URL is mirrored to `/etc/awg-gui/webhook.conf` so notifications work even when Laravel is down.
+In **Settings** set **Failure notification URL**. On boot failure (Docker down / compose fail / unhealthy services) the CLI POSTs JSON via `curl` to that URL. The URL is mirrored to `/etc/awg-gui/webhook.conf` so notifications work even when the panel API is down.
 
 ## JSON schema `1.0`
 

@@ -11,6 +11,7 @@ export const useProjectUpdateStore = defineStore('projectUpdate', () => {
   const checking = ref(false)
   const starting = ref(false)
   const clearingLog = ref(false)
+  const downloadingLog = ref(false)
   const retryingStuck = ref(false)
 
   const current_version = ref(null)
@@ -173,6 +174,25 @@ export const useProjectUpdateStore = defineStore('projectUpdate', () => {
     }
   }
 
+  async function downloadLog () {
+    downloadingLog.value = true
+    try {
+      const { data } = await api.get('/api/settings/update/log', { responseType: 'blob' })
+      const blob = data instanceof Blob ? data : new Blob([data], { type: 'text/plain;charset=utf-8' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'awg-gui-update.log'
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+      return true
+    } finally {
+      downloadingLog.value = false
+    }
+  }
+
   async function retryStuck () {
     retryingStuck.value = true
     try {
@@ -191,6 +211,7 @@ export const useProjectUpdateStore = defineStore('projectUpdate', () => {
     checking,
     starting,
     clearingLog,
+    downloadingLog,
     retryingStuck,
     busy,
     current_version,
@@ -213,6 +234,7 @@ export const useProjectUpdateStore = defineStore('projectUpdate', () => {
     checkForUpdates,
     startUpdate,
     clearLog,
+    downloadLog,
     retryStuck,
     stopPoll
   }

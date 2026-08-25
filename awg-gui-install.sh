@@ -42,7 +42,7 @@ usage() {
     cat <<EOF
 Usage: $0 [--yes] [--no-awg-kernel] [--lang=ru|en] [--help]
 
-Installs AmneziaWG 2.0 + Laravel 12 + Quasar admin (Docker project awggui).
+Installs AmneziaWG 2.0 + Go API + Quasar admin (Docker project awggui).
 Before installing missing system packages (curl/jq, Docker) asks y/N
 (unless --yes). Downloads sing-box vendor tarball for AWG image if missing.
 Then prompts: panel port, AWG port, endpoint, subnet, DNS, AllowedIPs.
@@ -63,7 +63,7 @@ EOF
     cat <<EOF
 Usage: $0 [--yes] [--no-awg-kernel] [--lang=ru|en] [--help]
 
-Устанавливает AmneziaWG 2.0 + Laravel 12 + Quasar admin (Docker-проект awggui).
+Устанавливает AmneziaWG 2.0 + Go API + Quasar admin (Docker-проект awggui).
 Перед установкой недостающих пакетов (curl/jq, Docker) спрашивает y/N
 (если не указан --yes). Скачивает tarball sing-box для образа AWG, если его нет.
 Затем спрашивает: порт панели, AWG-порт, endpoint, подсеть, DNS, AllowedIPs.
@@ -324,17 +324,10 @@ env_get() {
 
 EXPECTED_CONTAINERS=(
   awggui-caddy awggui-app awggui-db awggui-awg
-<<<<<<< HEAD
-  awggui-docker-proxy awggui-panel-ops awggui-certbot
-)
-
-detect_existing_install() {
-=======
   awggui-docker-proxy awggui-panel-ops
 )
 
 has_awggui_containers() {
->>>>>>> a34ec4d81547d4963b761827020a578f3957b1c6
   local c names
   names="$(docker ps -a --format '{{.Names}}' 2>/dev/null || true)"
   for c in "${EXPECTED_CONTAINERS[@]}"; do
@@ -566,15 +559,57 @@ ensure_panel_ops_token() {
   fi
   token="$(openssl rand -hex 32 2>/dev/null || rand_secret 64)"
   env_set "PANEL_OPS_TOKEN" "${token}" "${ENV_FILE}"
-<<<<<<< HEAD
-  ok "Generated PANEL_OPS_TOKEN in ${ENV_FILE}"
-=======
   ok "$(t ok_panel_ops_token "${ENV_FILE}")"
->>>>>>> a34ec4d81547d4963b761827020a578f3957b1c6
 }
 
 remove_legacy_certbot_container() {
   docker rm -f awggui-certbot 2>/dev/null || true
+}
+
+# Drop previous awggui:* tags left after upgrade/rebuild. In-use images stay (docker rmi refuses without -f).
+# Also drop unused php / php:* base images left from the former panel-ops PHP runtime.
+cleanup_unused_project_images() {
+  local img cid removed=0
+  log "$(t log_removing_unused_images)"
+
+  while read -r cid; do
+    [[ -n "${cid}" ]] || continue
+    docker rm "${cid}" >/dev/null 2>&1 || true
+  done < <(
+    {
+      docker ps -aq --filter "name=awggui" --filter "status=exited" 2>/dev/null || true
+      docker ps -aq --filter "name=awggui" --filter "status=dead" 2>/dev/null || true
+    } | awk 'NF && !seen[$0]++'
+  )
+
+  while read -r img; do
+    [[ -n "${img}" ]] || continue
+    [[ "${img}" == *":<none>" ]] && continue
+    if docker rmi "${img}" >/dev/null 2>&1; then
+      removed=$((removed + 1))
+      log "$(t log_removed_unused_image "${img}")"
+    fi
+  done < <(docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep -E '^awggui-' || true)
+
+  while read -r img; do
+    [[ -n "${img}" ]] || continue
+    [[ "${img}" == *":<none>" ]] && continue
+    if docker rmi "${img}" >/dev/null 2>&1; then
+      removed=$((removed + 1))
+      log "$(t log_removed_unused_image "${img}")"
+    fi
+  done < <(
+    docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep -E '^(php|docker\.io/library/php)(:|$)' || true
+  )
+
+  docker image prune -f >/dev/null 2>&1 || true
+  docker rmi alpine:3.20 >/dev/null 2>&1 || true
+
+  if [[ "${removed}" -gt 0 ]]; then
+    ok "$(t ok_removed_n_images "${removed}")"
+  else
+    ok "$(t ok_no_unused_images)"
+  fi
 }
 
 write_env_from_example() {
@@ -598,19 +633,13 @@ write_env_from_example() {
   env_set "PEER_DNS" "${peer_dns}" "${ENV_FILE}"
   env_set "ALLOWED_IPS" "${allowed_ips}" "${ENV_FILE}"
   env_set "PANEL_OPS_TOKEN" "$(openssl rand -hex 32 2>/dev/null || rand_secret 64)" "${ENV_FILE}"
-<<<<<<< HEAD
-  env_set "SANCTUM_STATEFUL_DOMAINS" \
-    "${endpoint},${endpoint}:${panel_port},${endpoint}:7443,localhost,localhost:${panel_port},127.0.0.1,127.0.0.1:${panel_port}" \
-    "${ENV_FILE}"
-=======
   sync_panel_access_env "${endpoint}" "${panel_port}" "${ENV_FILE}"
->>>>>>> a34ec4d81547d4963b761827020a578f3957b1c6
 }
 
 seed_host_ssl_files() {
   mkdir -p /etc/awg-gui/certs/panel /etc/awg-gui/certs/live/panel \
     /etc/awg-gui/acme/account /etc/awg-gui/acme/pending /etc/awg-gui/acme/challenge
-  # App container writes these as www-data (UID/GID 33 on Debian php images).
+  # App container writes these as UID/GID 33 (same as former www-data).
   chown -R 33:33 /etc/awg-gui/acme /etc/awg-gui/certs 2>/dev/null || true
   chmod -R a+rwX /etc/awg-gui/acme /etc/awg-gui/certs
   if [[ -f "${SRC_DIR}/caddy/Caddyfile" ]]; then
@@ -710,7 +739,7 @@ wait_for_app() {
   log "$(t log_waiting_app)"
   local i
   for i in $(seq 1 60); do
-    if compose exec -T app php -v >/dev/null 2>&1; then
+    if compose exec -T app curl -fsS http://127.0.0.1:8000/up >/dev/null 2>&1; then
       return 0
     fi
     sleep 3
@@ -722,8 +751,7 @@ wait_for_app() {
 wait_for_migrate_lock() {
   log "$(t log_waiting_migrations)"
   compose exec -T app bash -c '
-    mkdir -p /var/www/html/storage/framework
-    flock -w "${AWG_GUI_MIGRATE_LOCK_TIMEOUT:-300}" /var/www/html/storage/framework/migrate.lock true
+    flock -w "${AWG_GUI_MIGRATE_LOCK_TIMEOUT:-300}" /var/lock/awg-migrate.lock true
   ' || warn "$(t warn_migrate_lock)"
 }
 
@@ -744,7 +772,7 @@ run_bootstrap() {
     log "$(t log_ensuring_admin)"
     compose exec -T \
       -e ADMIN_PASSWORD="${admin_pass}" \
-      app php artisan admin:ensure --username=admin --password="${admin_pass}" --email=admin@localhost
+      app awgctl admin ensure --username=admin --password="${admin_pass}" --email=admin@localhost
   fi
 
   log "$(t log_bootstrapping_awg)"
@@ -756,7 +784,7 @@ run_bootstrap() {
     -e INTERNAL_SUBNET="${internal_subnet}" \
     -e PEER_DNS="${peer_dns}" \
     -e ALLOWED_IPS="${allowed_ips}" \
-    app php artisan awg:bootstrap || true
+    app awgctl bootstrap || true
 }
 
 main() {
@@ -829,18 +857,13 @@ main() {
   seed_host_ssl_files
   env_merge_missing_keys
   ensure_panel_ops_token
-<<<<<<< HEAD
-  remove_legacy_certbot_container
-  log "Freeing Docker build cache (small disks)..."
-=======
   install_awg_kernel_module
   remove_legacy_certbot_container
   log "$(t log_prune_build_cache)"
->>>>>>> a34ec4d81547d4963b761827020a578f3957b1c6
   docker builder prune -af >/dev/null 2>&1 || true
   log "$(t log_building_containers)"
   COMPOSE_PARALLEL_LIMIT=1 compose build
-  compose up -d
+  compose up -d --remove-orphans
 
   wait_for_app || true
   wait_for_migrate_lock
@@ -868,6 +891,7 @@ EOF
 
   install_cli_and_systemd
   mark_install_complete
+  cleanup_unused_project_images
 
   local url="http://${display_host}:${panel_port}"
   print_helper

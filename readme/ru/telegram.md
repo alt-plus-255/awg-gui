@@ -16,7 +16,7 @@
 6. Сохраните настройки и нажмите **Проверить бота**.
 7. В Telegram отправьте боту `/start` от аккаунта с Admin ID.
 
-В Docker-контейнере `awggui-app` worker `php artisan telegram:bot` запускается автоматически. Планировщик каждую минуту вызывает `telegram:notify-peers`.
+В Docker-контейнере `awggui-app` Go-процесс автоматически запускает Telegram poller. Планировщик каждую минуту проверяет online/offline пиров.
 
 ## Режимы транспорта
 
@@ -80,14 +80,14 @@ Webhook URL (секрет генерируется автоматически п
 | Уведомления пиров | Online/offline в чат админа |
 | Пул прокси | Только в режиме polling |
 
-## Artisan-команды
+## Встроенные воркеры
 
-| Команда | Назначение |
-|---------|------------|
-| `php artisan telegram:bot` | Long-polling worker (в Docker стартует из entrypoint) |
-| `php artisan telegram:notify-peers` | Одна проверка online/offline (по расписанию каждую минуту) |
+| Воркер | Назначение |
+|--------|------------|
+| Telegram poller | Long-polling (стартует вместе с Go API) |
+| Peer notify | Одна проверка online/offline (каждую минуту) |
 
-Если бот не настроен или выбран webhook, worker `telegram:bot` простаивает (idle).
+Если бот не настроен или выбран webhook, poller простаивает (idle).
 
 ## Безопасность
 
