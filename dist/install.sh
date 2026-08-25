@@ -447,12 +447,12 @@ resolve_release_asset() {
 #
 # Env overrides:
 #   DOWNLOAD_MAX_ATTEMPTS   consecutive no-progress failures before abort (default 100)
-#   DOWNLOAD_STALL_SECONDS  kill+resume if file size unchanged this long (default 180)
+#   DOWNLOAD_STALL_SECONDS  kill+resume if file size unchanged this long (default 40)
 fetch_url_with_progress() {
   local url="$1" dest="$2" expected="${3:-0}" total is_tty=0
   local spinner='|/-\'
   local max_attempts="${DOWNLOAD_MAX_ATTEMPTS:-100}"
-  local stall_limit="${DOWNLOAD_STALL_SECONDS:-180}"
+  local stall_limit="${DOWNLOAD_STALL_SECONDS:-40}"
   local consecutive_fail=0 attempt=0 rc=0 cur=0 pct=0 use_curl=0
   local pid tick frame downloaded_mib total_mib line
   local start_size=0 prev=0 delta=0 speed_bps=0 rate_s="" eta_s=""

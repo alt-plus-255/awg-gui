@@ -212,5 +212,10 @@
   "updateConfirmText": "The panel will download and apply the latest release. Services may restart briefly during the update.",
   "updateStarted": "Update started",
   "updateAlreadyRunning": "Update is already running",
-  "updateStartError": "Failed to start update"
+  "updateStartError": "Failed to start update",
+  "reinstallCurrent": "Reinstall current version",
+  "reinstallConfirmTitle": "Reinstall current version?",
+  "reinstallConfirmText": "The panel will download and reinstall version {version}. Services may restart briefly during the process.",
+  "reinstallStarted": "Reinstall started",
+  "reinstallStartError": "Failed to start reinstall"
 }

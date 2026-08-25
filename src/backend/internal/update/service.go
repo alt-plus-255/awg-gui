@@ -50,11 +50,13 @@ func (s *Service) Status(locale string, checkRelease bool) map[string]any {
 	running := s.isRunningState(update)
 	stuck := s.isStuckRunning(update)
 
+	currentVer := strVal(current["version"])
 	payload := map[string]any{
 		"current_version":     current["version"],
 		"version_source":      current["source"],
 		"installed_at":        install["completed_at"],
 		"can_update":          s.canUpdate(install),
+		"can_reinstall":       s.canReinstall(install, currentVer, running),
 		"status":              ternary(running, "running", s.normalizeStatus(strVal(update["status"]))),
 		"running":             running,
 		"stuck":               stuck,
@@ -80,6 +82,31 @@ func (s *Service) Status(locale string, checkRelease bool) map[string]any {
 
 func (s *Service) CheckForUpdates(locale string) map[string]any {
 	return s.Status(locale, true)
+}
+
+func (s *Service) ReinstallCurrent(locale string) (map[string]any, error) {
+	status := s.Status(locale, false)
+	if !boolVal(status["can_reinstall"]) {
+		return nil, fmt.Errorf("reinstall_not_available")
+	}
+	if boolVal(status["running"]) {
+		return nil, fmt.Errorf("update_already_running")
+	}
+	current := strings.TrimPrefix(strings.TrimSpace(strVal(status["current_version"])), "v")
+	if _, err := s.PanelOps.StartUpdate(current); err != nil {
+		return nil, err
+	}
+	out := s.Status(locale, false)
+	out["status"] = "running"
+	out["running"] = true
+	out["stuck"] = false
+	out["can_retry_stuck"] = false
+	out["can_clear_log"] = false
+	out["can_reinstall"] = false
+	out["target_version"] = current
+	out["message"] = i18n.T(locale, "settings.update_message_reinstall_started")
+	out["log_tail"] = s.readLogTail(logTailLines)
+	return out, nil
 }
 
 func (s *Service) Start(locale, targetVersion string) (map[string]any, error) {
@@ -177,6 +204,14 @@ func (s *Service) canUpdate(install map[string]string) bool {
 	bundle := strings.TrimSpace(install["bundle_version"])
 	st, err := os.Stat(s.HostGUIDir)
 	return err == nil && st.IsDir() && bundle != "source" && s.Token != ""
+}
+
+func (s *Service) canReinstall(install map[string]string, currentVer string, running bool) bool {
+	if running || !s.canUpdate(install) {
+		return false
+	}
+	currentVer = strings.TrimPrefix(strings.TrimSpace(currentVer), "v")
+	return currentVer != "" && currentVer != "unknown" && currentVer != "source"
 }
 
 func (s *Service) detectCurrentVersion(install map[string]string) map[string]any {

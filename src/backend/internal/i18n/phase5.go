@@ -64,6 +64,8 @@ var phase5EN = map[string]string{
 	"settings.update_message_success":       "Update completed successfully.",
 	"settings.update_message_failed":        "Update failed.",
 	"settings.update_message_started":       "Update started.",
+	"settings.update_message_reinstall_started": "Reinstall of the current version started.",
+	"settings.reinstall_not_available":      "Reinstall is not available for this installation.",
 	"settings.update_release_fetch_failed":  "Could not fetch release information from GitHub.",
 
 	"telegram.forbidden": "Access denied",
@@ -259,6 +261,8 @@ var phase5RU = map[string]string{
 	"settings.update_message_success":       "Обновление успешно завершено.",
 	"settings.update_message_failed":        "Обновление завершилось с ошибкой.",
 	"settings.update_message_started":       "Обновление запущено.",
+	"settings.update_message_reinstall_started": "Запущена переустановка текущей версии.",
+	"settings.reinstall_not_available":      "Переустановка недоступна для этой установки.",
 	"settings.update_release_fetch_failed":  "Не удалось получить информацию о релизах с GitHub.",
 
 	"telegram.forbidden": "Доступ запрещён",

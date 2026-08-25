@@ -649,6 +649,15 @@
                   @click="checkForUpdatesFromSettings"
                 />
                 <q-btn
+                  v-if="projectUpdate.can_reinstall"
+                  outline
+                  color="warning"
+                  :label="t('settings.reinstallCurrent')"
+                  :loading="projectUpdate.reinstalling"
+                  :disable="projectUpdate.running"
+                  @click="confirmReinstallCurrent"
+                />
+                <q-btn
                   v-if="projectUpdate.can_retry_stuck"
                   color="warning"
                   :label="t('settings.updateRetryStuck')"
@@ -1859,6 +1868,16 @@ function confirmProjectUpdate () {
   }).onOk(startProjectUpdate)
 }
 
+function confirmReinstallCurrent () {
+  $q.dialog({
+    title: t('settings.reinstallConfirmTitle'),
+    message: t('settings.reinstallConfirmText', { version: projectUpdate.current_version || '—' }),
+    cancel: { label: t('common.cancel'), flat: true },
+    ok: { label: t('settings.reinstallCurrent'), color: 'warning' },
+    persistent: true
+  }).onOk(reinstallCurrentVersion)
+}
+
 function confirmClearUpdateLog () {
   $q.dialog({
     title: t('settings.updateClearLogConfirmTitle'),
@@ -1926,6 +1945,25 @@ async function startProjectUpdate () {
   } catch (e) {
     const status = e?.response?.status
     const msg = e?.response?.data?.message || t('settings.updateStartError')
+    if (status === 409) {
+      await projectUpdate.fetchStatus({ silent: true })
+      $q.notify({ type: 'warning', message: t('settings.updateAlreadyRunning') })
+      return
+    }
+    $q.notify({ type: 'negative', message: msg })
+  }
+}
+
+async function reinstallCurrentVersion () {
+  try {
+    await projectUpdate.reinstallCurrent()
+    $q.notify({
+      type: 'info',
+      message: t('settings.reinstallStarted')
+    })
+  } catch (e) {
+    const status = e?.response?.status
+    const msg = e?.response?.data?.message || t('settings.reinstallStartError')
     if (status === 409) {
       await projectUpdate.fetchStatus({ silent: true })
       $q.notify({ type: 'warning', message: t('settings.updateAlreadyRunning') })

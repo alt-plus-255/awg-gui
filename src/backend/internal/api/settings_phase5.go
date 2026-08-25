@@ -314,6 +314,35 @@ func (c *SettingsController) DownloadProjectUpdateLog(w http.ResponseWriter, r *
 	writeText(w, string(raw), "text/plain; charset=utf-8", `attachment; filename="awg-gui-update.log"`)
 }
 
+func (c *SettingsController) ReinstallProjectUpdate(w http.ResponseWriter, r *http.Request) {
+	if c.Updates == nil {
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"message": i18n.T(auth.LocaleFromContext(r.Context()), "settings.update_not_available")})
+		return
+	}
+	locale := auth.LocaleFromContext(r.Context())
+	status := c.Updates.Status(locale, false)
+	if ok, _ := status["running"].(bool); ok {
+		writeJSON(w, http.StatusConflict, status)
+		return
+	}
+	state, err := c.Updates.ReinstallCurrent(locale)
+	if err != nil {
+		msg := err.Error()
+		code := http.StatusInternalServerError
+		switch msg {
+		case "reinstall_not_available":
+			msg = i18n.T(locale, "settings.reinstall_not_available")
+			code = http.StatusUnprocessableEntity
+		case "update_already_running":
+			msg = i18n.T(locale, "settings.update_already_running")
+			code = http.StatusConflict
+		}
+		writeJSON(w, code, map[string]any{"message": msg})
+		return
+	}
+	writeJSON(w, http.StatusAccepted, state)
+}
+
 func (c *SettingsController) RetryStuckProjectUpdate(w http.ResponseWriter, r *http.Request) {
 	if c.Updates == nil {
 		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"message": i18n.T(auth.LocaleFromContext(r.Context()), "settings.update_not_available")})

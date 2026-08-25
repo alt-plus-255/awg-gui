@@ -13,6 +13,7 @@ export const useProjectUpdateStore = defineStore('projectUpdate', () => {
   const clearingLog = ref(false)
   const downloadingLog = ref(false)
   const retryingStuck = ref(false)
+  const reinstalling = ref(false)
 
   const current_version = ref(null)
   const latest_version = ref(null)
@@ -21,6 +22,7 @@ export const useProjectUpdateStore = defineStore('projectUpdate', () => {
   const release_check_error = ref(null)
   const installed_at = ref(null)
   const can_update = ref(false)
+  const can_reinstall = ref(false)
   const status = ref('idle')
   const running = ref(false)
   const stuck = ref(false)
@@ -35,7 +37,7 @@ export const useProjectUpdateStore = defineStore('projectUpdate', () => {
   let localStartMs = null
 
   const busy = computed(() =>
-    loading.value || checking.value || starting.value || clearingLog.value || retryingStuck.value || running.value
+    loading.value || checking.value || starting.value || clearingLog.value || retryingStuck.value || reinstalling.value || running.value
   )
 
   function inStartGrace () {
@@ -61,6 +63,7 @@ export const useProjectUpdateStore = defineStore('projectUpdate', () => {
       : (data.release_check_error ?? null)
     installed_at.value = data.installed_at ?? null
     can_update.value = !!data.can_update
+    can_reinstall.value = !!data.can_reinstall
 
     const nextStatus = data.status || 'idle'
     const nextRunning = !!data.running
@@ -206,6 +209,19 @@ export const useProjectUpdateStore = defineStore('projectUpdate', () => {
     }
   }
 
+  async function reinstallCurrent () {
+    reinstalling.value = true
+    try {
+      const { data } = await api.post('/api/settings/update/reinstall')
+      localStartMs = Date.now()
+      applyPayload(data)
+      return data
+    } finally {
+      reinstalling.value = false
+      schedulePoll(800)
+    }
+  }
+
   return {
     loading,
     checking,
@@ -213,6 +229,7 @@ export const useProjectUpdateStore = defineStore('projectUpdate', () => {
     clearingLog,
     downloadingLog,
     retryingStuck,
+    reinstalling,
     busy,
     current_version,
     latest_version,
@@ -221,6 +238,7 @@ export const useProjectUpdateStore = defineStore('projectUpdate', () => {
     release_check_error,
     installed_at,
     can_update,
+    can_reinstall,
     status,
     running,
     stuck,
@@ -236,6 +254,7 @@ export const useProjectUpdateStore = defineStore('projectUpdate', () => {
     clearLog,
     downloadLog,
     retryStuck,
+    reinstallCurrent,
     stopPoll
   }
 })
