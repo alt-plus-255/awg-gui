@@ -95,7 +95,7 @@ Connection types:
 | **JSON** | sing-box outbound object without a `tag` field |
 | **WG/AWG** | Remote AmneziaWG / WireGuard `.conf` text or file, plus a **protocol version** that matches the remote server |
 
-For **WG/AWG**, the panel parses the `.conf` (`[Interface]` / `[Peer]`, including obfuscation params) and brings up an exit tunnel (`awgc…`) for sing-box. AmneziaWG versions are **not compatible** with each other — pick the same one as the remote server (1.0 / 1.5 / 2.0).
+For **WG/AWG**, the panel parses the `.conf` (`[Interface]` / `[Peer]`, including obfuscation params) and brings up an exit tunnel (`awgc…`) for sing-box. AmneziaWG versions are **not compatible** with each other — pick the same one as the remote server (1.0 / 1.5 / 2.0 / 3.1).
 
 ## Phone check
 

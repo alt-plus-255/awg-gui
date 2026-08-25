@@ -79,7 +79,7 @@ var CommunityLabels = map[string]string{
 	"roblox":         "Roblox",
 }
 
-var ProtocolVersions = []string{"1.0", "1.5", "2.0"}
+var ProtocolVersions = []string{"1.0", "1.5", "2.0", "3.1"}
 
 func CommunitySourceURL(tag string) string {
 	return RulesetBaseURL + "/" + tag + ".srs"

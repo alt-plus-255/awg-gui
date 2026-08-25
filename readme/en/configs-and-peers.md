@@ -11,7 +11,7 @@ You can create up to **20** AmneziaWG configs. Each config gets:
 - its own interface (`awg0`, `awg1`, …);
 - a dedicated internal subnet;
 - a UDP port from **51820–51839**;
-- its own AmneziaWG **protocol version** (**1.0**, **1.5**, or **2.0**) — different configs may use different versions.
+- its own AmneziaWG **protocol version** (**1.0**, **1.5**, **2.0**, or **3.1**) — different configs may use different versions.
 
 Config types:
 
@@ -26,17 +26,31 @@ When creating a config the panel automatically allocates a free `iface` and UDP 
 
 ## AmneziaWG protocol versions
 
-Choose the protocol version when **creating** a config. Default is the latest (**2.0**). On one panel you can run several configs with **different** versions at once (for example, 1.5 for older clients and 2.0 for new ones). Versions are **not compatible** with each other: the client and that specific config must use the same one. After create the version **cannot be changed** — create a new config for a different version.
+Choose the protocol version when **creating** or **editing** a config. Default is the latest (**3.1**). On one panel you can run several configs with **different** versions at once. Versions are **not compatible** with each other: the client and that specific config must use the same one.
+
+Changing the version in the edit form asks for confirmation: obfuscation parameters and CPS (`I1`–`I5`) are **regenerated**. After save, all peers must re-download `.conf` / QR / `vpn://`.
 
 | Version | Obfuscation parameters in `.conf` / `vpn://` |
 |---------|-----------------------------------------------|
 | **1.0** | `Jc`, `Jmin`, `Jmax`, `S1`, `S2`, `H1`–`H4` |
 | **1.5** | same as 1.0 + `I1`–`I5` |
 | **2.0** | same as 1.5 + `S3`, `S4` |
+| **3.1** | same UI parameter set as **2.0** (until upstream publishes a separate schema) |
 
-The obfuscation form on the config page shows only fields for the selected version. Exports (**`.conf`**, **QR**, **`vpn://`**) follow that profile (outer `vpn://` `protocol_version`: `1` for 1.0/1.5, `2` for 2.0).
+The obfuscation form on the config page shows only fields for the selected version. Exports (**`.conf`**, **QR**, **`vpn://`**) follow that profile (outer `vpn://` `protocol_version`: `1` for 1.0/1.5, `2` for 2.0/3.1).
 
-On upgrade, existing configs receive **2.0**. If you need 1.x, create a separate config with that version and re-share QR / `.conf` / `vpn://` with clients.
+### CPS / I1–I5 (Signature Chain)
+
+For **1.5+**, the panel can **auto-generate** `I1`–`I5` masking packets in CPS format (`<b …>`, `<t>`, `<r N>`, `<rc N>`, `<rd N>`):
+
+- templates: **QUIC** (default), DNS, STUN, SIP, DTLS, RTP, **random**;
+- “Generate” (obfuscation + CPS) and “Generate CPS” buttons;
+- syntax and size checks (MTU, collisions with handshake sizes `148+S1` / `92+S2` / …);
+- empty `I*` fields are omitted from `.conf` and not sent by the client.
+
+Manual CPS input is validated before save.
+
+On upgrade, configs without a version get the latest available. For 1.x / 2.0, pick the version in the form or create a separate config and re-share QR / `.conf` / `vpn://`.
 
 ## Peers (clients)
 

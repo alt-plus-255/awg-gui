@@ -243,9 +243,8 @@
             map-options
             filled
             class="q-mb-md"
-            :disable="!!editingId"
             :hint="editingId
-              ? t('configs.protocolVersionImmutableHint')
+              ? t('configs.protocolVersionEditHint')
               : t('configs.protocolVersionHint')"
             @update:model-value="onProtocolVersionChange"
           />
@@ -374,6 +373,7 @@
                 color="primary"
                 icon="casino"
                 :label="t('configs.generate')"
+                :loading="junkGenerating"
                 @click="generateJunk"
               />
             </div>
@@ -387,10 +387,69 @@
               <div v-if="visibleJunkGroups.h.length" class="col-12 col-md-3">
                 <q-input v-for="k in visibleJunkGroups.h" :key="k" v-model="form[k]" :label="k.toUpperCase()" filled dense class="q-mb-sm" />
               </div>
-              <div v-if="visibleJunkGroups.i.length" class="col-12 col-md-3">
-                <q-input v-for="k in visibleJunkGroups.i" :key="k" v-model="form[k]" :label="k.toUpperCase()" filled dense class="q-mb-sm" />
-              </div>
             </div>
+
+            <template v-if="visibleJunkGroups.i.length">
+              <div class="row items-center q-mt-md q-mb-sm">
+                <div class="text-subtitle2">{{ t('configs.cpsTitle') }}</div>
+                <q-space />
+                <q-select
+                  v-model="cpsProtocol"
+                  :options="cpsTemplateOptions"
+                  emit-value
+                  map-options
+                  dense
+                  filled
+                  style="min-width: 160px"
+                  class="q-mr-sm"
+                  :label="t('configs.cpsTemplate')"
+                />
+                <q-btn
+                  flat
+                  dense
+                  no-caps
+                  color="primary"
+                  icon="auto_fix"
+                  :label="t('configs.generateCps')"
+                  :loading="cpsGenerating"
+                  @click="generateCpsOnly"
+                />
+              </div>
+              <div class="text-caption text-grey-5 q-mb-sm">{{ t('configs.cpsHint') }}</div>
+              <div
+                v-for="k in visibleJunkGroups.i"
+                :key="k"
+                class="q-mb-sm"
+              >
+                <q-input
+                  v-model="form[k]"
+                  :label="k.toUpperCase()"
+                  type="textarea"
+                  autogrow
+                  filled
+                  dense
+                  class="mono"
+                  input-style="font-family: var(--theme-mono); font-size: 12px;"
+                  @update:model-value="scheduleCpsValidate"
+                />
+                <div class="row items-center q-gutter-xs q-mt-xs">
+                  <q-badge
+                    v-if="cpsFieldStatus[k]"
+                    :color="cpsFieldStatus[k].ok ? 'positive' : 'negative'"
+                    outline
+                  >
+                    {{ cpsFieldStatus[k].ok ? t('configs.cpsOk') : t('configs.cpsError') }}
+                    <span v-if="cpsFieldStatus[k].length != null"> · {{ cpsFieldStatus[k].length }} B</span>
+                  </q-badge>
+                  <div
+                    v-if="cpsFieldStatus[k]?.errors?.length"
+                    class="text-caption text-negative"
+                  >
+                    {{ cpsFieldStatus[k].errors[0] }}
+                  </div>
+                </div>
+              </div>
+            </template>
           </template>
         </q-card-section>
         <q-card-actions align="right">
@@ -651,7 +710,15 @@ const restartBusy = computed(() => restartingAwg.value || system.restartBusy)
 const configs = ref([])
 const allClients = ref([])
 const protocolVersions = ref([])
-const protocolVersionsDefault = ref('2.0')
+const protocolVersionsDefault = ref('3.1')
+const cpsProtocol = ref('quic')
+const cpsTemplates = ref([])
+const cpsFieldStatus = reactive({})
+const junkGenerating = ref(false)
+const cpsGenerating = ref(false)
+let cpsValidateTimer = null
+let previousProtocolVersion = '3.1'
+let skipProtocolVersionConfirm = false
 
 const formOpen = ref(false)
 const editingId = ref(null)
@@ -680,7 +747,7 @@ const clientImportNameOptions = computed(() => [
 const form = reactive({
   name: '',
   type: 'server',
-  protocol_version: '2.0',
+  protocol_version: '3.1',
   client_import_name_style: 'peer_name',
   vn_policy: 'allow_all',
   internal_subnet: '10.66.66.0/24',
@@ -696,6 +763,21 @@ const form = reactive({
   h1: '', h2: '', h3: '', h4: '',
   i1: '', i2: '', i3: '', i4: '', i5: ''
 })
+
+const cpsTemplateOptions = computed(() =>
+  (cpsTemplates.value.length
+    ? cpsTemplates.value
+    : [
+        { id: 'quic', label: 'QUIC' },
+        { id: 'dns', label: 'DNS' },
+        { id: 'stun', label: 'STUN' },
+        { id: 'sip', label: 'SIP' },
+        { id: 'dtls', label: 'DTLS' },
+        { id: 'rtp', label: 'RTP' },
+        { id: 'random', label: 'Random' }
+      ]
+  ).map((t) => ({ label: t.label, value: t.id }))
+)
 
 function supportedParamsForVersion (versionId) {
   const found = protocolVersions.value.find((v) => v.id === versionId)
@@ -1072,15 +1154,18 @@ function resetConfigTraffic (config) {
 async function load () {
   loading.value = true
   try {
-    const [cfgRes, clientsRes, versionsRes] = await Promise.all([
+    const [cfgRes, clientsRes, versionsRes, cpsRes] = await Promise.all([
       api.get('/api/configs'),
       api.get('/api/clients'),
-      api.get('/api/awg-protocol-versions')
+      api.get('/api/awg-protocol-versions'),
+      api.get('/api/cps/templates').catch(() => ({ data: {} }))
     ])
     configs.value = cfgRes.data.configs || []
     allClients.value = clientsRes.data.clients || []
     protocolVersions.value = versionsRes.data.versions || []
-    protocolVersionsDefault.value = versionsRes.data.default || protocolVersions.value.at(-1)?.id || '2.0'
+    protocolVersionsDefault.value = versionsRes.data.default || protocolVersions.value.at(-1)?.id || '3.1'
+    cpsTemplates.value = cpsRes.data.templates || []
+    if (cpsRes.data.default) cpsProtocol.value = cpsRes.data.default
     syncZonesStates()
   } finally {
     loading.value = false
@@ -1453,6 +1538,7 @@ function resetForm () {
   form.name = ''
   form.type = 'server'
   form.protocol_version = protocolVersionsDefault.value
+  previousProtocolVersion = form.protocol_version
   form.client_import_name_style = 'peer_name'
   form.vn_policy = 'allow_all'
   form.internal_subnet = nextFreeSubnet()
@@ -1473,9 +1559,32 @@ function openCreate () {
   formOpen.value = true
 }
 
-function onProtocolVersionChange () {
-  if (editingId.value) return
-  generateJunk()
+function onProtocolVersionChange (next) {
+  if (skipProtocolVersionConfirm) {
+    skipProtocolVersionConfirm = false
+    previousProtocolVersion = form.protocol_version
+    return
+  }
+  const prev = previousProtocolVersion
+  if (!editingId.value) {
+    previousProtocolVersion = form.protocol_version
+    generateJunk()
+    return
+  }
+  if (next === prev) return
+  $q.dialog({
+    title: t('configs.protocolVersionChangeTitle'),
+    message: t('configs.protocolVersionChangeConfirm'),
+    cancel: { label: t('common.cancel'), flat: true },
+    ok: { label: t('configs.protocolVersionChangeOk'), color: 'warning' },
+    persistent: true
+  }).onOk(() => {
+    previousProtocolVersion = form.protocol_version
+    generateJunk()
+  }).onCancel(() => {
+    skipProtocolVersionConfirm = true
+    form.protocol_version = prev
+  })
 }
 
 function randInt (min, max) {
@@ -1489,49 +1598,127 @@ function randInt (min, max) {
   return min + (buf[0] % range)
 }
 
-// Правила: https://docs.amnezia.org/ru/documentation/amnezia-wg/
-// i1-i5 (CPS-сигнатуры протоколов) не генерируем — случайные значения там бессмысленны
-function generateJunk () {
+async function generateCpsOnly (opts = {}) {
+  const silent = !!opts.silent
   const supported = new Set(supportedParamsForVersion(form.protocol_version))
-
-  form.jc = String(randInt(1, 10))
-  const jmin = randInt(64, 1023)
-  form.jmin = String(jmin)
-  form.jmax = String(randInt(jmin + 1, 1024))
-
-  const s1 = randInt(0, 64)
-  let s2
-  do {
-    s2 = randInt(0, 64)
-  } while (s1 + 56 === s2) // иначе Init(148+S1) совпадает по размеру с Response(92+S2)
-  form.s1 = String(s1)
-  form.s2 = String(s2)
-  form.s3 = supported.has('s3') ? String(randInt(0, 64)) : '0'
-  form.s4 = supported.has('s4') ? String(randInt(0, 32)) : '0'
-
-  const hs = new Set()
-  while (hs.size < 4) {
-    hs.add(randInt(1, 2147483647))
+  if (!supported.has('i1')) {
+    ;['i1', 'i2', 'i3', 'i4', 'i5'].forEach((k) => { form[k] = '' })
+    return
   }
-  ;[form.h1, form.h2, form.h3, form.h4] = [...hs].map(String)
+  cpsGenerating.value = true
+  try {
+    const { data } = await api.post('/api/cps/generate', {
+      protocol: cpsProtocol.value || 'quic',
+      s1: form.s1,
+      s2: form.s2,
+      s3: form.s3,
+      s4: form.s4,
+      allow_d: form.protocol_version === '2.0' || form.protocol_version === '3.1'
+    })
+    form.i1 = data.i1 || ''
+    form.i2 = data.i2 || ''
+    form.i3 = data.i3 || ''
+    form.i4 = data.i4 || ''
+    form.i5 = data.i5 || ''
+    await validateCpsNow()
+    if (!silent) {
+      $q.notify({ type: 'info', message: t('configs.cpsGenerated') })
+    }
+  } catch (e) {
+    $q.notify({ type: 'negative', message: e?.response?.data?.message || t('configs.cpsGenerateError') })
+  } finally {
+    cpsGenerating.value = false
+  }
+}
 
-  ;['i1', 'i2', 'i3', 'i4', 'i5'].forEach((k) => {
-    form[k] = ''
-  })
+function scheduleCpsValidate () {
+  if (cpsValidateTimer) clearTimeout(cpsValidateTimer)
+  cpsValidateTimer = setTimeout(() => { validateCpsNow() }, 400)
+}
 
-  $q.notify({
-    type: 'info',
-    message: t('configs.obfuscationGenerated')
-  })
+async function validateCpsNow () {
+  const supported = new Set(supportedParamsForVersion(form.protocol_version))
+  if (!supported.has('i1')) {
+    ;['i1', 'i2', 'i3', 'i4', 'i5'].forEach((k) => { delete cpsFieldStatus[k] })
+    return true
+  }
+  try {
+    const { data } = await api.post('/api/cps/validate', {
+      i1: form.i1,
+      i2: form.i2,
+      i3: form.i3,
+      i4: form.i4,
+      i5: form.i5,
+      s1: form.s1,
+      s2: form.s2,
+      s3: form.s3,
+      s4: form.s4,
+      allow_d: form.protocol_version === '2.0' || form.protocol_version === '3.1'
+    })
+    ;['i1', 'i2', 'i3', 'i4', 'i5'].forEach((k) => {
+      cpsFieldStatus[k] = data.fields?.[k] || { ok: true, length: 0 }
+    })
+    return !!data.valid
+  } catch {
+    return true
+  }
+}
+
+// Правила: https://docs.amnezia.org/ru/documentation/amnezia-wg/
+async function generateJunk () {
+  junkGenerating.value = true
+  try {
+    const supported = new Set(supportedParamsForVersion(form.protocol_version))
+
+    form.jc = String(randInt(1, 10))
+    const jmin = randInt(64, 1023)
+    form.jmin = String(jmin)
+    form.jmax = String(randInt(jmin + 1, 1024))
+
+    const s1 = randInt(0, 64)
+    let s2
+    do {
+      s2 = randInt(0, 64)
+    } while (s1 + 56 === s2) // иначе Init(148+S1) совпадает по размеру с Response(92+S2)
+    form.s1 = String(s1)
+    form.s2 = String(s2)
+    form.s3 = supported.has('s3') ? String(randInt(0, 64)) : '0'
+    form.s4 = supported.has('s4') ? String(randInt(0, 32)) : '0'
+
+    const hs = new Set()
+    while (hs.size < 4) {
+      hs.add(randInt(1, 2147483647))
+    }
+    ;[form.h1, form.h2, form.h3, form.h4] = [...hs].map(String)
+
+    if (supported.has('i1')) {
+      await generateCpsOnly({ silent: true })
+    } else {
+      ;['i1', 'i2', 'i3', 'i4', 'i5'].forEach((k) => { form[k] = '' })
+      ;['i1', 'i2', 'i3', 'i4', 'i5'].forEach((k) => { delete cpsFieldStatus[k] })
+    }
+    $q.notify({
+      type: 'info',
+      message: t('configs.obfuscationGenerated')
+    })
+  } finally {
+    junkGenerating.value = false
+  }
 }
 
 function openEdit (row) {
   editingId.value = row.id
   editingRow.value = row
   Object.keys(form).forEach((k) => {
-    if (row[k] !== undefined && row[k] !== null) form[k] = row[k]
+    if (row[k] !== undefined && row[k] !== null) {
+      form[k] = row[k]
+    } else if (junkKeys.includes(k)) {
+      form[k] = ''
+    }
   })
+  previousProtocolVersion = form.protocol_version
   formOpen.value = true
+  scheduleCpsValidate()
 }
 
 async function copyPath (path) {
@@ -1555,9 +1742,16 @@ async function saveConfig () {
     $q.notify({ type: 'warning', message: portErr })
     return
   }
+  if (editingId.value && visibleJunkGroups.value.i.length) {
+    const ok = await validateCpsNow()
+    if (!ok) {
+      $q.notify({ type: 'warning', message: t('configs.cpsInvalidSave') })
+      return
+    }
+  }
   saving.value = true
   try {
-    const payload = { ...form }
+    const payload = { ...form, cps_protocol: cpsProtocol.value }
     if (editingId.value) {
       await api.put(`/api/configs/${editingId.value}`, payload)
       $q.notify({ type: 'positive', message: t('configs.configUpdated') })
@@ -1569,7 +1763,7 @@ async function saveConfig () {
     await load()
   } catch (e) {
     const errors = e?.response?.data?.errors
-    const fieldMsg = errors?.internal_subnet?.[0] || errors?.listen_port?.[0]
+    const fieldMsg = errors?.internal_subnet?.[0] || errors?.listen_port?.[0] || errors?.i1?.[0]
     $q.notify({ type: 'negative', message: fieldMsg || e?.response?.data?.message || t('common.saveError') })
   } finally {
     saving.value = false

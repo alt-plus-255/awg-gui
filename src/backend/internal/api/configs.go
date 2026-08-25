@@ -11,6 +11,7 @@ import (
 
 	"github.com/awggui/backend/internal/auth"
 	"github.com/awggui/backend/internal/awg"
+	"github.com/awggui/backend/internal/cps"
 	"github.com/awggui/backend/internal/i18n"
 	"github.com/awggui/backend/internal/models"
 	qrcodesvc "github.com/awggui/backend/internal/qrcode"
@@ -80,6 +81,14 @@ func (c *ConfigController) Store(w http.ResponseWriter, r *http.Request) {
 		}
 		protocolVersion = v
 	}
+	cpsProtocol := cps.DefaultProtocol()
+	if v := asString(req["cps_protocol"]); v != "" {
+		if !cps.HasProtocol(v) {
+			writeValidation(w, r, "cps_protocol", "api.http_422", nil)
+			return
+		}
+		cpsProtocol = v
+	}
 	defaults := c.AWG.DefaultConfigAttributes()
 	subnet := asString(req["internal_subnet"])
 	if subnet == "" {
@@ -121,7 +130,7 @@ func (c *ConfigController) Store(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"message": err.Error()})
 		return
 	}
-	junk := c.AWG.Versions.ProfileForConfig(protocolVersion).GenerateJunkParams()
+	junk := c.AWG.Versions.ProfileForConfig(protocolVersion).GenerateJunkParamsWithCPS(cpsProtocol)
 	vnPolicy := "allow_all"
 	if v := asString(req["vn_policy"]); v == "allow_all" || v == "deny_all" {
 		vnPolicy = v
@@ -190,12 +199,29 @@ func (c *ConfigController) Update(w http.ResponseWriter, r *http.Request) {
 		write422(w, r)
 		return
 	}
-	if v, ok := req["protocol_version"]; ok && asString(v) != cfg.ProtocolVersion {
-		writeValidation(w, r, "protocol_version", "configs.protocol_version_immutable", nil)
-		return
+	delete(req, "type")
+
+	versionChanged := false
+	cpsProtocol := "quic"
+	if v := asString(req["cps_protocol"]); v != "" {
+		cpsProtocol = v
+	}
+	if v, ok := req["protocol_version"]; ok {
+		newVer := strings.TrimSpace(asString(v))
+		if newVer == "" {
+			newVer = c.AWG.Versions.Latest()
+		}
+		if !c.AWG.Versions.Has(newVer) {
+			writeValidation(w, r, "protocol_version", "api.http_422", nil)
+			return
+		}
+		if newVer != cfg.ProtocolVersion {
+			versionChanged = true
+			cfg.ProtocolVersion = newVer
+		}
 	}
 	delete(req, "protocol_version")
-	delete(req, "type")
+	delete(req, "cps_protocol")
 
 	if name, ok := req["name"]; ok {
 		n := strings.TrimSpace(asString(name))
@@ -261,25 +287,52 @@ func (c *ConfigController) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	junkKeys := []string{"jc", "jmin", "jmax", "s1", "s2", "s3", "s4", "h1", "h2", "h3", "h4", "i1", "i2", "i3", "i4", "i5"}
-	junkPatch := map[string]string{}
-	for _, k := range junkKeys {
-		if v, ok := req[k]; ok {
-			val := strings.TrimSpace(asString(v))
-			if strings.HasPrefix(k, "i") && val == "" {
-				junkPatch[k] = ""
-			} else {
-				junkPatch[k] = val
+	profile := c.AWG.Versions.ProfileForConfig(cfg.ProtocolVersion)
+
+	if versionChanged {
+		junkPatch := map[string]string{}
+		hasClientJunk := false
+		for _, k := range junkKeys {
+			if v, ok := req[k]; ok {
+				hasClientJunk = true
+				junkPatch[k] = strings.TrimSpace(asString(v))
 			}
 		}
-	}
-	if len(junkPatch) > 0 {
-		normalized := c.AWG.Versions.ProfileForConfig(cfg.ProtocolVersion).NormalizeForPersist(junkPatch)
+		if hasClientJunk {
+			normalized := profile.NormalizeForPersist(junkPatch)
+			if !c.validateCPSFields(w, r, profile, normalized) {
+				return
+			}
+			cfg.ApplyJunk(normalized)
+		} else {
+			cfg.ApplyJunk(profile.GenerateJunkParamsWithCPS(cpsProtocol))
+		}
+	} else {
+		junkPatch := map[string]string{}
 		for _, k := range junkKeys {
-			if v, ok := normalized[k]; ok {
-				if _, present := junkPatch[k]; present {
-					cfg.SetJunkField(k, v)
+			if v, ok := req[k]; ok {
+				val := strings.TrimSpace(asString(v))
+				if strings.HasPrefix(k, "i") && val == "" {
+					junkPatch[k] = ""
+				} else {
+					junkPatch[k] = val
 				}
 			}
+		}
+		if len(junkPatch) > 0 {
+			// Merge existing junk so NormalizeForPersist keeps unspecified fields.
+			merged := map[string]string{}
+			for _, k := range junkKeys {
+				merged[k] = cfg.JunkField(k)
+			}
+			for k, v := range junkPatch {
+				merged[k] = v
+			}
+			normalized := profile.NormalizeForPersist(merged)
+			if !c.validateCPSFields(w, r, profile, normalized) {
+				return
+			}
+			cfg.ApplyJunk(normalized)
 		}
 	}
 
@@ -827,7 +880,18 @@ func (c *ConfigController) RegenerateJunk(w http.ResponseWriter, r *http.Request
 	if cfg == nil {
 		return
 	}
-	junk, err := c.AWG.RegenerateConfigJunk(r.Context(), cfg)
+	cpsProtocol := cps.DefaultProtocol()
+	var req map[string]any
+	if err := decodeJSON(r, &req); err == nil {
+		if v := asString(req["cps_protocol"]); v != "" {
+			if !cps.HasProtocol(v) {
+				writeValidation(w, r, "cps_protocol", "api.http_422", nil)
+				return
+			}
+			cpsProtocol = v
+		}
+	}
+	junk, err := c.AWG.RegenerateConfigJunkWithCPS(r.Context(), cfg, cpsProtocol)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"message": err.Error()})
 		return
@@ -1187,6 +1251,42 @@ func orDefault(v, d string) string {
 		return d
 	}
 	return v
+}
+
+func (c *ConfigController) validateCPSFields(w http.ResponseWriter, r *http.Request, profile awg.VersionProfile, junk map[string]string) bool {
+	supported := map[string]bool{}
+	for _, p := range profile.SupportedParams() {
+		supported[p] = true
+	}
+	if !supported["i1"] {
+		return true
+	}
+	fields := map[string]string{}
+	anySet := false
+	for _, k := range []string{"i1", "i2", "i3", "i4", "i5"} {
+		v := strings.TrimSpace(junk[k])
+		fields[k] = v
+		if v != "" {
+			anySet = true
+		}
+	}
+	if !anySet {
+		return true
+	}
+	allowD := profile.ID() == "2.0" || profile.ID() == "3.1"
+	constraints := cps.ConstraintsFromStrings(junk["s1"], junk["s2"], junk["s3"], junk["s4"], cps.DefaultMTU, allowD)
+	result := cps.ValidateAll(fields, constraints)
+	if result.Valid {
+		return true
+	}
+	for k, fr := range result.Fields {
+		if !fr.OK && len(fr.Errors) > 0 {
+			writeValidation(w, r, k, "api.http_422", nil)
+			return false
+		}
+	}
+	writeValidation(w, r, "i1", "api.http_422", nil)
+	return false
 }
 
 func formatTimePtr(t *time.Time) any {

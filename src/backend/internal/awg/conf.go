@@ -89,7 +89,7 @@ func (s *Service) ClientImportLabel(ctx context.Context, membership *models.AwgC
 	if style == ClientImportNameVersionHost {
 		version := strings.TrimSpace(cfg.ProtocolVersion)
 		if version == "" {
-			version = "2.0"
+			version = s.Versions.Latest()
 		}
 		host := strings.TrimSpace(endpointHost)
 		if host == "" {

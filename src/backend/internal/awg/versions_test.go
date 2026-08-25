@@ -7,15 +7,16 @@ import (
 
 func TestVersionRegistryJunkProfiles(t *testing.T) {
 	r := NewVersionRegistry()
-	wantIDs := []string{"1.0", "1.5", "2.0"}
+	wantIDs := []string{"1.0", "1.5", "2.0", "3.1"}
 	if got := r.IDs(); !reflect.DeepEqual(got, wantIDs) {
 		t.Fatalf("IDs = %v, want %v", got, wantIDs)
 	}
-	if r.Latest() != "2.0" {
-		t.Fatalf("Latest = %q, want 2.0", r.Latest())
+	if r.Latest() != "3.1" {
+		t.Fatalf("Latest = %q, want 3.1", r.Latest())
 	}
 
 	base := []string{"jc", "jmin", "jmax", "s1", "s2", "h1", "h2", "h3", "h4"}
+	full := append(append([]string{}, base...), "s3", "s4", "i1", "i2", "i3", "i4", "i5")
 	cases := []struct {
 		id     string
 		label  string
@@ -24,7 +25,8 @@ func TestVersionRegistryJunkProfiles(t *testing.T) {
 	}{
 		{"1.0", "AmneziaWG 1.0", "1", base},
 		{"1.5", "AmneziaWG 1.5", "1", append(append([]string{}, base...), "i1", "i2", "i3", "i4", "i5")},
-		{"2.0", "AmneziaWG 2.0", "2", append(append([]string{}, base...), "s3", "s4", "i1", "i2", "i3", "i4", "i5")},
+		{"2.0", "AmneziaWG 2.0", "2", full},
+		{"3.1", "AmneziaWG 3.1", "2", full},
 	}
 	for _, tc := range cases {
 		p := r.ProfileForConfig(tc.id)
@@ -74,6 +76,11 @@ func TestNormalizeForPersistDropsUnsupportedJunk(t *testing.T) {
 	if p20["s3"] != "30" || p20["s4"] != "15" || p20["i1"] != "<b 10><t>" {
 		t.Fatalf("2.0 must keep s3/s4/i1, got %+v", p20)
 	}
+
+	p31 := r.ProfileForConfig("3.1").NormalizeForPersist(full)
+	if p31["s3"] != "30" || p31["i1"] != "<b 10><t>" {
+		t.Fatalf("3.1 must keep s3/i1 like 2.0, got %+v", p31)
+	}
 }
 
 func TestConfObfuscationLinesMatchProfile(t *testing.T) {
@@ -99,6 +106,26 @@ func TestConfObfuscationLinesMatchProfile(t *testing.T) {
 		if !containsString(joined, need) {
 			t.Fatalf("2.0 conf missing %q in %v", need, p20)
 		}
+	}
+	p31 := r.ProfileForConfig("3.1").ConfObfuscationLinesFromParams(params)
+	joined31 := ""
+	for _, line := range p31 {
+		joined31 += line + "\n"
+	}
+	if !containsString(joined31, "I1 = <b 10><t>") {
+		t.Fatalf("3.1 conf missing I1 in %v", p31)
+	}
+}
+
+func TestGenerateJunkParamsIncludesCPS(t *testing.T) {
+	r := NewVersionRegistry()
+	junk := r.ProfileForConfig("3.1").GenerateJunkParams()
+	if junk["i1"] == "" {
+		t.Fatal("3.1 GenerateJunkParams should include CPS i1")
+	}
+	junk10 := r.ProfileForConfig("1.0").GenerateJunkParams()
+	if junk10["i1"] != "" {
+		t.Fatalf("1.0 must not keep i1, got %q", junk10["i1"])
 	}
 }
 

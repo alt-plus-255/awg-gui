@@ -2,7 +2,7 @@
 
 **Languages / Языки:** [Русский](README.md) | [English](README.en.md)
 
-AmneziaWG VPN server (protocol versions **1.0**, **1.5**, and **2.0**, default **2.0**) with a Go API and Quasar Vue admin panel, all in Docker containers prefixed with `awggui`.
+AmneziaWG VPN server (protocol versions **1.0**, **1.5**, **2.0**, and **3.1**, default **3.1**) with a Go API and Quasar Vue admin panel, all in Docker containers prefixed with `awggui`.
 
 ## Use cases
 
@@ -58,13 +58,13 @@ sudo bash /tmp/awg-gui-install.sh --yes
 
 ### Multiple AWG configs
 
-Up to **20** AmneziaWG configs (UDP **51820–51839**): each with its own interface, subnet, port, and **protocol version** (**1.0** / **1.5** / **2.0** — different configs may use different versions). Types **Server** (internet VPN) and **Virtual network** (isolated LAN).
+Up to **20** AmneziaWG configs (UDP **51820–51839**): each with its own interface, subnet, port, and **protocol version** (**1.0** / **1.5** / **2.0** / **3.1** — different configs may use different versions). Types **Server** (internet VPN) and **Virtual network** (isolated LAN).
 
 → [Details: configs & peers](readme/en/configs-and-peers.md)
 
 ### AmneziaWG protocol versions
 
-When creating a config, choose **1.0**, **1.5**, or **2.0** (default: latest). Versions are **not compatible** with each other; the version is **fixed** after create. Obfuscation parameters and exports (**`.conf`**, **QR**, **`vpn://`**) follow the selected profile.
+When creating or editing a config, choose **1.0**, **1.5**, **2.0**, or **3.1** (default: latest). Versions are **not compatible** with each other. Changing the version shows a confirmation and **regenerates** obfuscation parameters and CPS (`I1`–`I5`); peers must re-download `.conf` / QR / `vpn://` after save. For **1.5+**, the panel can auto-generate CPS signature packets (QUIC, DNS, STUN, SIP, DTLS, RTP, random templates) with syntax and size validation.
 
 → [Details: configs & peers](readme/en/configs-and-peers.md#amneziawg-protocol-versions)
 

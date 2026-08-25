@@ -1,0 +1,82 @@
+package i18n
+
+func init() {
+	for k, v := range systemEN {
+		messages["en"][k] = v
+	}
+	for k, v := range systemRU {
+		messages["ru"][k] = v
+	}
+}
+
+var systemEN = map[string]string{
+	"system.group_runtime":                    "Runtime",
+	"system.group_resolver":                   "Resolver",
+	"system.group_vn":                         "Virtual networks",
+	"system.container_panel_api":              "Panel API",
+	"system.awg_container_not_running":        "AWG container is not running",
+	"system.process_running":                  "process running",
+	"system.process_not_found":                "process not found",
+	"system.iface_down_or_missing":            "interface down or missing",
+	"system.container_not_running_hint":       "Start container «:name» (docker compose up -d).",
+	"system.singbox_not_running_hint":         "sing-box is not running inside the AWG container. Save resolver settings or restart AWG.",
+	"system.awg_ifaces_label":                 "AWG interfaces",
+	"system.no_enabled_configs_in_selection":  "No enabled configs in selection",
+	"system.awg_show_unavailable":             "iface up, but awg show failed",
+	"system.awg_show_unavailable_detail":      "iface up · awg show failed (:detail)",
+	"system.awg_show_ok_via_dump":             "up · awg show dump OK",
+	"system.awg_show_no_response_hint":        "Interface :iface is up, but «awg show» failed. Check datapath (kernel vs userspace), run: docker exec awggui-awg awg show :iface dump",
+	"system.iface_not_up_hint":                "Interface :iface («:name») is down. Enable the config and restart AWG.",
+	"system.no_server_configs_in_selection":   "No server configs in selection",
+	"system.no_resolver_enabled_servers":      "No resolver-enabled server configs",
+	"system.resolver_label":                   "Resolver",
+	"system.singbox_json_not_found":           "sing-box.json not found",
+	"system.invalid_json_masked_raw":          "invalid JSON (masked raw)",
+	"system.no_active_resolver_connections":   "No active resolver connections",
+	"system.start_awg_for_outbounds":          "Start the AWG container to probe outbounds.",
+	"system.latency_error":                    "latency check error",
+	"system.no_clash_api_response":            "no Clash API response",
+	"system.connection_no_clash_response":     "Connection «:name»: :error",
+	"system.virtual_networks_label":           "Virtual networks",
+	"system.no_vn_in_selection":               "No virtual-network configs in selection",
+	"system.skip_disabled":                    "disabled",
+	"system.no_fresh_handshakes":              "no fresh handshakes",
+	"system.vn_iface_not_up":                  "VN «:name»: interface not up",
+	"system.vn_no_fresh_handshakes":           "VN «:name»: no fresh peer handshakes",
+}
+
+var systemRU = map[string]string{
+	"system.group_runtime":                    "Среда выполнения",
+	"system.group_resolver":                   "Резолвер",
+	"system.group_vn":                         "Виртуальные сети",
+	"system.container_panel_api":              "API панели",
+	"system.awg_container_not_running":        "Контейнер AWG не запущен",
+	"system.process_running":                  "процесс запущен",
+	"system.process_not_found":                "процесс не найден",
+	"system.iface_down_or_missing":            "интерфейс down или отсутствует",
+	"system.container_not_running_hint":       "Запустите контейнер «:name» (docker compose up -d).",
+	"system.singbox_not_running_hint":         "sing-box не запущен в контейнере AWG. Сохраните настройки резолвера или перезапустите AWG.",
+	"system.awg_ifaces_label":                 "Интерфейсы AWG",
+	"system.no_enabled_configs_in_selection":  "Нет включённых конфигов в выборке",
+	"system.awg_show_unavailable":             "iface up, но awg show не ответил",
+	"system.awg_show_unavailable_detail":      "iface up · awg show ошибка (:detail)",
+	"system.awg_show_ok_via_dump":             "up · awg show dump OK",
+	"system.awg_show_no_response_hint":        "Интерфейс :iface поднят, но «awg show» не сработал. Проверьте datapath (kernel vs userspace): docker exec awggui-awg awg show :iface dump",
+	"system.iface_not_up_hint":                "Интерфейс :iface («:name») down. Включите конфиг и перезапустите AWG.",
+	"system.no_server_configs_in_selection":   "Нет серверных конфигов в выборке",
+	"system.no_resolver_enabled_servers":      "Нет серверных конфигов с включённым резолвером",
+	"system.resolver_label":                   "Резолвер",
+	"system.singbox_json_not_found":           "sing-box.json не найден",
+	"system.invalid_json_masked_raw":          "некорректный JSON",
+	"system.no_active_resolver_connections":   "Нет активных подключений резолвера",
+	"system.start_awg_for_outbounds":          "Запустите контейнер AWG для проверки outbound.",
+	"system.latency_error":                    "ошибка проверки latency",
+	"system.no_clash_api_response":            "нет ответа Clash API",
+	"system.connection_no_clash_response":     "Подключение «:name»: :error",
+	"system.virtual_networks_label":           "Виртуальные сети",
+	"system.no_vn_in_selection":               "Нет VN-конфигов в выборке",
+	"system.skip_disabled":                    "выключен",
+	"system.no_fresh_handshakes":              "нет свежих handshake",
+	"system.vn_iface_not_up":                  "VN «:name»: интерфейс не поднят",
+	"system.vn_no_fresh_handshakes":           "VN «:name»: нет свежих handshake пиров",
+}

@@ -608,7 +608,7 @@ func (s *Service) syncAWGClientConfs(ctx context.Context) {
 			log.Printf("awg client conf sync failed for conn_%d: %v", conn.ID, err)
 			continue
 		}
-		ver := first(strPtrVal(conn.ProtocolVersion), "2.0")
+		ver := first(strPtrVal(conn.ProtocolVersion), LatestProtocolVersion())
 		body := s.AWGBuild.Build(parsed, ver)
 		path := filepath.Join(dir, iface+".conf")
 		if ch, _ := s.Files.WriteIfChanged(path, body); ch {

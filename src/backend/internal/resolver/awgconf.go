@@ -218,13 +218,18 @@ func (b AWGClientConfBuilder) Build(parsed ParsedAWG, version string) string {
 
 func supportedJunk(version string) []string {
 	base := []string{"jc", "jmin", "jmax", "s1", "s2", "h1", "h2", "h3", "h4"}
+	iParams := []string{"i1", "i2", "i3", "i4", "i5"}
+	s34 := []string{"s3", "s4"}
 	switch version {
 	case "1.0":
 		return base
 	case "1.5":
-		return append(base, "s3", "s4")
+		return append(append([]string{}, base...), iParams...)
+	case "2.0", "3.1":
+		return append(append(append([]string{}, base...), s34...), iParams...)
 	default:
-		return append(append(base, "s3", "s4"), "i1", "i2", "i3", "i4", "i5")
+		// Unknown / empty → latest (3.1) param set
+		return append(append(append([]string{}, base...), s34...), iParams...)
 	}
 }
 

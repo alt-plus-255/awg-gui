@@ -386,16 +386,27 @@ func (s *Service) groupAwgIfaces(ctx context.Context, locale string, configs []m
 	running := s.Stats.IsContainerRunning(ctx, "")
 	for _, c := range targets {
 		up := running && s.Stats.IfaceIsUp(ctx, c.Iface)
-		showOk := up && s.Stats.AwgShowAvailable(ctx, c.Iface)
+		showOk := false
+		showDetail := ""
+		if up {
+			showOk, showDetail = s.Stats.AwgShowProbe(ctx, c.Iface)
+		}
 		typeLabel := "server"
 		if c.Type == "virtual_network" {
 			typeLabel = "VN"
 		}
 		detail := "up · awg show OK"
+		if showOk && showDetail == "via dump" {
+			detail = i18n.T(locale, "system.awg_show_ok_via_dump")
+		}
 		if !up {
 			detail = "iface down"
 		} else if !showOk {
-			detail = i18n.T(locale, "system.awg_show_unavailable")
+			if showDetail != "" {
+				detail = i18n.Tf(locale, "system.awg_show_unavailable_detail", map[string]string{"detail": showDetail})
+			} else {
+				detail = i18n.T(locale, "system.awg_show_unavailable")
+			}
 		}
 		checks = append(checks, map[string]any{
 			"id": "iface_" + c.Iface, "ok": up && showOk,

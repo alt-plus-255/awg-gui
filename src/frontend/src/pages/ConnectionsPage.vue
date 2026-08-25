@@ -821,7 +821,7 @@ const form = reactive({
   subscription_mode: 'urltest',
   subscription_selected: null,
   awg_conf: '',
-  protocol_version: '2.0',
+  protocol_version: '3.1',
   outbound_json: `{
   "type": "vless",
   "server": "example.com",
@@ -844,7 +844,7 @@ const form = reactive({
 const awgFile = ref(null)
 const awgFileSelected = computed(() => !!awgFile.value)
 const protocolVersions = ref([])
-const protocolVersionsDefault = ref('2.0')
+const protocolVersionsDefault = ref('3.1')
 const protocolVersionOptions = computed(() =>
   protocolVersions.value.map((v) => ({
     label: v.label || `AmneziaWG ${v.id}`,
@@ -2268,15 +2268,16 @@ onMounted(async () => {
   try {
     const { data } = await api.get('/api/awg-protocol-versions')
     protocolVersions.value = data.versions || []
-    protocolVersionsDefault.value = data.default || protocolVersions.value.at(-1)?.id || '2.0'
+    protocolVersionsDefault.value = data.default || protocolVersions.value.at(-1)?.id || '3.1'
     if (!form.protocol_version) form.protocol_version = protocolVersionsDefault.value
   } catch {
     protocolVersions.value = [
       { id: '1.0', label: 'AmneziaWG 1.0' },
       { id: '1.5', label: 'AmneziaWG 1.5' },
-      { id: '2.0', label: 'AmneziaWG 2.0' }
+      { id: '2.0', label: 'AmneziaWG 2.0' },
+      { id: '3.1', label: 'AmneziaWG 3.1' }
     ]
-    protocolVersionsDefault.value = '2.0'
+    protocolVersionsDefault.value = '3.1'
   }
   await nextTick()
   const remoteActive = await syncRemotePingSession()

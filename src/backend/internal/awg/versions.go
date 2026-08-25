@@ -5,6 +5,7 @@ import (
 	"math/big"
 	"strings"
 
+	"github.com/awggui/backend/internal/cps"
 	"github.com/awggui/backend/internal/models"
 )
 
@@ -26,6 +27,7 @@ type VersionProfile interface {
 	VpnURIProtocolVersion() string
 	SupportedParams() []string
 	GenerateJunkParams() map[string]string
+	GenerateJunkParamsWithCPS(cpsProtocol string) map[string]string
 	NormalizeForPersist(params map[string]string) map[string]string
 	ConfObfuscationLines(cfg *models.AwgConfig) []string
 	ConfObfuscationLinesFromParams(params map[string]string) []string
@@ -44,7 +46,14 @@ func (p *versionProfile) VpnURIProtocolVersion() string { return p.vpnVer }
 func (p *versionProfile) SupportedParams() []string     { return append([]string{}, p.params...) }
 
 func (p *versionProfile) GenerateJunkParams() map[string]string {
-	return p.NormalizeForPersist(generateBaseJunk())
+	return p.GenerateJunkParamsWithCPS(cps.DefaultProtocol())
+}
+
+func (p *versionProfile) GenerateJunkParamsWithCPS(cpsProtocol string) map[string]string {
+	base := generateBaseJunk()
+	allowCPS := contains(p.params, "i1")
+	merged := cps.MergeJunkWithCPS(base, cpsProtocol, allowCPS)
+	return p.NormalizeForPersist(merged)
 }
 
 func (p *versionProfile) NormalizeForPersist(params map[string]string) map[string]string {
@@ -151,9 +160,12 @@ type VersionRegistry struct {
 
 func NewVersionRegistry() *VersionRegistry {
 	r := &VersionRegistry{profiles: map[string]VersionProfile{}}
+	fullParams := append(append(append([]string{}, baseParams...), s34Params...), iParams...)
 	r.Register(&versionProfile{id: "1.0", label: "AmneziaWG 1.0", vpnVer: "1", params: append([]string{}, baseParams...)})
 	r.Register(&versionProfile{id: "1.5", label: "AmneziaWG 1.5", vpnVer: "1", params: append(append([]string{}, baseParams...), iParams...)})
-	r.Register(&versionProfile{id: "2.0", label: "AmneziaWG 2.0", vpnVer: "2", params: append(append(append([]string{}, baseParams...), s34Params...), iParams...)})
+	r.Register(&versionProfile{id: "2.0", label: "AmneziaWG 2.0", vpnVer: "2", params: append([]string{}, fullParams...)})
+	// 3.1 uses the same UI/conf param set as 2.0 until upstream publishes a separate schema.
+	r.Register(&versionProfile{id: "3.1", label: "AmneziaWG 3.1", vpnVer: "2", params: append([]string{}, fullParams...)})
 	return r
 }
 
@@ -184,7 +196,7 @@ func (r *VersionRegistry) Has(id string) bool {
 
 func (r *VersionRegistry) Latest() string {
 	if len(r.order) == 0 {
-		return "2.0"
+		return "3.1"
 	}
 	return r.order[len(r.order)-1]
 }

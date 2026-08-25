@@ -368,11 +368,39 @@ func (s *Service) RunEveryMinute(ctx context.Context) {
 }
 
 func (s *Service) AwgShowAvailable(ctx context.Context, iface string) bool {
+	ok, _ := s.AwgShowProbe(ctx, iface)
+	return ok
+}
+
+// AwgShowProbe runs awg show, falling back to awg show dump (same as stats).
+// detail is a short stderr/exit summary when unsuccessful.
+func (s *Service) AwgShowProbe(ctx context.Context, iface string) (ok bool, detail string) {
 	if s.Docker == nil {
-		return false
+		return false, "no docker runtime"
+	}
+	if !ifaceRE.MatchString(iface) {
+		return false, "invalid iface"
 	}
 	r := s.Docker.Exec(ctx, s.ContainerName(), []string{"awg", "show", iface}, 8*time.Second, "")
-	return r.Successful()
+	if r.Successful() {
+		return true, ""
+	}
+	// Some builds / datapaths accept dump more reliably than plain show.
+	r2 := s.Docker.Exec(ctx, s.ContainerName(), []string{"awg", "show", iface, "dump"}, 8*time.Second, "")
+	if r2.Successful() {
+		return true, "via dump"
+	}
+	errMsg := strings.TrimSpace(r.Stderr)
+	if errMsg == "" {
+		errMsg = strings.TrimSpace(r2.Stderr)
+	}
+	if errMsg == "" {
+		errMsg = "exit " + strconv.Itoa(r.ExitCode)
+	}
+	if len(errMsg) > 120 {
+		errMsg = errMsg[:120] + "…"
+	}
+	return false, errMsg
 }
 
 func (s *Service) IfaceIsUp(ctx context.Context, iface string) bool {

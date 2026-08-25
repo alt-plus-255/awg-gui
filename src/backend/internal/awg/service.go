@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/awggui/backend/internal/config"
+	"github.com/awggui/backend/internal/cps"
 	"github.com/awggui/backend/internal/docker"
 	"github.com/awggui/backend/internal/models"
 	"github.com/awggui/backend/internal/settings"
@@ -466,7 +467,11 @@ func (s *Service) RegenerateConfigKeys(ctx context.Context, cfg *models.AwgConfi
 }
 
 func (s *Service) RegenerateConfigJunk(ctx context.Context, cfg *models.AwgConfig) (map[string]string, error) {
-	junk := s.ProfileFor(cfg).GenerateJunkParams()
+	return s.RegenerateConfigJunkWithCPS(ctx, cfg, cps.DefaultProtocol())
+}
+
+func (s *Service) RegenerateConfigJunkWithCPS(ctx context.Context, cfg *models.AwgConfig, cpsProtocol string) (map[string]string, error) {
+	junk := s.ProfileFor(cfg).GenerateJunkParamsWithCPS(cpsProtocol)
 	cfg.ApplyJunk(junk)
 	if err := s.Configs.Update(ctx, cfg); err != nil {
 		return nil, err

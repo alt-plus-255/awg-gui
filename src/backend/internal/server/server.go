@@ -84,6 +84,7 @@ func New(cfg config.Config, db *sql.DB) *App {
 		AWG: awgSvc, QR: qr, VpnURI: vpnURI,
 		Configs: configs, Peers: peers, Clients: clients,
 	}
+	cpsCtrl := &api.CPSController{}
 
 	statsSvc := stats.New(cfg, dockerRT, configs, peers, clients, handshakes)
 	hostMetrics := system.NewHostMetrics(dockerRT)
@@ -172,6 +173,9 @@ func New(cfg config.Config, db *sql.DB) *App {
 		apiR.Delete("/clients/{clientID}", clientCtrl.Destroy)
 
 		apiR.Get("/awg-protocol-versions", configCtrl.ProtocolVersions)
+		apiR.Get("/cps/templates", cpsCtrl.Templates)
+		apiR.Post("/cps/generate", cpsCtrl.Generate)
+		apiR.Post("/cps/validate", cpsCtrl.Validate)
 		apiR.Get("/configs", configCtrl.Index)
 		apiR.Post("/configs", configCtrl.Store)
 		apiR.Get("/configs/{configID}", configCtrl.Show)
