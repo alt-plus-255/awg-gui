@@ -40,6 +40,7 @@ FROM alpine:latest
 
 RUN apk add --no-cache \
     bash \
+    coreutils \
     curl \
     gcompat \
     iptables \

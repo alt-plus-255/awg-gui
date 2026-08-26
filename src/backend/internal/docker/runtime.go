@@ -88,6 +88,46 @@ func (rt *Runtime) Restart(ctx context.Context, container string, timeout time.D
 	return rt.Run(ctx, []string{"restart", container}, timeout, "")
 }
 
+func (rt *Runtime) Kill(ctx context.Context, container string, timeout time.Duration) Result {
+	return rt.Run(ctx, []string{"kill", container}, timeout, "")
+}
+
+func (rt *Runtime) StartContainer(ctx context.Context, container string, timeout time.Duration) Result {
+	return rt.Run(ctx, []string{"start", container}, timeout, "")
+}
+
+// RestartOrKillStart tries docker restart; on failure falls back to kill + start
+// (helps when stop hangs but the container process can still be signalled).
+func (rt *Runtime) RestartOrKillStart(ctx context.Context, container string, timeout time.Duration) Result {
+	res := rt.Restart(ctx, container, timeout)
+	if res.Successful() {
+		return res
+	}
+	restartErr := strings.TrimSpace(res.Stderr)
+	_ = rt.Kill(ctx, container, 15*time.Second)
+	start := rt.StartContainer(ctx, container, timeout)
+	parts := make([]string, 0, 3)
+	if restartErr != "" {
+		parts = append(parts, "restart: "+restartErr)
+	}
+	if start.Successful() {
+		parts = append(parts, "recovered via kill+start")
+		start.Stderr = strings.Join(parts, "; ")
+		return start
+	}
+	startErr := strings.TrimSpace(start.Stderr)
+	if startErr != "" {
+		parts = append(parts, "kill+start: "+startErr)
+	} else {
+		parts = append(parts, "kill+start failed")
+	}
+	start.Stderr = strings.Join(parts, "; ")
+	if start.ExitCode == 0 {
+		start.ExitCode = 1
+	}
+	return start
+}
+
 // Start runs docker args without waiting (Laravel DockerRuntime::start).
 func (rt *Runtime) Start(args []string) error {
 	cmd := exec.Command(rt.bin(), args...)

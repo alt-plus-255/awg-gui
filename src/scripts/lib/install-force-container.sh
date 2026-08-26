@@ -1,0 +1,233 @@
+# install-force-container.sh — force-stop/remove stuck Docker containers (esp. awggui-awg).
+# Requires from caller: log(), ok(), warn(), die(), and t() (install-i18n).
+# Safe to source multiple times.
+#
+# AmneziaWG containers with NET_ADMIN / tun / kernel datapath can leave Docker
+# unable to kill them ("tried to kill container, but did not receive an exit event").
+# Compose then hangs on recreate during upgrades. Call
+# prepare_awg_containers_for_recreate before `compose up`, and use
+# compose_up_with_awg_recovery for start+retry.
+
+if [[ -n "${_AWG_GUI_FORCE_CONTAINER_LOADED:-}" ]]; then
+  return 0 2>/dev/null || true
+fi
+_AWG_GUI_FORCE_CONTAINER_LOADED=1
+
+_force_container_run_timeout() {
+  local secs="$1"
+  shift
+  if command -v timeout >/dev/null 2>&1; then
+    timeout --signal=KILL "${secs}s" "$@" 2>/dev/null
+    return $?
+  fi
+  "$@"
+}
+
+_force_container_exists() {
+  local name="$1"
+  docker inspect "${name}" >/dev/null 2>&1
+}
+
+_force_container_status() {
+  docker inspect -f '{{.State.Status}}' "$1" 2>/dev/null || true
+}
+
+_force_container_pid() {
+  local pid
+  pid="$(docker inspect -f '{{.State.Pid}}' "$1" 2>/dev/null || true)"
+  if [[ -n "${pid}" && "${pid}" != "0" ]]; then
+    printf '%s' "${pid}"
+  fi
+}
+
+# Best-effort teardown of AWG/WG ifaces + userspace inside a still-running container.
+_force_container_soft_teardown_awg() {
+  local name="$1"
+  [[ "$(_force_container_status "${name}")" == "running" ]] || return 0
+  _force_container_run_timeout 25 docker exec "${name}" sh -c '
+    for conf in /config/*.conf; do
+      [ -f "$conf" ] || continue
+      awg-quick down "$conf" >/dev/null 2>&1 || true
+    done
+    pkill -9 -f amneziawg-go >/dev/null 2>&1 || true
+    pkill -9 sing-box >/dev/null 2>&1 || true
+    ip -o link show 2>/dev/null | awk -F": " "{print \$2}" | cut -d@ -f1 | while read -r iface; do
+      case "$iface" in
+        lo|eth*|docker*|br-*|cni*|veth*) continue ;;
+        *) ip link delete "$iface" >/dev/null 2>&1 || true ;;
+      esac
+    done
+  ' >/dev/null 2>&1 || true
+}
+
+# Delete tunnel ifaces in the container network namespace via nsenter (when exec fails).
+_force_container_nsenter_cleanup() {
+  local pid="$1"
+  local iface
+  [[ -n "${pid}" ]] || return 0
+  [[ -d "/proc/${pid}" ]] || return 0
+  command -v nsenter >/dev/null 2>&1 || return 0
+  while read -r iface; do
+    [[ -n "${iface}" ]] || continue
+    case "${iface}" in
+      lo|eth*|docker*|br-*|cni*|veth*) continue ;;
+      *) nsenter -t "${pid}" -n -- ip link delete "${iface}" >/dev/null 2>&1 || true ;;
+    esac
+  done < <(nsenter -t "${pid}" -n -- ip -o link show 2>/dev/null | awk -F': ' '{print $2}' | cut -d@ -f1 || true)
+}
+
+_force_container_wait_docker() {
+  local i
+  for i in $(seq 1 90); do
+    if docker info >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
+}
+
+_force_container_restart_docker() {
+  warn "$(t warn_restart_docker_stuck)"
+  if command -v systemctl >/dev/null 2>&1 && systemctl list-unit-files docker.service >/dev/null 2>&1; then
+    systemctl restart docker >/dev/null 2>&1 || true
+  elif command -v service >/dev/null 2>&1; then
+    service docker restart >/dev/null 2>&1 || true
+  else
+    return 1
+  fi
+  _force_container_wait_docker
+}
+
+# Force-remove one container. Volumes are never touched.
+# Returns 0 if gone (or never existed), 1 if still present after all escalations.
+force_remove_container() {
+  local name="$1"
+  local pid="" status="" allow_docker_restart="${2:-1}"
+  local i
+
+  _force_container_exists "${name}" || return 0
+
+  log "$(t log_force_removing_container "${name}")"
+
+  # 1) Prefer clean AWG teardown so the kernel/netns is less likely to wedge.
+  case "${name}" in
+    *awggui-awg) _force_container_soft_teardown_awg "${name}" ;;
+  esac
+
+  # 2) docker stop / kill
+  _force_container_run_timeout 20 docker stop -t 8 "${name}" >/dev/null 2>&1 || true
+  status="$(_force_container_status "${name}")"
+  if [[ "${status}" == "exited" || "${status}" == "created" || "${status}" == "dead" ]]; then
+    _force_container_run_timeout 30 docker rm -f "${name}" >/dev/null 2>&1 || true
+    _force_container_exists "${name}" || { ok "$(t ok_force_removed_container "${name}")"; return 0; }
+  fi
+
+  _force_container_run_timeout 15 docker kill -s KILL "${name}" >/dev/null 2>&1 || true
+  sleep 1
+
+  # 3) Host PID + netns iface cleanup
+  pid="$(_force_container_pid "${name}")"
+  if [[ -n "${pid}" ]]; then
+    warn "$(t warn_kill_container_host_pid "${name}" "${pid}")"
+    _force_container_nsenter_cleanup "${pid}"
+    kill -9 "${pid}" 2>/dev/null || true
+    # containerd-shim children sometimes hold the exit event
+    if [[ -r "/proc/${pid}/task/${pid}/children" ]]; then
+      # shellcheck disable=SC2046
+      kill -9 $(cat "/proc/${pid}/task/${pid}/children" 2>/dev/null) 2>/dev/null || true
+    fi
+    sleep 1
+  fi
+
+  _force_container_run_timeout 30 docker rm -f "${name}" >/dev/null 2>&1 || true
+  for i in 1 2 3 4 5; do
+    _force_container_exists "${name}" || { ok "$(t ok_force_removed_container "${name}")"; return 0; }
+    sleep 1
+    _force_container_run_timeout 10 docker rm -f "${name}" >/dev/null 2>&1 || true
+  done
+
+  # 4) Last resort: restart Docker engine (safe for volumes; brief stack downtime)
+  if [[ "${allow_docker_restart}" == "1" ]]; then
+    if _force_container_restart_docker; then
+      sleep 2
+      _force_container_run_timeout 30 docker rm -f "${name}" >/dev/null 2>&1 || true
+      for i in 1 2 3 4 5 6 7 8 9 10; do
+        _force_container_exists "${name}" || { ok "$(t ok_force_removed_container "${name}")"; return 0; }
+        sleep 1
+        _force_container_run_timeout 10 docker rm -f "${name}" >/dev/null 2>&1 || true
+      done
+    fi
+  fi
+
+  if _force_container_exists "${name}"; then
+    warn "$(t warn_container_still_stuck "${name}")"
+    return 1
+  fi
+  ok "$(t ok_force_removed_container "${name}")"
+  return 0
+}
+
+# Remove awggui-awg and compose recreate leftovers (*_awggui-awg) before up/recreate.
+prepare_awg_containers_for_recreate() {
+  local name
+  local names=()
+  local failed=0
+
+  while read -r name; do
+    [[ -n "${name}" ]] || continue
+    names+=("${name}")
+  done < <(docker ps -a --format '{{.Names}}' 2>/dev/null | grep -E '(^|_)awggui-awg$' || true)
+
+  if [[ "${#names[@]}" -eq 0 ]]; then
+    return 0
+  fi
+
+  log "$(t log_preparing_awg_recreate)"
+  for name in "${names[@]}"; do
+    if ! force_remove_container "${name}" 1; then
+      failed=1
+    fi
+  done
+
+  # Created leftovers from a previous failed recreate (caddy/app/panel-ops) — safe to drop;
+  # compose up will recreate them. Do not touch running db / docker-proxy.
+  while read -r name; do
+    [[ -n "${name}" ]] || continue
+    case "${name}" in
+      awggui-db|awggui-docker-proxy) continue ;;
+    esac
+    if [[ "$(_force_container_status "${name}")" == "created" ]]; then
+      _force_container_run_timeout 20 docker rm -f "${name}" >/dev/null 2>&1 || true
+    fi
+  done < <(docker ps -a --format '{{.Names}}' 2>/dev/null | grep -E '^awggui-' || true)
+
+  return "${failed}"
+}
+
+# compose up with pre-cleanup and one recovery retry on stuck-kill errors.
+# Caller must define: compose() wrapping `docker compose ...`.
+compose_up_with_awg_recovery() {
+  prepare_awg_containers_for_recreate || true
+
+  if compose up -d --remove-orphans; then
+    return 0
+  fi
+
+  warn "$(t warn_compose_up_stuck_retry)"
+  prepare_awg_containers_for_recreate || true
+  # Broader pass: force-remove containers compose may have tried to recreate
+  # (keep healthy db / docker-proxy when possible).
+  local name
+  while read -r name; do
+    [[ -n "${name}" ]] || continue
+    case "${name}" in
+      awggui-db|awggui-docker-proxy) continue ;;
+      *awggui-awg*|awggui-awg|awggui-caddy|awggui-app|awggui-panel-ops)
+        force_remove_container "${name}" 1 || true
+        ;;
+    esac
+  done < <(docker ps -a --format '{{.Names}}' 2>/dev/null | grep -E '^([0-9a-f]+_)?awggui-' || true)
+
+  compose up -d --remove-orphans
+}

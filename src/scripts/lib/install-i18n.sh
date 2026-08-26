@@ -273,6 +273,13 @@ _awg_gui_msg_en() {
     ok_created_env) printf '%s' 'Created %s' ;;
     ok_created_env_dev) printf '%s' 'Created %s from .env.example (random DB password generated)' ;;
     log_starting_containers) printf '%s' 'Starting containers ...' ;;
+    log_preparing_awg_recreate) printf '%s' 'Preparing awggui-awg for recreate (force-stop if needed) ...' ;;
+    log_force_removing_container) printf '%s' 'Force-removing stuck container %s ...' ;;
+    ok_force_removed_container) printf '%s' 'Removed container %s' ;;
+    warn_kill_container_host_pid) printf '%s' 'Container %s did not exit — sending SIGKILL to host PID %s' ;;
+    warn_restart_docker_stuck) printf '%s' 'Container still stuck — restarting Docker engine (volumes preserved) ...' ;;
+    warn_container_still_stuck) printf '%s' 'Could not remove container %s; a host reboot may be required' ;;
+    warn_compose_up_stuck_retry) printf '%s' 'compose up failed stopping a container — recovering and retrying ...' ;;
     ok_repair_complete) printf '%s' 'Install repair complete' ;;
     ok_upgrade_complete) printf '%s' 'Upgrade complete' ;;
     ok_install_complete) printf '%s' 'Installation complete' ;;
@@ -469,6 +476,13 @@ _awg_gui_msg_ru() {
     ok_created_env) printf '%s' 'Создан %s' ;;
     ok_created_env_dev) printf '%s' 'Создан %s из .env.example (сгенерирован случайный пароль БД)' ;;
     log_starting_containers) printf '%s' 'Запуск контейнеров ...' ;;
+    log_preparing_awg_recreate) printf '%s' 'Подготовка awggui-awg к пересозданию (принудительная остановка при зависании) ...' ;;
+    log_force_removing_container) printf '%s' 'Принудительное удаление зависшего контейнера %s ...' ;;
+    ok_force_removed_container) printf '%s' 'Контейнер %s удалён' ;;
+    warn_kill_container_host_pid) printf '%s' 'Контейнер %s не завершился — SIGKILL процессу на хосте PID %s' ;;
+    warn_restart_docker_stuck) printf '%s' 'Контейнер всё ещё завис — перезапуск Docker (volumes сохраняются) ...' ;;
+    warn_container_still_stuck) printf '%s' 'Не удалось удалить контейнер %s; может потребоваться перезагрузка сервера' ;;
+    warn_compose_up_stuck_retry) printf '%s' 'compose up не смог остановить контейнер — восстановление и повтор ...' ;;
     ok_repair_complete) printf '%s' 'Восстановление установки завершено' ;;
     ok_upgrade_complete) printf '%s' 'Обновление завершено' ;;
     ok_install_complete) printf '%s' 'Установка завершена' ;;

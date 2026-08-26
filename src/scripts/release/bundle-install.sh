@@ -60,6 +60,20 @@ else
 fi
 unset _PORTS
 
+_FORCE=""
+if [[ -f "${SCRIPT_DIR}/lib/install-force-container.sh" ]]; then
+  _FORCE="${SCRIPT_DIR}/lib/install-force-container.sh"
+elif [[ -f "${SCRIPT_DIR}/../lib/install-force-container.sh" ]]; then
+  _FORCE="${SCRIPT_DIR}/../lib/install-force-container.sh"
+fi
+if [[ -n "${_FORCE}" ]]; then
+  # shellcheck disable=SC1090
+  source "${_FORCE}"
+else
+  die "$(t err_missing_path "install-force-container.sh")"
+fi
+unset _FORCE
+
 usage() {
   if [[ "${AWG_GUI_LANG:-ru}" == "en" ]]; then
     cat <<EOF
@@ -941,7 +955,7 @@ run_bootstrap() {
 
 main() {
   [[ -f "${COMPOSE_FILE}" ]] || die "$(t err_missing_path "${COMPOSE_FILE}")"
-  [[ -d /dev/net/tun ]] || warn "$(t warn_tun_missing)"
+  [[ -c /dev/net/tun ]] || [[ -e /dev/net/tun ]] || warn "$(t warn_tun_missing)"
 
   trap on_install_exit EXIT
 
@@ -1014,7 +1028,7 @@ main() {
   load_images
 
   log "$(t log_starting_containers)"
-  compose up -d --remove-orphans
+  compose_up_with_awg_recovery
 
   wait_for_app || true
   wait_for_migrate_lock

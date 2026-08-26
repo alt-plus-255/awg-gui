@@ -22,10 +22,12 @@ PROJECT_NAME="${PROJECT_NAME:-awggui}"
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 CYAN='\033[0;36m'
+YELLOW='\033[1;33m'
 NC='\033[0m'
 
 log() { echo -e "${CYAN}[awg-gui-uninstall]${NC} $*"; }
 ok() { echo -e "${GREEN}[ok]${NC} $*"; }
+warn() { echo -e "${YELLOW}[warn]${NC} $*"; }
 die() { echo -e "${RED}[error]${NC} $*" >&2; exit 1; }
 
 _I18N=""
@@ -39,6 +41,18 @@ if [[ -n "${_I18N}" ]]; then
   source "${_I18N}"
 fi
 unset _I18N
+
+_FORCE=""
+if [[ -f "${SCRIPT_DIR}/lib/install-force-container.sh" ]]; then
+  _FORCE="${SCRIPT_DIR}/lib/install-force-container.sh"
+elif [[ -f "${SCRIPT_DIR}/../lib/install-force-container.sh" ]]; then
+  _FORCE="${SCRIPT_DIR}/../lib/install-force-container.sh"
+fi
+if [[ -n "${_FORCE}" ]]; then
+  # shellcheck disable=SC1090
+  source "${_FORCE}"
+fi
+unset _FORCE
 
 usage() {
   if [[ "${AWG_GUI_LANG:-ru}" == "en" ]]; then
@@ -167,8 +181,21 @@ compose_down() {
 fallback_remove_containers() {
   local c
   for c in awggui-caddy awggui-app awggui-db awggui-awg awggui-docker-proxy awggui-panel-ops awggui-certbot; do
-    docker rm -f "$c" 2>/dev/null || true
+    if declare -F force_remove_container >/dev/null 2>&1; then
+      force_remove_container "$c" 1 || docker rm -f "$c" 2>/dev/null || true
+    else
+      docker rm -f "$c" 2>/dev/null || true
+    fi
   done
+  # Compose recreate leftovers (e.g. 179cd4fe8798_awggui-awg)
+  while read -r c; do
+    [[ -n "${c}" ]] || continue
+    if declare -F force_remove_container >/dev/null 2>&1; then
+      force_remove_container "$c" 1 || docker rm -f "$c" 2>/dev/null || true
+    else
+      docker rm -f "$c" 2>/dev/null || true
+    fi
+  done < <(docker ps -a --format '{{.Names}}' 2>/dev/null | grep -E '^[0-9a-f]+_awggui-' || true)
 }
 
 fallback_remove_volumes() {

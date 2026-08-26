@@ -133,6 +133,7 @@ services:
     image: awggui-awg:__VERSION__
     container_name: awggui-awg
     restart: unless-stopped
+    stop_grace_period: 10s
     logging: *default-logging
     cap_add:
       - NET_ADMIN

@@ -936,9 +936,13 @@ func writeRestartResult(w http.ResponseWriter, r *http.Request, result map[strin
 		return
 	}
 	if ok, _ := result["ok"].(bool); !ok {
+		msg := i18n.T(locale, "api.awg_restart_failed")
+		if stderr, _ := result["stderr"].(string); strings.TrimSpace(stderr) != "" {
+			msg = msg + ": " + strings.TrimSpace(stderr)
+		}
 		writeJSON(w, http.StatusInternalServerError, map[string]any{
 			"ok":      false,
-			"message": i18n.T(locale, "api.awg_restart_failed"),
+			"message": msg,
 			"details": result,
 		})
 		return

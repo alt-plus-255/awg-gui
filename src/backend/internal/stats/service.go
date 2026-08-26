@@ -3,6 +3,7 @@ package stats
 import (
 	"context"
 	"log"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -409,6 +410,25 @@ func (s *Service) IfaceIsUp(ctx context.Context, iface string) bool {
 	}
 	r := s.Docker.Exec(ctx, s.ContainerName(), []string{"sh", "-c", "ip link show " + iface + " >/dev/null 2>&1 && echo yes || echo no"}, 8*time.Second, "")
 	return strings.TrimSpace(r.Stdout) == "yes"
+}
+
+// KernelModuleLoaded reports whether amneziawg is visible inside the AWG container.
+func (s *Service) KernelModuleLoaded(ctx context.Context) bool {
+	if s.Docker == nil || !s.IsContainerRunning(ctx, "") {
+		return false
+	}
+	r := s.Docker.Exec(ctx, s.ContainerName(), []string{"sh", "-c", "test -d /sys/module/amneziawg && echo yes || echo no"}, 5*time.Second, "")
+	return strings.TrimSpace(r.Stdout) == "yes"
+}
+
+// ConfFileExists checks the shared AWG config volume for iface.conf (app mount).
+func (s *Service) ConfFileExists(iface string) bool {
+	if !ifaceRE.MatchString(iface) {
+		return false
+	}
+	path := s.ConfigDir() + "/" + iface + ".conf"
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 var ifaceRE = regexp.MustCompile(`^[A-Za-z0-9_]+$`)

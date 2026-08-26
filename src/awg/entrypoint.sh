@@ -6,9 +6,14 @@ mkdir -p "${CONFIG_DIR}" "${CONFIG_DIR}/rulesets"
 mkdir -p /run
 
 declare -A LAST_MTIMES
+# Per-boot: kernel awg-quick failed/timed out for this iface — do not retry kernel path
+# (amneziawg.ko oops on setconf can wedge the netns if retried every few seconds).
+declare -A KERNEL_FAILED
 LAST_SB_MTIME=0
 # Re-check userspace→kernel migration periodically (seconds since epoch of last check).
 LAST_KERNEL_MIGRATE_CHECK=0
+AWG_QUICK_TIMEOUT="${AWG_QUICK_TIMEOUT:-20}"
+AWG_SETCONF_TIMEOUT="${AWG_SETCONF_TIMEOUT:-15}"
 
 kernel_module_loaded() {
   # Host kernel module is visible in the container via sysfs/lsmod.
@@ -21,52 +26,72 @@ iface_userspace_running() {
   pgrep -f "amneziawg-go ${IFACE}" >/dev/null 2>&1
 }
 
-apply_config() {
+run_with_timeout() {
+  local secs="$1"
+  shift
+  if command -v timeout >/dev/null 2>&1; then
+    timeout --signal=KILL "${secs}s" "$@"
+    return $?
+  fi
+  "$@"
+}
+
+cleanup_iface() {
   local IFACE="$1"
   local CONF="${CONFIG_DIR}/${IFACE}.conf"
-  local want_kernel=0
-
-  if [[ ! -f "${CONF}" ]]; then
-    return 1
+  pkill -f "amneziawg-go ${IFACE}" 2>/dev/null || true
+  # Prefer netlink delete first — avoids another awg-quick into a wedged kernel path.
+  ip link delete "${IFACE}" 2>/dev/null || true
+  if [[ -f "${CONF}" ]] && ip link show "${IFACE}" &>/dev/null; then
+    run_with_timeout 10 awg-quick down "${CONF}" 2>/dev/null || true
+    ip link delete "${IFACE}" 2>/dev/null || true
   fi
+  sleep 0.5
+}
 
-  if kernel_module_loaded; then
-    want_kernel=1
-  fi
+awg_quick_up() {
+  local CONF="$1"
+  run_with_timeout "${AWG_QUICK_TIMEOUT}" awg-quick up "${CONF}"
+}
 
-  if ip link show "${IFACE}" &>/dev/null; then
-    awg-quick down "${CONF}" 2>/dev/null || true
-    pkill -f "amneziawg-go ${IFACE}" 2>/dev/null || true
-    sleep 1
-  fi
+apply_userspace() {
+  local IFACE="$1"
+  local CONF="$2"
 
-  if awg-quick up "${CONF}"; then
-    echo "[awg] ${IFACE} is up via awg-quick (kernel)"
-    return 0
-  fi
-
-  if [[ "${want_kernel}" -eq 1 ]]; then
-    echo "[awg] WARN: amneziawg module is loaded but awg-quick failed for ${IFACE}; retrying once..."
-    sleep 2
-    if awg-quick up "${CONF}"; then
-      echo "[awg] ${IFACE} is up via awg-quick (kernel, retry)"
-      return 0
-    fi
-    echo "[awg] ERROR: kernel module present but awg-quick still failed for ${IFACE} — falling back to userspace (streaming will be slower)"
-  else
-    echo "[awg] awg-quick failed for ${IFACE} (no kernel module) — userspace amneziawg-go"
-  fi
+  cleanup_iface "${IFACE}"
 
   amneziawg-go "${IFACE}" &
   sleep 1
+  if ! ip link show "${IFACE}" &>/dev/null; then
+    echo "[awg] ERROR: amneziawg-go failed to create ${IFACE}" >&2
+    return 1
+  fi
+
   local addr
   addr="$(awk -F' = ' '/^Address/{print $2; exit}' "${CONF}" || true)"
   if [[ -n "${addr}" ]]; then
     ip address replace "${addr}" dev "${IFACE}" 2>/dev/null || true
   fi
-  awg setconf "${IFACE}" < <(awg-quick strip "${CONF}") || true
+
+  local strip_file rc=0
+  strip_file="$(mktemp)"
+  if ! awg-quick strip "${CONF}" >"${strip_file}" 2>/dev/null; then
+    echo "[awg] ERROR: awg-quick strip failed for ${IFACE}" >&2
+    rm -f "${strip_file}"
+    return 1
+  fi
+  if ! run_with_timeout "${AWG_SETCONF_TIMEOUT}" awg setconf "${IFACE}" "${strip_file}"; then
+    echo "[awg] ERROR: userspace awg setconf failed/timed out for ${IFACE}" >&2
+    rc=1
+  fi
+  rm -f "${strip_file}"
+  if [[ "${rc}" -ne 0 ]]; then
+    return 1
+  fi
+
   iptables -C FORWARD -i "${IFACE}" -j ACCEPT 2>/dev/null \
     || iptables -A FORWARD -i "${IFACE}" -j ACCEPT || true
+  local EGRESS
   EGRESS="$(ip -4 route show default 0.0.0.0/0 2>/dev/null | awk '{for (i=1;i<=NF;i++) if ($i=="dev") {print $(i+1); exit}}')"
   if [[ -z "${EGRESS}" ]]; then
     EGRESS="$(ip -o -4 route get 1.1.1.1 2>/dev/null | awk '{for (i=1;i<=NF;i++) if ($i=="dev") {print $(i+1); exit}}')"
@@ -76,7 +101,55 @@ apply_config() {
     || iptables -t nat -A POSTROUTING -o "${EGRESS}" -j MASQUERADE || true
   # Drop legacy eth+ MASQUERADE if present from older images.
   iptables -t nat -D POSTROUTING -o eth+ -j MASQUERADE 2>/dev/null || true
+
   echo "[awg] ${IFACE} userspace path active"
+  return 0
+}
+
+apply_config() {
+  local IFACE="$1"
+  local CONF="${CONFIG_DIR}/${IFACE}.conf"
+  local want_kernel=0
+  local skip_kernel=0
+
+  if [[ ! -f "${CONF}" ]]; then
+    return 1
+  fi
+
+  if [[ "${KERNEL_FAILED[$IFACE]:-0}" == "1" ]]; then
+    skip_kernel=1
+  fi
+
+  if kernel_module_loaded && [[ "${skip_kernel}" -eq 0 ]]; then
+    want_kernel=1
+  fi
+
+  if ip link show "${IFACE}" &>/dev/null; then
+    cleanup_iface "${IFACE}"
+  fi
+
+  if [[ "${want_kernel}" -eq 1 ]]; then
+    if awg_quick_up "${CONF}"; then
+      echo "[awg] ${IFACE} is up via awg-quick (kernel)"
+      return 0
+    fi
+    echo "[awg] WARN: amneziawg module loaded but awg-quick failed/timed out for ${IFACE}; retrying once..."
+    cleanup_iface "${IFACE}"
+    sleep 2
+    if awg_quick_up "${CONF}"; then
+      echo "[awg] ${IFACE} is up via awg-quick (kernel, retry)"
+      return 0
+    fi
+    echo "[awg] ERROR: kernel path failed for ${IFACE} — falling back to userspace (streaming will be slower); will not retry kernel this boot"
+    KERNEL_FAILED[$IFACE]=1
+    cleanup_iface "${IFACE}"
+  elif [[ "${skip_kernel}" -eq 1 ]]; then
+    echo "[awg] ${IFACE}: kernel path previously failed this boot — userspace amneziawg-go"
+  else
+    echo "[awg] awg-quick skipped for ${IFACE} (no kernel module) — userspace amneziawg-go"
+  fi
+
+  apply_userspace "${IFACE}" "${CONF}" || true
 }
 
 maybe_migrate_userspace_to_kernel() {
@@ -98,6 +171,9 @@ maybe_migrate_userspace_to_kernel() {
   for conf in "${CONFIG_DIR}"/awg*.conf; do
     local IFACE
     IFACE="$(basename "${conf}" .conf)"
+    if [[ "${KERNEL_FAILED[$IFACE]:-0}" == "1" ]]; then
+      continue
+    fi
     if iface_userspace_running "${IFACE}"; then
       echo "[awg] Kernel module detected — migrating ${IFACE} from userspace to awg-quick"
       apply_config "${IFACE}" || true
@@ -163,7 +239,7 @@ sync_singbox() {
 }
 
 if kernel_module_loaded; then
-  echo "[awg] Host kernel module amneziawg is loaded — preferring awg-quick"
+  echo "[awg] Host kernel module amneziawg is loaded — preferring awg-quick (timeout ${AWG_QUICK_TIMEOUT}s)"
 else
   echo "[awg] No amneziawg kernel module — userspace fallback available"
 fi
@@ -175,14 +251,18 @@ while true; do
   if (( ${#confs[@]} > 0 )); then
     break
   fi
+  # Start sing-box even while waiting for confs (JSON may already exist).
+  sync_singbox
   sleep 5
 done
 
+# Prefer resolver up before/while bringing ifaces (iface apply has timeouts; must not block DNS forever).
+sync_singbox
 sync_configs
 sync_singbox
 
 while true; do
   sleep 3
-  sync_configs
   sync_singbox
+  sync_configs
 done

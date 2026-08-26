@@ -384,6 +384,7 @@ func (s *Service) groupAwgIfaces(ctx context.Context, locale string, configs []m
 		return finalizeGroup("awg", "AWG ifaces", checks, hints)
 	}
 	running := s.Stats.IsContainerRunning(ctx, "")
+	kernelLoaded := running && s.Stats.KernelModuleLoaded(ctx)
 	for _, c := range targets {
 		up := running && s.Stats.IfaceIsUp(ctx, c.Iface)
 		showOk := false
@@ -413,9 +414,17 @@ func (s *Service) groupAwgIfaces(ctx context.Context, locale string, configs []m
 			"label": c.Name + " (" + c.Iface + ", " + typeLabel + ")", "detail": detail,
 		})
 		if !up {
-			hints = append(hints, i18n.Tf(locale, "system.iface_not_up_hint", map[string]string{"iface": c.Iface, "name": c.Name}))
+			if s.Stats.ConfFileExists(c.Iface) {
+				hints = append(hints, i18n.Tf(locale, "system.iface_down_conf_present_hint", map[string]string{"iface": c.Iface, "name": c.Name}))
+			} else {
+				hints = append(hints, i18n.Tf(locale, "system.iface_not_up_hint", map[string]string{"iface": c.Iface, "name": c.Name}))
+			}
 		} else if !showOk {
-			hints = append(hints, i18n.Tf(locale, "system.awg_show_no_response_hint", map[string]string{"iface": c.Iface}))
+			if kernelLoaded {
+				hints = append(hints, i18n.Tf(locale, "system.awg_show_kernel_oops_hint", map[string]string{"iface": c.Iface}))
+			} else {
+				hints = append(hints, i18n.Tf(locale, "system.awg_show_no_response_hint", map[string]string{"iface": c.Iface}))
+			}
 		}
 	}
 	return finalizeGroup("awg", "AWG ifaces", checks, hints)

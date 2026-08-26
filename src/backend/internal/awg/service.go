@@ -442,7 +442,7 @@ func (s *Service) RestartAWG(ctx context.Context) map[string]any {
 	}()
 
 	_ = s.ApplyConfig(ctx, nil, true, true)
-	res := s.Docker.Restart(ctx, s.ContainerName(), 60*time.Second)
+	res := s.Docker.RestartOrKillStart(ctx, s.ContainerName(), 60*time.Second)
 	return map[string]any{
 		"ok":        res.Successful(),
 		"exit_code": res.ExitCode,

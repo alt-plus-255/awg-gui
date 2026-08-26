@@ -36,6 +36,8 @@ die() { echo -e "${RED}[error]${NC} $*" >&2; exit 1; }
 source "${SCRIPT_DIR}/src/scripts/lib/install-i18n.sh"
 # shellcheck source=src/scripts/lib/install-ports.sh
 source "${SCRIPT_DIR}/src/scripts/lib/install-ports.sh"
+# shellcheck source=src/scripts/lib/install-force-container.sh
+source "${SCRIPT_DIR}/src/scripts/lib/install-force-container.sh"
 
 usage() {
   if [[ "${AWG_GUI_LANG:-ru}" == "en" ]]; then
@@ -863,7 +865,7 @@ main() {
   docker builder prune -af >/dev/null 2>&1 || true
   log "$(t log_building_containers)"
   COMPOSE_PARALLEL_LIMIT=1 compose build
-  compose up -d --remove-orphans
+  compose_up_with_awg_recovery
 
   wait_for_app || true
   wait_for_migrate_lock

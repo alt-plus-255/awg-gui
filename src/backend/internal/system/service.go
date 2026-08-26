@@ -84,16 +84,20 @@ func (s *Service) RestartAWG(ctx context.Context, locale string) (int, map[strin
 		}
 	}()
 
-	result := s.Docker.Restart(ctx, s.Stats.ContainerName(), 60*time.Second)
+	result := s.Docker.RestartOrKillStart(ctx, s.Stats.ContainerName(), 60*time.Second)
 	details := map[string]any{
 		"ok":        result.Successful(),
 		"exit_code": result.ExitCode,
 		"stderr":    strings.TrimSpace(result.Stderr),
 	}
 	if !result.Successful() {
+		msg := i18n.T(locale, "api.awg_restart_failed")
+		if stderr := strings.TrimSpace(result.Stderr); stderr != "" {
+			msg = msg + ": " + stderr
+		}
 		return 500, map[string]any{
 			"ok":      false,
-			"message": i18n.T(locale, "api.awg_restart_failed"),
+			"message": msg,
 			"details": details,
 		}
 	}
