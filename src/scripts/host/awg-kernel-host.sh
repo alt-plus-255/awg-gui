@@ -68,6 +68,15 @@ module_loaded() {
   lsmod 2>/dev/null | awk '{print $1}' | grep -qx "${MODULE_NAME}"
 }
 
+module_blacklisted() {
+  # Manual oops workaround often leaves this file; it survives package reinstall.
+  [[ -f /etc/modprobe.d/blacklist-amneziawg.conf ]]
+}
+
+clear_module_blacklist() {
+  rm -f /etc/modprobe.d/blacklist-amneziawg.conf 2>/dev/null || true
+}
+
 package_installed_debian() {
   dpkg -s amneziawg >/dev/null 2>&1 || dpkg -s amneziawg-dkms >/dev/null 2>&1
 }
@@ -105,17 +114,23 @@ awg_datapath() {
 }
 
 cmd_status() {
-  local family loaded pkg path detail
+  local family loaded pkg path detail blacklisted
   family="$(detect_family)"
   loaded=false
   pkg=false
+  blacklisted=false
   module_loaded && loaded=true
   package_installed && pkg=true
+  module_blacklisted && blacklisted=true
   path="$(awg_datapath)"
   detail="os_family=${family}"
+  if [[ "${blacklisted}" == "true" ]]; then
+    detail="${detail};blacklist=1"
+  fi
   printf '{'
   printf '"module_loaded":%s,' "${loaded}"
   printf '"package_installed":%s,' "${pkg}"
+  printf '"module_blacklisted":%s,' "${blacklisted}"
   printf '"awg_datapath":%s,' "$(json_escape "${path}")"
   printf '"os_family":%s,' "$(json_escape "${family}")"
   printf '"detail":%s' "$(json_escape "${detail}")"
@@ -169,11 +184,16 @@ install_rhel() {
 }
 
 load_module() {
+  clear_module_blacklist
   modprobe "${MODULE_NAME}"
+  # Persist across reboot so AWG does not fall back to userspace after kernel update/reboot.
+  mkdir -p /etc/modules-load.d 2>/dev/null || true
+  printf '%s\n' "${MODULE_NAME}" > /etc/modules-load.d/amneziawg.conf 2>/dev/null || true
 }
 
 unload_module() {
   modprobe -r "${MODULE_NAME}" 2>/dev/null || true
+  rm -f /etc/modules-load.d/amneziawg.conf 2>/dev/null || true
 }
 
 # Best-effort host TCP tuning for high-BDP ABR (container sysctls are rejected by runc).

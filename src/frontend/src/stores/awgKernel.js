@@ -9,6 +9,7 @@ export const useAwgKernelStore = defineStore('awgKernel', () => {
 
   const module_loaded = ref(false)
   const package_installed = ref(false)
+  const module_blacklisted = ref(false)
   const awg_datapath = ref('unknown')
   const os_family = ref('unknown')
   const script_present = ref(false)
@@ -27,6 +28,7 @@ export const useAwgKernelStore = defineStore('awgKernel', () => {
     if (!data || typeof data !== 'object') return
     module_loaded.value = !!data.module_loaded
     package_installed.value = !!data.package_installed
+    module_blacklisted.value = !!data.module_blacklisted
     awg_datapath.value = data.awg_datapath || 'unknown'
     os_family.value = data.os_family || 'unknown'
     script_present.value = data.script_present !== false
@@ -106,6 +108,7 @@ export const useAwgKernelStore = defineStore('awgKernel', () => {
     busy,
     module_loaded,
     package_installed,
+    module_blacklisted,
     awg_datapath,
     os_family,
     script_present,

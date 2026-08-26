@@ -655,10 +655,12 @@ main() {
   log "$(t log_running_release)"
   export AWG_GUI_LANG
   [[ "${DEBUG}" -eq 1 ]] && export AWG_GUI_DEBUG=1
-  "${bundle}" "${args[@]}"
-  # Bundle finished: download/extract traps may still run on EXIT; clear leftovers + old images now.
+  local bundle_ec=0
+  "${bundle}" "${args[@]}" || bundle_ec=$?
+  # Always prune unused images / tmp — including after a failed upgrade (disk can hit 99%).
   DOWNLOAD_TMP_DIR=""
   cleanup_after_bundle
+  [[ "${bundle_ec}" -eq 0 ]] || exit "${bundle_ec}"
 }
 
 main "$@"

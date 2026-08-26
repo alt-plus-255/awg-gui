@@ -99,6 +99,7 @@
   "awgKernelError": "Error",
   "awgKernelIdle": "Idle",
   "awgKernelMissingScript": "Host helper script is missing. Re-run the awg-gui installer.",
+  "awgKernelBlacklistWarn": "Host still has blacklist-amneziawg.conf — after reboot the module will not load and AWG falls back to userspace. Re-run Install kernel module (clears blacklist) or remove /etc/modprobe.d/blacklist-amneziawg.conf.",
   "awgKernelStarted": "Kernel module operation started",
   "awgKernelStartError": "Could not start kernel module operation",
   "awgKernelAlreadyRunning": "An install/uninstall is already running",

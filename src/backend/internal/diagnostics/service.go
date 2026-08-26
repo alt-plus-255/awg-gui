@@ -16,6 +16,7 @@ import (
 	"github.com/awggui/backend/internal/docker"
 	"github.com/awggui/backend/internal/i18n"
 	"github.com/awggui/backend/internal/models"
+	"github.com/awggui/backend/internal/panelops"
 	"github.com/awggui/backend/internal/settings"
 	"github.com/awggui/backend/internal/stats"
 	"github.com/awggui/backend/internal/store"
@@ -36,11 +37,12 @@ type Service struct {
 	Settings *settings.Store
 	Configs  *store.Configs
 	Peers    *store.Peers
+	PanelOps *panelops.Client
 	Locale   string
 }
 
-func New(cfg config.Config, db *sql.DB, d *docker.Runtime, st *stats.Service, sys *system.Service, set *settings.Store, configs *store.Configs, peers *store.Peers) *Service {
-	return &Service{Cfg: cfg, DB: db, Docker: d, Stats: st, Sys: sys, Settings: set, Configs: configs, Peers: peers}
+func New(cfg config.Config, db *sql.DB, d *docker.Runtime, st *stats.Service, sys *system.Service, set *settings.Store, configs *store.Configs, peers *store.Peers, ops *panelops.Client) *Service {
+	return &Service{Cfg: cfg, DB: db, Docker: d, Stats: st, Sys: sys, Settings: set, Configs: configs, Peers: peers, PanelOps: ops}
 }
 
 func (s *Service) Status(ctx context.Context, locale string) map[string]any {
@@ -385,6 +387,11 @@ func (s *Service) groupAwgIfaces(ctx context.Context, locale string, configs []m
 	}
 	running := s.Stats.IsContainerRunning(ctx, "")
 	kernelLoaded := running && s.Stats.KernelModuleLoaded(ctx)
+	datapath := "unknown"
+	if running {
+		datapath = s.awgDatapath(ctx)
+	}
+	userspace := datapath == "userspace"
 	for _, c := range targets {
 		up := running && s.Stats.IfaceIsUp(ctx, c.Iface)
 		showOk := false
@@ -427,17 +434,94 @@ func (s *Service) groupAwgIfaces(ctx context.Context, locale string, configs []m
 			}
 		}
 	}
+
+	if running {
+		masqOK := s.hasMasquerade(ctx)
+		masqDetail := "ok"
+		if !masqOK {
+			masqDetail = i18n.T(locale, "system.nat_masquerade_missing")
+		}
+		checks = append(checks, map[string]any{
+			"id": "nat_masquerade", "ok": masqOK,
+			"label": i18n.T(locale, "system.nat_masquerade_label"),
+			"detail": masqDetail,
+		})
+		if !masqOK {
+			hints = append(hints, i18n.T(locale, "system.nat_masquerade_hint"))
+		}
+
+		var missingRoutes []string
+		for _, c := range targets {
+			if !s.Stats.IfaceIsUp(ctx, c.Iface) {
+				continue
+			}
+			if !s.hasIfaceConnectedRoute(ctx, c.Iface) {
+				missingRoutes = append(missingRoutes, c.Iface)
+			}
+		}
+		routesOK := len(missingRoutes) == 0
+		routeDetail := "ok"
+		if !routesOK {
+			routeDetail = i18n.Tf(locale, "system.awg_routes_missing_detail", map[string]string{
+				"ifaces": strings.Join(missingRoutes, ", "),
+			})
+		}
+		checks = append(checks, map[string]any{
+			"id": "awg_connected_routes", "ok": routesOK,
+			"label": i18n.T(locale, "system.awg_routes_label"), "detail": routeDetail,
+		})
+		if !routesOK {
+			hints = append(hints, i18n.T(locale, "system.awg_routes_hint"))
+		}
+
+		datapathOK := datapath != "userspace"
+		datapathDetail := i18n.T(locale, "system.awg_datapath_unknown")
+		switch datapath {
+		case "kernel":
+			datapathDetail = i18n.T(locale, "system.awg_datapath_kernel")
+		case "userspace":
+			datapathDetail = i18n.T(locale, "system.awg_datapath_userspace")
+		}
+		checks = append(checks, map[string]any{
+			"id": "awg_datapath", "ok": datapathOK,
+			"label": i18n.T(locale, "system.awg_datapath_label"),
+			"detail": datapathDetail,
+		})
+		if userspace {
+			if kernelLoaded {
+				hints = append(hints, i18n.T(locale, "system.awg_datapath_userspace_despite_module_hint"))
+			} else {
+				hints = append(hints, i18n.T(locale, "system.awg_datapath_userspace_hint"))
+			}
+		} else if datapath == "unknown" {
+			hints = append(hints, i18n.T(locale, "system.awg_datapath_unknown_hint"))
+		}
+
+		if s.moduleBlacklisted() {
+			checks = append(checks, map[string]any{
+				"id": "awg_module_blacklist", "ok": false,
+				"label": i18n.T(locale, "system.awg_module_blacklisted_label"),
+				"detail": i18n.T(locale, "system.awg_module_blacklisted_detail"),
+			})
+			hints = append(hints, i18n.T(locale, "system.awg_module_blacklisted_hint"))
+		}
+	}
+
 	return finalizeGroup("awg", "AWG ifaces", checks, hints)
 }
 
 func (s *Service) groupResolver(ctx context.Context, locale string, configs []models.AwgConfig) map[string]any {
 	hasServer := false
 	hasResolver := false
+	var resolverIfaces []string
 	for _, c := range configs {
 		if c.Type == "server" {
 			hasServer = true
 			if c.ResolverEnabled {
 				hasResolver = true
+				if c.Enabled {
+					resolverIfaces = append(resolverIfaces, c.Iface)
+				}
 			}
 		}
 	}
@@ -471,6 +555,59 @@ func (s *Service) groupResolver(ctx context.Context, locale string, configs []mo
 	checks = append(checks, map[string]any{
 		"id": "singbox_config", "ok": exists, "label": "sing-box.json", "detail": detail,
 	})
+
+	running := s.Stats.IsContainerRunning(ctx, "")
+	if running && len(resolverIfaces) > 0 {
+		var missingDNS []string
+		for _, iface := range resolverIfaces {
+			if !s.hasDNSRedirect(ctx, iface) {
+				missingDNS = append(missingDNS, iface)
+			}
+		}
+		dnsOK := len(missingDNS) == 0
+		dnsDetail := "ok"
+		if !dnsOK {
+			dnsDetail = i18n.Tf(locale, "system.dns_redirect_missing_detail", map[string]string{
+				"ifaces": strings.Join(missingDNS, ", "),
+			})
+		}
+		checks = append(checks, map[string]any{
+			"id": "dns_redirect", "ok": dnsOK,
+			"label": i18n.T(locale, "system.dns_redirect_label"), "detail": dnsDetail,
+		})
+		if !dnsOK {
+			hints = append(hints, i18n.T(locale, "system.dns_redirect_hint"))
+		}
+
+		datapath := s.awgDatapath(ctx)
+		datapathOK := datapath == "kernel"
+		datapathDetail := i18n.T(locale, "system.awg_datapath_unknown")
+		switch datapath {
+		case "kernel":
+			datapathDetail = i18n.T(locale, "system.awg_datapath_kernel")
+		case "userspace":
+			datapathDetail = i18n.T(locale, "system.awg_datapath_userspace_resolver")
+			datapathOK = false
+		}
+		checks = append(checks, map[string]any{
+			"id": "resolver_datapath", "ok": datapathOK,
+			"label": i18n.T(locale, "system.awg_datapath_label"),
+			"detail": datapathDetail,
+		})
+		if datapath == "userspace" {
+			hints = append(hints, i18n.T(locale, "system.awg_datapath_userspace_resolver_hint"))
+		} else if datapath == "unknown" {
+			hints = append(hints, i18n.T(locale, "system.awg_datapath_unknown_hint"))
+		}
+	}
+
+	for _, c := range configs {
+		if c.Type != "server" || !c.ResolverEnabled || !c.ResolverRejectQuic {
+			continue
+		}
+		hints = append(hints, i18n.Tf(locale, "system.reject_quic_abr_hint", map[string]string{"name": c.Name}))
+	}
+
 	g := finalizeGroup("resolver", i18n.T(locale, "system.group_resolver"), checks, hints)
 	g["details"] = nil
 	return g
@@ -539,6 +676,11 @@ func (s *Service) groupOutbounds(ctx context.Context, locale string, configs []m
 				errStr = i18n.T(locale, "system.no_clash_api_response")
 			}
 			hints = append(hints, i18n.Tf(locale, "system.connection_no_clash_response", map[string]string{"name": conn.Name, "error": errStr}))
+		} else if ms, okn := result["latency_ms"].(int); okn && ms >= 200 {
+			hints = append(hints, i18n.Tf(locale, "system.outbound_high_rtt_hint", map[string]string{
+				"name": conn.Name,
+				"ms":   strconv.Itoa(ms),
+			}))
 		}
 	}
 	return finalizeGroup("outbounds", "Outbounds", checks, hints)
@@ -704,6 +846,66 @@ func (s *Service) pingProbeStatus(ctx context.Context) map[string]any {
 		running = r.Successful()
 	}
 	return map[string]any{"config_bytes": bytes, "outbound_count": outboundCount, "running": running}
+}
+
+var diagIfaceRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,14}$`)
+
+func (s *Service) awgDatapath(ctx context.Context) string {
+	// Prefer real process check over pgrep -f (shell argv false positive). userspace wins if go is running.
+	r := s.Docker.Exec(ctx, s.Stats.ContainerName(), []string{"sh", "-c",
+		`if ps aux 2>/dev/null | grep -q '[a]mneziawg-go '; then echo userspace; elif [ -d /sys/module/amneziawg ] || lsmod 2>/dev/null | awk '{print $1}' | grep -qx amneziawg; then echo kernel; else echo unknown; fi`},
+		8*time.Second, "")
+	v := strings.TrimSpace(r.Stdout)
+	if v == "kernel" || v == "userspace" || v == "unknown" {
+		return v
+	}
+	return "unknown"
+}
+
+func (s *Service) moduleBlacklisted() bool {
+	if s.PanelOps == nil {
+		return false
+	}
+	data, err := s.PanelOps.AWGKernelStatus()
+	if err != nil || data == nil {
+		return false
+	}
+	switch v := data["module_blacklisted"].(type) {
+	case bool:
+		return v
+	case float64:
+		return v != 0
+	case string:
+		return v == "true" || v == "1"
+	default:
+		return false
+	}
+}
+
+func (s *Service) hasMasquerade(ctx context.Context) bool {
+	r := s.Docker.Exec(ctx, s.Stats.ContainerName(), []string{"sh", "-c",
+		`iptables -t nat -S POSTROUTING 2>/dev/null | grep -q ' -j MASQUERADE' && echo yes || echo no`}, 8*time.Second, "")
+	return strings.TrimSpace(r.Stdout) == "yes"
+}
+
+func (s *Service) hasIfaceConnectedRoute(ctx context.Context, iface string) bool {
+	if !diagIfaceRE.MatchString(iface) {
+		return false
+	}
+	// Non-default IPv4 routes via this iface (tunnel subnet / peer AllowedIPs).
+	script := `ip -4 route show dev ` + iface + ` 2>/dev/null | grep -qvE '^default|[[:space:]]default[[:space:]]' && echo yes || echo no`
+	r := s.Docker.Exec(ctx, s.Stats.ContainerName(), []string{"sh", "-c", script}, 8*time.Second, "")
+	return strings.TrimSpace(r.Stdout) == "yes"
+}
+
+func (s *Service) hasDNSRedirect(ctx context.Context, iface string) bool {
+	if !diagIfaceRE.MatchString(iface) {
+		return false
+	}
+	// PostUp installs udp+tcp REDIRECT --dport 53; require at least udp.
+	script := `iptables -t nat -S PREROUTING 2>/dev/null | grep -E -- '-i ` + iface + ` .*--dport 53 .*REDIRECT' | grep -q udp && echo yes || echo no`
+	r := s.Docker.Exec(ctx, s.Stats.ContainerName(), []string{"sh", "-c", script}, 8*time.Second, "")
+	return strings.TrimSpace(r.Stdout) == "yes"
 }
 
 func finalizeGroup(id, title string, checks []map[string]any, hints []string) map[string]any {

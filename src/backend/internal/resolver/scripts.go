@@ -50,7 +50,8 @@ func (s *Scripts) EnsurePingProbeScript() {
 	_, _ = s.Files.WriteExecutable(path, pingProbeScriptBody())
 }
 
-func (s *Scripts) RefreshMarks(ctx context.Context, ifaces []string) {
+// RefreshMarks re-applies resolver-mark.sh per iface. rejectQuic maps iface → Block QUIC flag (0/1).
+func (s *Scripts) RefreshMarks(ctx context.Context, ifaces []string, rejectQuic map[string]bool) {
 	if len(ifaces) == 0 {
 		return
 	}
@@ -60,9 +61,13 @@ func (s *Scripts) RefreshMarks(ctx context.Context, ifaces []string) {
 		if iface == "" {
 			continue
 		}
+		rq := "0"
+		if rejectQuic != nil && rejectQuic[iface] {
+			rq = "1"
+		}
 		parts = append(parts,
 			fmt.Sprintf("sh /config/resolver-unmark.sh %s 2>/dev/null || true", shellQuote(iface)),
-			fmt.Sprintf("sh /config/resolver-mark.sh %s 0 2>/dev/null || true", shellQuote(iface)),
+			fmt.Sprintf("sh /config/resolver-mark.sh %s %s 2>/dev/null || true", shellQuote(iface), rq),
 		)
 	}
 	if len(parts) == 0 {

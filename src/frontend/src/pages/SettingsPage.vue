@@ -282,6 +282,9 @@
               <div v-if="!awgKernel.script_present" class="text-warning text-caption q-mb-md">
                 {{ t('settings.awgKernelMissingScript') }}
               </div>
+              <div v-if="awgKernel.module_blacklisted" class="text-negative text-caption q-mb-md">
+                {{ t('settings.awgKernelBlacklistWarn') }}
+              </div>
               <div class="row q-col-gutter-md q-mb-md">
                 <div class="col-12 col-sm-6 col-md-3">
                   <div class="text-caption text-grey-5">{{ t('settings.awgKernelModule') }}</div>

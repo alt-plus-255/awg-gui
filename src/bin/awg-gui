@@ -18,6 +18,54 @@ EXPECTED_SERVICES=(caddy app db awg docker-proxy panel-ops)
 
 log() { echo "[awg-gui] $*"; }
 err() { echo "[awg-gui] ERROR: $*" >&2; }
+warn() { echo "[awg-gui] WARN: $*" >&2; }
+ok() { echo "[awg-gui] OK: $*"; }
+die() { err "$*"; exit 1; }
+
+# Minimal t() for install-force-container.sh when full install-i18n is unavailable.
+t() {
+  local key="$1"
+  shift
+  case "${key}" in
+    log_preparing_awg_recreate) printf '%s' 'Preparing awggui-awg for recreate (force-stop if needed) ...' ;;
+    log_force_removing_container) printf '%s' "Force-removing stuck container ${1:-} ..." ;;
+    ok_force_removed_container) printf '%s' "Removed container ${1:-}" ;;
+    warn_kill_container_host_pid) printf '%s' "Container ${1:-} did not exit — SIGKILL host PID ${2:-}" ;;
+    warn_restart_docker_stuck) printf '%s' 'Container still stuck — restarting Docker engine (volumes preserved) ...' ;;
+    warn_container_still_stuck) printf '%s' "Could not remove container ${1:-}; a host reboot may be required" ;;
+    warn_exit_event_stuck) printf '%s' "Docker could not kill ${1:-} (no exit event) — restarting Docker engine ..." ;;
+    warn_compose_up_stuck_retry) printf '%s' 'compose up failed stopping a container — recovering and retrying ...' ;;
+    err_awg_container_stuck_reboot) printf '%s' 'Could not remove hung awggui-awg. Reboot the server, then run: awg-gui ensure-up (volumes preserved).' ;;
+    *) printf '%s' "${key}" ;;
+  esac
+}
+
+load_force_container_lib() {
+  local i18n="" force=""
+  if [[ -n "${_AWG_GUI_FORCE_CONTAINER_LOADED:-}" ]]; then
+    return 0
+  fi
+  for i18n in \
+    "${INSTALL_ROOT}/lib/install-i18n.sh" \
+    "${INSTALL_ROOT}/runtime/../lib/install-i18n.sh"; do
+    if [[ -f "${i18n}" ]]; then
+      # shellcheck disable=SC1090
+      source "${i18n}"
+      break
+    fi
+  done
+  for force in \
+    "${INSTALL_ROOT}/lib/install-force-container.sh" \
+    "${INSTALL_ROOT}/../lib/install-force-container.sh"; do
+    if [[ -f "${force}" ]]; then
+      # shellcheck disable=SC1090
+      source "${force}"
+      return 0
+    fi
+  done
+  err "install-force-container.sh not found under ${INSTALL_ROOT}"
+  return 1
+}
 
 # Quote values that break `source .env` (e.g. ALLOWED_IPS with "0.0.0.0/0, ::/0").
 env_quote_value() {
@@ -231,6 +279,34 @@ services_running() {
   return ${missing}
 }
 
+# True when Compose left a renamed orphan (e.g. 665dfc6e29ed_awggui-awg) or exact awg is missing
+# while heal is needed; also Created leftovers for app/caddy/panel-ops.
+awg_stack_needs_heal() {
+  local orphan=0
+  if docker ps -a --format '{{.Names}}' 2>/dev/null | grep -qE '^[0-9a-f]+_awggui-'; then
+    orphan=1
+  fi
+  local awg_running
+  awg_running="$(docker inspect -f '{{.State.Running}}' awggui-awg 2>/dev/null || echo false)"
+  if [[ "${awg_running}" != "true" ]]; then
+    return 0
+  fi
+  if [[ "${orphan}" -eq 1 ]]; then
+    return 0
+  fi
+  local name
+  while read -r name; do
+    [[ -n "${name}" ]] || continue
+    case "${name}" in
+      awggui-db|awggui-docker-proxy) continue ;;
+    esac
+    if [[ "$(docker inspect -f '{{.State.Status}}' "${name}" 2>/dev/null || true)" == "created" ]]; then
+      return 0
+    fi
+  done < <(docker ps -a --format '{{.Names}}' 2>/dev/null | grep -E '^awggui-' || true)
+  return 1
+}
+
 cmd_help() {
   cat <<'EOF'
 awg-gui — AmneziaWG GUI control
@@ -326,24 +402,34 @@ cmd_ensure_up() {
     return 1
   fi
 
-  if services_running; then
+  if services_running && ! awg_stack_needs_heal; then
     log "All services already running"
     return 0
   fi
 
-  log "Starting stack..."
-  local out
-  if ! out="$(compose up -d 2>&1)"; then
-    err "compose up failed"
-    echo "${out}" >&2
-    send_failure_webhook "compose_up_failed" "docker compose up -d failed" \
-      "$(jq -n --arg s "${out}" '{stderr: $s}' 2>/dev/null || echo '{}')"
+  log "Starting stack (with AWG hang recovery)..."
+  if ! load_force_container_lib; then
+    send_failure_webhook "compose_up_failed" "force-container lib missing" '{}'
     return 1
   fi
 
+  local out ec=0
+  set +e
+  out="$(compose_up_with_awg_recovery 2>&1)"
+  ec=$?
+  set -e
+  if [[ "${ec}" -ne 0 ]]; then
+    err "compose up failed"
+    echo "${out}" >&2
+    send_failure_webhook "compose_up_failed" "docker compose up -d failed (with recovery)" \
+      "$(jq -n --arg s "${out}" '{stderr: $s}' 2>/dev/null || echo '{}')"
+    return 1
+  fi
+  [[ -n "${out}" ]] && echo "${out}"
+
   sleep 3
-  if ! services_running; then
-    send_failure_webhook "service_unhealthy" "Services still not running after compose up" \
+  if ! services_running || awg_stack_needs_heal; then
+    send_failure_webhook "service_unhealthy" "Services still not healthy after compose up" \
       '{"services":["caddy","app","db","awg","docker-proxy","panel-ops"]}'
     return 1
   fi
@@ -357,13 +443,26 @@ cmd_restart() {
   local target="${1:-}"
   case "${target}" in
     awg)
-      compose restart awg
+      if load_force_container_lib; then
+        prepare_awg_containers_for_recreate || true
+        if _awg_iface_containers_present 2>/dev/null; then
+          err "$(t err_awg_container_stuck_reboot)"
+          return 1
+        fi
+        compose up -d --remove-orphans awg
+      else
+        compose restart awg
+      fi
       ;;
     panel)
       compose restart caddy app
       ;;
     all)
-      compose restart
+      if load_force_container_lib; then
+        compose_up_with_awg_recovery
+      else
+        compose restart
+      fi
       ;;
     *)
       err "Usage: awg-gui restart awg|panel|all"

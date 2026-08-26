@@ -87,14 +87,14 @@ func New(cfg config.Config, db *sql.DB) *App {
 	cpsCtrl := &api.CPSController{}
 
 	statsSvc := stats.New(cfg, dockerRT, configs, peers, clients, handshakes)
+	ops := panelops.New(cfg)
 	hostMetrics := system.NewHostMetrics(dockerRT)
 	sysSvc := system.New(cfg, dockerRT, statsSvc, hostMetrics, cacheStore)
-	diagSvc := diagnostics.New(cfg, db, dockerRT, statsSvc, sysSvc, settingsStore, configs, peers)
+	diagSvc := diagnostics.New(cfg, db, dockerRT, statsSvc, sysSvc, settingsStore, configs, peers, ops)
 	tokens := &ws.TokenStore{Cache: cacheStore}
 	broadcaster := stats.NewBroadcaster(statsSvc, hostMetrics)
 	wsServer := ws.NewServer(broadcaster, tokens)
 
-	ops := panelops.New(cfg)
 	sslSvc := ssl.New(cfg, awgSvc, dockerRT, ops, settingsStore)
 	updSvc := update.New(cfg, ops)
 	tgSvc := telegram.New(cfg, settingsStore, cacheStore, awgSvc, resSvc, statsSvc, hostMetrics, vpnURI, configs, peers, clients)

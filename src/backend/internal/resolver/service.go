@@ -273,7 +273,7 @@ func (s *Service) Apply(ctx context.Context, opts ApplyOpts) error {
 		_, _ = s.Files.WriteIfChanged(s.Paths.ResolverIfacesPath(), strings.Join(ifaces, "\n")+"\n")
 		_, _ = s.Scripts.EnsureResolverMarkScripts()
 		if len(configs) > 0 {
-			s.Scripts.RefreshMarks(ctx, ifaces)
+			s.Scripts.RefreshMarks(ctx, ifaces, ifaceReject)
 		}
 		now := time.Now()
 		for _, c := range configs {

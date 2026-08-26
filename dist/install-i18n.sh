@@ -279,7 +279,9 @@ _awg_gui_msg_en() {
     warn_kill_container_host_pid) printf '%s' 'Container %s did not exit — sending SIGKILL to host PID %s' ;;
     warn_restart_docker_stuck) printf '%s' 'Container still stuck — restarting Docker engine (volumes preserved) ...' ;;
     warn_container_still_stuck) printf '%s' 'Could not remove container %s; a host reboot may be required' ;;
+    warn_exit_event_stuck) printf '%s' 'Docker could not kill %s (no exit event) — restarting Docker engine ...' ;;
     warn_compose_up_stuck_retry) printf '%s' 'compose up failed stopping a container — recovering and retrying ...' ;;
+    err_awg_container_stuck_reboot) printf '%s' 'Could not remove hung awggui-awg (Docker exit-event wedge). Reboot the server, then run: cd /opt/awg-gui/runtime && docker compose up -d  (or: awg-gui ensure-up). Volumes are preserved.' ;;
     ok_repair_complete) printf '%s' 'Install repair complete' ;;
     ok_upgrade_complete) printf '%s' 'Upgrade complete' ;;
     ok_install_complete) printf '%s' 'Installation complete' ;;
@@ -482,7 +484,9 @@ _awg_gui_msg_ru() {
     warn_kill_container_host_pid) printf '%s' 'Контейнер %s не завершился — SIGKILL процессу на хосте PID %s' ;;
     warn_restart_docker_stuck) printf '%s' 'Контейнер всё ещё завис — перезапуск Docker (volumes сохраняются) ...' ;;
     warn_container_still_stuck) printf '%s' 'Не удалось удалить контейнер %s; может потребоваться перезагрузка сервера' ;;
+    warn_exit_event_stuck) printf '%s' 'Docker не смог убить %s (нет exit event) — перезапуск Docker ...' ;;
     warn_compose_up_stuck_retry) printf '%s' 'compose up не смог остановить контейнер — восстановление и повтор ...' ;;
+    err_awg_container_stuck_reboot) printf '%s' 'Не удалось удалить зависший awggui-awg (wedge Docker exit-event). Перезагрузите сервер, затем: cd /opt/awg-gui/runtime && docker compose up -d  (или: awg-gui ensure-up). Volumes сохраняются.' ;;
     ok_repair_complete) printf '%s' 'Восстановление установки завершено' ;;
     ok_upgrade_complete) printf '%s' 'Обновление завершено' ;;
     ok_install_complete) printf '%s' 'Установка завершена' ;;

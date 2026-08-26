@@ -99,6 +99,7 @@
   "awgKernelError": "Ошибка",
   "awgKernelIdle": "Простой",
   "awgKernelMissingScript": "Нет host-скрипта. Переустановите awg-gui.",
+  "awgKernelBlacklistWarn": "На хосте остался blacklist-amneziawg.conf — после reboot модуль не загрузится и AWG уйдёт в userspace. Снова нажмите «Установить kernel-модуль» (снимет blacklist) или удалите /etc/modprobe.d/blacklist-amneziawg.conf.",
   "awgKernelStarted": "Операция с kernel-модулем запущена",
   "awgKernelStartError": "Не удалось запустить операцию",
   "awgKernelAlreadyRunning": "Установка/удаление уже выполняется",

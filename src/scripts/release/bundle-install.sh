@@ -404,9 +404,10 @@ on_install_exit() {
   local ec=$?
   if [[ "${UPGRADE_MODE}" -eq 1 && "${ec}" -ne 0 ]]; then
     finalize_running_update_state "failed" "Update failed with exit code ${ec}."
-    # Free disk for a retry: drop download/extract leftovers and loaded archives.
+    # Free disk for a retry: drop download/extract leftovers, loaded archives, and unused images.
     cleanup_tmp_install_artifacts || true
     cleanup_loaded_image_archives || true
+    cleanup_unused_project_images || true
   fi
 }
 
@@ -692,7 +693,7 @@ load_images() {
   log "$(t log_loading_images "${tar_file}")"
   docker load -i "${tar_file}"
   ok "$(t ok_images_loaded)"
-  cleanup_loaded_image_archives
+  # Keep tar until compose up succeeds so a recreate failure can retry without re-download.
 }
 
 seed_host_ssl_files() {

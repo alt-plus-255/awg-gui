@@ -72,28 +72,50 @@ func AWGKernelStatus() map[string]any {
 			detail = strings.TrimSpace(stdout)
 		}
 		return map[string]any{
-			"ok":                true,
-			"status":            200,
-			"module_loaded":     false,
-			"package_installed": false,
-			"awg_datapath":      "unknown",
-			"os_family":         "unknown",
-			"detail":            detail,
-			"script_present":    false,
-			"op":                opBlock,
+			"ok":                 true,
+			"status":             200,
+			"module_loaded":      false,
+			"package_installed":  false,
+			"module_blacklisted": false,
+			"awg_datapath":       "unknown",
+			"os_family":          "unknown",
+			"detail":             detail,
+			"script_present":     false,
+			"op":                 opBlock,
+		}
+	}
+
+	datapath := stringOr(host["awg_datapath"], "unknown")
+	moduleLoaded := AsBool(host["module_loaded"])
+	moduleBlacklisted := AsBool(host["module_blacklisted"])
+	// Don't keep a stale "using kernel datapath" success after live status shows userspace.
+	if !running && AsString(opBlock["status"]) == "ok" {
+		msg := AsString(opBlock["message"])
+		if datapath == "userspace" || !moduleLoaded {
+			if strings.Contains(msg, "kernel datapath") || strings.Contains(msg, "using kernel") {
+				opBlock["message"] = "Package installed, but AWG datapath is userspace (module not loaded or amneziawg-go still running). Run: modprobe amneziawg && docker restart awggui-awg"
+				opBlock["status"] = "error"
+			}
+		}
+	}
+	if moduleBlacklisted && !running {
+		opBlock["message"] = "blacklist-amneziawg.conf present — module will not load after reboot (userspace fallback). Remove /etc/modprobe.d/blacklist-amneziawg.conf or re-run Install kernel module."
+		if AsString(opBlock["status"]) == "ok" || AsString(opBlock["status"]) == "idle" {
+			opBlock["status"] = "error"
 		}
 	}
 
 	return map[string]any{
-		"ok":                true,
-		"status":            200,
-		"module_loaded":     AsBool(host["module_loaded"]),
-		"package_installed": AsBool(host["package_installed"]),
-		"awg_datapath":      stringOr(host["awg_datapath"], "unknown"),
-		"os_family":         stringOr(host["os_family"], "unknown"),
-		"detail":            AsString(host["detail"]),
-		"script_present":    true,
-		"op":                opBlock,
+		"ok":                 true,
+		"status":             200,
+		"module_loaded":      moduleLoaded,
+		"package_installed":  AsBool(host["package_installed"]),
+		"module_blacklisted": moduleBlacklisted,
+		"awg_datapath":       datapath,
+		"os_family":          stringOr(host["os_family"], "unknown"),
+		"detail":             AsString(host["detail"]),
+		"script_present":     true,
+		"op":                 opBlock,
 	}
 }
 
