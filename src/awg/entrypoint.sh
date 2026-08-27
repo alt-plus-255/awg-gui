@@ -6,16 +6,21 @@ mkdir -p "${CONFIG_DIR}" "${CONFIG_DIR}/rulesets"
 mkdir -p /run
 
 declare -A LAST_MTIMES
-# Per-iface: kernel awg-quick failed/timed out — skip kernel briefly (oops on setconf can wedge
-# the netns if retried every few seconds). Cleared after KERNEL_FAILED_COOLDOWN for another try.
+# Per-iface: kernel awg-quick failed/timed out — skip kernel (oops on setconf can wedge
+# the netns if retried every few seconds). Backoff grows with repeated failures.
 declare -A KERNEL_FAILED
 declare -A KERNEL_FAILED_AT
+declare -A KERNEL_FAILED_COUNT
 LAST_SB_MTIME=0
 # Re-check userspace→kernel migration periodically (seconds since epoch of last check).
 LAST_KERNEL_MIGRATE_CHECK=0
+# Track whether amneziawg module was visible on last check (0/1).
+LAST_KERNEL_MODULE_PRESENT=0
 AWG_QUICK_TIMEOUT="${AWG_QUICK_TIMEOUT:-20}"
 AWG_SETCONF_TIMEOUT="${AWG_SETCONF_TIMEOUT:-15}"
-KERNEL_FAILED_COOLDOWN="${KERNEL_FAILED_COOLDOWN:-300}"
+KERNEL_FAILED_COOLDOWN_BASE="${KERNEL_FAILED_COOLDOWN_BASE:-3600}"
+KERNEL_FAILED_COOLDOWN_MAX="${KERNEL_FAILED_COOLDOWN_MAX:-86400}"
+KERNEL_BAD_FILE=/run/awg-kernel-bad
 
 kernel_module_loaded() {
   # Host kernel module is visible in the container via sysfs/lsmod.
@@ -23,14 +28,59 @@ kernel_module_loaded() {
   lsmod 2>/dev/null | awk '{print $1}' | grep -qx amneziawg
 }
 
+kernel_module_version() {
+  modinfo amneziawg 2>/dev/null | awk -F':[[:space:]]+' '/^version:/ {print $2; exit}'
+}
+
+kernel_failed_cooldown_secs() {
+  local IFACE="$1"
+  local count="${KERNEL_FAILED_COUNT[$IFACE]:-1}"
+  local secs="${KERNEL_FAILED_COOLDOWN_BASE}"
+  local i
+  count=$((count))
+  (( count < 1 )) && count=1
+  for (( i = 1; i < count; i++ )); do
+    secs=$(( secs * 2 ))
+    if (( secs >= KERNEL_FAILED_COOLDOWN_MAX )); then
+      secs="${KERNEL_FAILED_COOLDOWN_MAX}"
+      break
+    fi
+  done
+  echo "${secs}"
+}
+
+write_kernel_bad_marker() {
+  local reason="$1"
+  local ver failed_at
+  ver="$(kernel_module_version 2>/dev/null || echo unknown)"
+  failed_at="$(date +%s)"
+  cat >"${KERNEL_BAD_FILE}" <<EOF
+reason=${reason}
+module_version=${ver}
+failed_at=${failed_at}
+EOF
+}
+
+clear_kernel_bad_marker() {
+  rm -f "${KERNEL_BAD_FILE}"
+}
+
+clear_kernel_failed() {
+  local IFACE="$1"
+  unset 'KERNEL_FAILED[$IFACE]'
+  unset 'KERNEL_FAILED_AT[$IFACE]'
+  unset 'KERNEL_FAILED_COUNT[$IFACE]'
+}
+
 kernel_failed_active() {
   local IFACE="$1"
-  local now failed_at
+  local now failed_at cooldown
   [[ "${KERNEL_FAILED[$IFACE]:-0}" == "1" ]] || return 1
   failed_at="${KERNEL_FAILED_AT[$IFACE]:-0}"
   now="$(date +%s)"
-  if (( now - failed_at >= KERNEL_FAILED_COOLDOWN )); then
-    echo "[awg] ${IFACE}: KERNEL_FAILED cooldown (${KERNEL_FAILED_COOLDOWN}s) elapsed — will retry kernel path"
+  cooldown="$(kernel_failed_cooldown_secs "${IFACE}")"
+  if (( now - failed_at >= cooldown )); then
+    echo "[awg] ${IFACE}: KERNEL_FAILED backoff (${cooldown}s) elapsed — will retry kernel path"
     unset 'KERNEL_FAILED[$IFACE]'
     unset 'KERNEL_FAILED_AT[$IFACE]'
     return 1
@@ -40,8 +90,14 @@ kernel_failed_active() {
 
 mark_kernel_failed() {
   local IFACE="$1"
+  local reason="${2:-setconf_timeout}"
   KERNEL_FAILED[$IFACE]=1
   KERNEL_FAILED_AT[$IFACE]="$(date +%s)"
+  KERNEL_FAILED_COUNT[$IFACE]=$(( ${KERNEL_FAILED_COUNT[$IFACE]:-0} + 1 ))
+  write_kernel_bad_marker "${reason}"
+  local cooldown
+  cooldown="$(kernel_failed_cooldown_secs "${IFACE}")"
+  echo "[awg] ${IFACE}: kernel path marked failed — staying on userspace; next kernel retry in ${cooldown}s"
 }
 
 iface_userspace_running() {
@@ -236,8 +292,8 @@ apply_config() {
   if [[ "${want_kernel}" -eq 1 ]]; then
     if awg_quick_up "${CONF}"; then
       echo "[awg] ${IFACE} is up via awg-quick (kernel)"
-      unset 'KERNEL_FAILED[$IFACE]'
-      unset 'KERNEL_FAILED_AT[$IFACE]'
+      clear_kernel_failed "${IFACE}"
+      clear_kernel_bad_marker
       return 0
     fi
     echo "[awg] WARN: amneziawg module loaded but awg-quick failed/timed out for ${IFACE}; retrying once..."
@@ -245,15 +301,17 @@ apply_config() {
     sleep 2
     if awg_quick_up "${CONF}"; then
       echo "[awg] ${IFACE} is up via awg-quick (kernel, retry)"
-      unset 'KERNEL_FAILED[$IFACE]'
-      unset 'KERNEL_FAILED_AT[$IFACE]'
+      clear_kernel_failed "${IFACE}"
+      clear_kernel_bad_marker
       return 0
     fi
-    echo "[awg] ERROR: kernel path failed for ${IFACE} — falling back to userspace (streaming will be slower); retry kernel after ${KERNEL_FAILED_COOLDOWN}s"
-    mark_kernel_failed "${IFACE}"
+    echo "[awg] ERROR: kernel path failed for ${IFACE} — falling back to userspace (check dmesg for amneziawg oops)"
+    mark_kernel_failed "${IFACE}" "setconf_timeout"
     cleanup_iface "${IFACE}"
   elif [[ "${skip_kernel}" -eq 1 ]]; then
-    echo "[awg] ${IFACE}: kernel path recently failed — userspace amneziawg-go (cooldown ${KERNEL_FAILED_COOLDOWN}s)"
+    local cooldown
+    cooldown="$(kernel_failed_cooldown_secs "${IFACE}")"
+    echo "[awg] ${IFACE}: kernel path recently failed — userspace amneziawg-go (retry kernel after ${cooldown}s)"
   else
     echo "[awg] awg-quick skipped for ${IFACE} (no kernel module) — userspace amneziawg-go"
   fi
@@ -264,14 +322,27 @@ apply_config() {
 maybe_migrate_userspace_to_kernel() {
   # When the host installs amneziawg after AWG already started on userspace,
   # migrate without waiting for a config file mtime change.
-  local now
+  local now module_present=0
   now="$(date +%s)"
   if (( now - LAST_KERNEL_MIGRATE_CHECK < 15 )); then
     return 0
   fi
   LAST_KERNEL_MIGRATE_CHECK="${now}"
 
-  if ! kernel_module_loaded; then
+  if kernel_module_loaded; then
+    module_present=1
+  fi
+
+  if (( module_present == 1 && LAST_KERNEL_MODULE_PRESENT == 0 )); then
+    echo "[awg] Kernel module appeared — clearing kernel-failed state and preferring awg-quick"
+    clear_kernel_bad_marker
+    KERNEL_FAILED=()
+    KERNEL_FAILED_AT=()
+    KERNEL_FAILED_COUNT=()
+  fi
+  LAST_KERNEL_MODULE_PRESENT="${module_present}"
+
+  if (( module_present == 0 )); then
     return 0
   fi
 
@@ -280,7 +351,6 @@ maybe_migrate_userspace_to_kernel() {
   for conf in "${CONFIG_DIR}"/awg*.conf; do
     local IFACE
     IFACE="$(basename "${conf}" .conf)"
-    # Clear expired KERNEL_FAILED so migration can run after cooldown.
     if kernel_failed_active "${IFACE}"; then
       continue
     fi
@@ -349,8 +419,10 @@ sync_singbox() {
 }
 
 if kernel_module_loaded; then
+  LAST_KERNEL_MODULE_PRESENT=1
   echo "[awg] Host kernel module amneziawg is loaded — preferring awg-quick (timeout ${AWG_QUICK_TIMEOUT}s)"
 else
+  LAST_KERNEL_MODULE_PRESENT=0
   echo "[awg] No amneziawg kernel module — userspace fallback available"
 fi
 

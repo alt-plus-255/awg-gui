@@ -307,8 +307,10 @@ cmd_install() {
   force_awg_kernel_datapath
   if module_loaded && ! docker exec "${AWG_CONTAINER}" sh -c 'ps aux 2>/dev/null | grep -q "[a]mneziawg-go "' 2>/dev/null; then
     write_state "ok" "AmneziaWG kernel module installed; AWG using kernel datapath"
+  elif module_loaded; then
+    write_state "error" "Kernel module loaded but AWG still on userspace (awg-quick/setconf failed — check dmesg for amneziawg oops). AWG will retry kernel after backoff or use stable userspace."
   else
-    write_state "ok" "AmneziaWG kernel module installed; verify AWG datapath in Settings (may need container restart)"
+    write_state "ok" "AmneziaWG kernel module installed; module not loaded yet — reboot or modprobe amneziawg"
   fi
   echo "AmneziaWG kernel module installed"
 }

@@ -272,7 +272,10 @@ install_awg_kernel_module() {
 
   local kernel_status=""
   kernel_status="$(/etc/awg-gui/awg-kernel-host.sh status 2>/dev/null || true)"
-  if echo "${kernel_status}" | grep -qE '"package_installed":true|"module_loaded":true'; then
+  # Skip only when package/module present and not blacklisted — blacklist blocks load after reboot
+  # and load_module clears it; "already installed" must not leave blacklist in place.
+  if echo "${kernel_status}" | grep -qE '"package_installed":true|"module_loaded":true' \
+    && ! echo "${kernel_status}" | grep -qE '"module_blacklisted":true'; then
     ok "$(t ok_kernel_already)"
     env_set "AWG_KERNEL_WANTED" "1" "${ENV_FILE}" 2>/dev/null || true
     return 0

@@ -482,28 +482,51 @@ func (s *Service) groupAwgIfaces(ctx context.Context, locale string, configs []m
 		case "userspace":
 			datapathDetail = i18n.T(locale, "system.awg_datapath_userspace")
 		}
+		blacklisted := s.moduleBlacklisted()
+		kernelBroken := running && s.kernelPathBroken(ctx)
+		if userspace {
+			switch {
+			case blacklisted:
+				datapathOK = true
+				datapathDetail = i18n.T(locale, "system.awg_datapath_userspace_blacklisted")
+			case kernelBroken:
+				datapathOK = true
+				datapathDetail = i18n.T(locale, "system.awg_datapath_userspace_kernel_broken")
+			case !kernelLoaded:
+				datapathOK = true
+				datapathDetail = i18n.T(locale, "system.awg_datapath_userspace")
+			default:
+				datapathOK = false
+			}
+		}
 		checks = append(checks, map[string]any{
 			"id": "awg_datapath", "ok": datapathOK,
 			"label": i18n.T(locale, "system.awg_datapath_label"),
 			"detail": datapathDetail,
 		})
 		if userspace {
-			if kernelLoaded {
-				hints = append(hints, i18n.T(locale, "system.awg_datapath_userspace_despite_module_hint"))
-			} else {
+			switch {
+			case blacklisted:
+				hints = append(hints, i18n.T(locale, "system.awg_datapath_userspace_blacklisted_hint"))
+			case kernelBroken:
+				hints = append(hints, i18n.T(locale, "system.awg_datapath_userspace_kernel_broken_hint"))
+			case kernelLoaded:
+				hints = append(hints, i18n.T(locale, "system.awg_datapath_userspace_migrate_pending_hint"))
+			default:
 				hints = append(hints, i18n.T(locale, "system.awg_datapath_userspace_hint"))
 			}
 		} else if datapath == "unknown" {
 			hints = append(hints, i18n.T(locale, "system.awg_datapath_unknown_hint"))
 		}
 
-		if s.moduleBlacklisted() {
+		if blacklisted {
+			// Informational only — userspace with host blacklist is intentional until DKMS is fixed.
+			// Datapath check already adds system.awg_datapath_userspace_blacklisted_hint.
 			checks = append(checks, map[string]any{
-				"id": "awg_module_blacklist", "ok": false,
+				"id": "awg_module_blacklist", "ok": true,
 				"label": i18n.T(locale, "system.awg_module_blacklisted_label"),
 				"detail": i18n.T(locale, "system.awg_module_blacklisted_detail"),
 			})
-			hints = append(hints, i18n.T(locale, "system.awg_module_blacklisted_hint"))
 		}
 	}
 
@@ -580,6 +603,8 @@ func (s *Service) groupResolver(ctx context.Context, locale string, configs []mo
 		}
 
 		datapath := s.awgDatapath(ctx)
+		blacklisted := s.moduleBlacklisted()
+		kernelBroken := s.kernelPathBroken(ctx)
 		datapathOK := datapath == "kernel"
 		datapathDetail := i18n.T(locale, "system.awg_datapath_unknown")
 		switch datapath {
@@ -587,7 +612,19 @@ func (s *Service) groupResolver(ctx context.Context, locale string, configs []mo
 			datapathDetail = i18n.T(locale, "system.awg_datapath_kernel")
 		case "userspace":
 			datapathDetail = i18n.T(locale, "system.awg_datapath_userspace_resolver")
-			datapathOK = false
+			if dnsOK {
+				datapathOK = true
+				switch {
+				case blacklisted:
+					datapathDetail = i18n.T(locale, "system.awg_datapath_userspace_blacklisted")
+				case kernelBroken:
+					datapathDetail = i18n.T(locale, "system.awg_datapath_userspace_kernel_broken")
+				default:
+					datapathDetail = i18n.T(locale, "system.awg_datapath_userspace_resolver_ok")
+				}
+			} else {
+				datapathOK = false
+			}
 		}
 		checks = append(checks, map[string]any{
 			"id": "resolver_datapath", "ok": datapathOK,
@@ -595,7 +632,16 @@ func (s *Service) groupResolver(ctx context.Context, locale string, configs []mo
 			"detail": datapathDetail,
 		})
 		if datapath == "userspace" {
-			hints = append(hints, i18n.T(locale, "system.awg_datapath_userspace_resolver_hint"))
+			switch {
+			case !dnsOK:
+				// dns_redirect check already hints
+			case blacklisted:
+				hints = append(hints, i18n.T(locale, "system.awg_datapath_userspace_blacklisted_hint"))
+			case kernelBroken:
+				hints = append(hints, i18n.T(locale, "system.awg_datapath_userspace_kernel_broken_hint"))
+			default:
+				hints = append(hints, i18n.T(locale, "system.awg_datapath_userspace_resolver_ok_hint"))
+			}
 		} else if datapath == "unknown" {
 			hints = append(hints, i18n.T(locale, "system.awg_datapath_unknown_hint"))
 		}
@@ -860,6 +906,12 @@ func (s *Service) awgDatapath(ctx context.Context) string {
 		return v
 	}
 	return "unknown"
+}
+
+func (s *Service) kernelPathBroken(ctx context.Context) bool {
+	r := s.Docker.Exec(ctx, s.Stats.ContainerName(), []string{"sh", "-c",
+		`test -f /run/awg-kernel-bad && echo yes || echo no`}, 5*time.Second, "")
+	return strings.TrimSpace(r.Stdout) == "yes"
 }
 
 func (s *Service) moduleBlacklisted() bool {
