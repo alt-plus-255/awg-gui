@@ -215,12 +215,41 @@ install_awg_kernel_module() {
 
   local kernel_status=""
   kernel_status="$(/etc/awg-gui/awg-kernel-host.sh status 2>/dev/null || true)"
-  # Skip only when package/module present and not blacklisted — blacklist blocks load after reboot
-  # and load_module clears it; "already installed" must not leave blacklist in place.
-  if echo "${kernel_status}" | grep -qE '"package_installed":true|"module_loaded":true' \
-    && ! echo "${kernel_status}" | grep -qE '"module_blacklisted":true'; then
+
+  local pkg_installed=0 mod_loaded=0 blacklisted=0
+  if echo "${kernel_status}" | grep -qE '"package_installed":true'; then
+    pkg_installed=1
+  fi
+  if echo "${kernel_status}" | grep -qE '"module_loaded":true'; then
+    mod_loaded=1
+  fi
+  if echo "${kernel_status}" | grep -qE '"module_blacklisted":true'; then
+    blacklisted=1
+  fi
+  # Fallback if status JSON missing (helper error) — still skip prompt when module/package on host.
+  if [[ -z "${kernel_status}" ]]; then
+    lsmod 2>/dev/null | awk '{print $1}' | grep -qx amneziawg && mod_loaded=1
+    if dpkg -s amneziawg >/dev/null 2>&1 || dpkg -s amneziawg-dkms >/dev/null 2>&1; then
+      pkg_installed=1
+    fi
+    if rpm -q amneziawg-dkms >/dev/null 2>&1 || rpm -q amneziawg >/dev/null 2>&1; then
+      pkg_installed=1
+    fi
+    [[ -f /etc/modprobe.d/blacklist-amneziawg.conf ]] && blacklisted=1
+  fi
+
+  if [[ "${mod_loaded}" -eq 1 ]]; then
     ok "$(t ok_kernel_already)"
     env_set "AWG_KERNEL_WANTED" "1" "${ENV_FILE}" 2>/dev/null || true
+    return 0
+  fi
+  if [[ "${pkg_installed}" -eq 1 ]]; then
+    ok "$(t ok_kernel_already)"
+    if [[ "${blacklisted}" -eq 1 ]]; then
+      env_set "AWG_KERNEL_WANTED" "0" "${ENV_FILE}" 2>/dev/null || true
+    else
+      env_set "AWG_KERNEL_WANTED" "1" "${ENV_FILE}" 2>/dev/null || true
+    fi
     return 0
   fi
 
