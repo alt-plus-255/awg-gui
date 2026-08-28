@@ -23,6 +23,7 @@ type Lists struct {
 	Files  FileHelper
 	Merged *Merged
 	HTTP   *http.Client
+	Svc    *Service
 }
 
 func (l *Lists) client() *http.Client {
@@ -222,8 +223,13 @@ func (l *Lists) ListsTableRows(ctx context.Context) []map[string]any {
 }
 
 func (l *Lists) SettingsPayload(ctx context.Context) map[string]any {
+	bootstrap := DefaultBootstrapDNS
+	if l.Svc != nil {
+		bootstrap = l.Svc.BootstrapDNS(ctx)
+	}
 	return map[string]any{
 		"sync_interval_minutes": l.SyncIntervalMinutes(ctx),
+		"bootstrap_dns":         bootstrap,
 		"last_sync_at":          l.LastSyncAt(ctx),
 		"needs_initial_sync":    l.NeedsInitialSync(ctx),
 		"lists":                 l.ListsTableRows(ctx),

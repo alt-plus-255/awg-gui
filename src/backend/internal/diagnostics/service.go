@@ -602,6 +602,8 @@ func (s *Service) groupResolver(ctx context.Context, locale string, configs []mo
 			hints = append(hints, i18n.T(locale, "system.dns_redirect_hint"))
 		}
 
+		s.appendResolverSingboxChecks(ctx, locale, configs, &checks, &hints)
+
 		datapath := s.awgDatapath(ctx)
 		blacklisted := s.moduleBlacklisted()
 		kernelBroken := s.kernelPathBroken(ctx)

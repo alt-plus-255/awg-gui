@@ -14,7 +14,7 @@
       </div>
 
       <q-card class="q-pa-md q-mb-md status-card" flat bordered>
-        <div class="text-subtitle2 q-mb-sm">{{ t('resolver.syncInterval') }}</div>
+        <div class="text-subtitle2 q-mb-sm">{{ t('resolver.globalSettings') }}</div>
         <div class="row q-col-gutter-md items-end">
           <div class="col-12 col-sm-4 col-md-3">
             <q-input
@@ -29,8 +29,18 @@
               dense
             />
           </div>
+          <div class="col-12 col-sm-4 col-md-3">
+            <q-input
+              v-model="bootstrapDns"
+              :label="t('resolver.bootstrapDns')"
+              :hint="t('resolver.bootstrapDnsHint')"
+              filled
+              dense
+              placeholder="1.1.1.1"
+            />
+          </div>
           <div class="col-12 col-sm-auto">
-            <q-btn color="primary" :label="t('resolver.saveInterval')" :loading="savingInterval" @click="saveInterval" />
+            <q-btn color="primary" :label="t('resolver.saveSettings')" :loading="savingSettings" @click="saveSettings" />
           </div>
           <div class="col-12 col-sm">
             <div class="text-caption text-grey-5">
@@ -312,11 +322,12 @@ const $q = useQuasar()
 const mobileDialog = useMobileDialog()
 const { ensureListsReady } = useResolverListsBootstrap()
 const loading = ref(true)
-const savingInterval = ref(false)
+const savingSettings = ref(false)
 const syncingAll = ref(false)
 const syncingTag = ref(null)
 const deletingId = ref(null)
 const intervalMinutes = ref(360)
+const bootstrapDns = ref('1.1.1.1')
 const lastSyncAt = ref(null)
 const lists = ref([])
 const modalOpen = ref(false)
@@ -357,6 +368,7 @@ function formatSize (bytes) {
 
 function applyPayload (data) {
   intervalMinutes.value = data.sync_interval_minutes ?? 360
+  bootstrapDns.value = data.bootstrap_dns || '1.1.1.1'
   lastSyncAt.value = data.last_sync_at || null
   lists.value = data.lists || []
 }
@@ -377,21 +389,23 @@ async function load () {
   }
 }
 
-async function saveInterval () {
-  savingInterval.value = true
+async function saveSettings () {
+  savingSettings.value = true
   try {
     const { data } = await api.put('/api/resolver/settings', {
-      sync_interval_minutes: Number(intervalMinutes.value)
+      sync_interval_minutes: Number(intervalMinutes.value),
+      bootstrap_dns: String(bootstrapDns.value || '1.1.1.1').trim()
     })
     applyPayload(data)
-    $q.notify({ type: 'positive', message: t('resolver.intervalSaved') })
+    $q.notify({ type: 'positive', message: t('resolver.settingsSaved') })
   } catch (e) {
     const msg = e?.response?.data?.message
-      || Object.values(e?.response?.data?.errors || {}).flat()[0]
-      || t('common.saveError')
+      || e?.response?.data?.errors?.bootstrap_dns?.[0]
+      || e?.response?.data?.errors?.sync_interval_minutes?.[0]
+      || t('resolver.saveSettingsError')
     $q.notify({ type: 'negative', message: msg })
   } finally {
-    savingInterval.value = false
+    savingSettings.value = false
   }
 }
 

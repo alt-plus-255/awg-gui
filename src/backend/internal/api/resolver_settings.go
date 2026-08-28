@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/awggui/backend/internal/auth"
 	"github.com/awggui/backend/internal/resolver"
@@ -23,21 +24,61 @@ func (c *ResolverSettingsController) Show(w http.ResponseWriter, r *http.Request
 
 func (c *ResolverSettingsController) Update(w http.ResponseWriter, r *http.Request) {
 	r = c.ctx(r)
+	ctx := r.Context()
 	var req map[string]any
 	if err := decodeJSON(r, &req); err != nil {
 		write422(w, r)
 		return
 	}
-	minutes, ok := asInt(req["sync_interval_minutes"])
-	if !ok || minutes < 5 || minutes > 10080 {
+	changed := false
+	applySingbox := false
+
+	if v, ok := req["sync_interval_minutes"]; ok {
+		minutes, ok := asInt(v)
+		if !ok || minutes < 5 || minutes > 10080 {
+			writeValidation(w, r, "sync_interval_minutes", "api.http_422", nil)
+			return
+		}
+		if err := c.Svc.Lists.SetSyncIntervalMinutes(ctx, minutes); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]any{"message": err.Error()})
+			return
+		}
+		changed = true
+	}
+
+	if v, ok := req["bootstrap_dns"]; ok {
+		dns := strings.TrimSpace(asString(v))
+		if dns == "" {
+			dns = resolver.DefaultBootstrapDNS
+		}
+		if !resolver.ValidDNSServer(dns) {
+			writeValidation(w, r, "bootstrap_dns", "resolver.dns_required", nil)
+			return
+		}
+		if err := c.Svc.SetBootstrapDNS(ctx, dns); err != nil {
+			writeResolverErr(w, r, err)
+			return
+		}
+		changed = true
+		applySingbox = true
+	}
+
+	if !changed {
 		writeValidation(w, r, "sync_interval_minutes", "api.http_422", nil)
 		return
 	}
-	if err := c.Svc.Lists.SetSyncIntervalMinutes(r.Context(), minutes); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"message": err.Error()})
-		return
+
+	if applySingbox {
+		if err := c.Svc.Apply(ctx, resolver.ApplyOpts{}); err != nil {
+			writeResolverErr(w, r, err)
+			return
+		}
+		if c.Svc.Probe != nil {
+			c.Svc.Probe.RebuildAndMaybeReload(ctx)
+		}
 	}
-	writeJSON(w, http.StatusOK, c.Svc.Lists.SettingsPayload(r.Context()))
+
+	writeJSON(w, http.StatusOK, c.Svc.Lists.SettingsPayload(ctx))
 }
 
 func (c *ResolverSettingsController) SyncAll(w http.ResponseWriter, r *http.Request) {

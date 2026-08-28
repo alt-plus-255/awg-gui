@@ -61,7 +61,7 @@ func (c *ResolverController) UpdateConfig(w http.ResponseWriter, r *http.Request
 		if dns == "" {
 			dns = "1.1.1.1"
 		}
-		if net.ParseIP(dns) == nil && !hostnameLike(dns) {
+		if net.ParseIP(dns) == nil && !resolver.ValidDNSServer(dns) {
 			writeValidation(w, r, "resolver_dns", "resolver.dns_required", nil)
 			return
 		}
@@ -198,20 +198,6 @@ func (c *ResolverController) applyAWG(ctx context.Context, configID int64) {
 		return
 	}
 	_ = c.AWG.ApplyConfig(ctx, cfg, false, false)
-}
-
-func hostnameLike(s string) bool {
-	s = strings.ToLower(s)
-	parts := strings.Split(s, ".")
-	if len(parts) < 2 {
-		return false
-	}
-	for _, p := range parts {
-		if p == "" {
-			return false
-		}
-	}
-	return true
 }
 
 func atoiSafe(v any) int {

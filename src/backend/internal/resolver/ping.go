@@ -132,7 +132,7 @@ func (p *ProbeManager) RebuildAndMaybeReload(ctx context.Context) map[string]any
 	cfg := map[string]any{
 		"log": map[string]any{"level": "warn", "timestamp": true},
 		"dns": map[string]any{
-			"servers": []map[string]any{{"type": "udp", "tag": "bootstrap", "server": "8.8.8.8", "server_port": 53}},
+			"servers": []map[string]any{{"type": "udp", "tag": "bootstrap", "server": p.Svc.BootstrapDNS(ctx), "server_port": 53}},
 			"final":   "bootstrap", "strategy": "ipv4_only",
 		},
 		"outbounds": built.Outbounds,

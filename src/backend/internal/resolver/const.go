@@ -33,11 +33,13 @@ const (
 	TelegramMixedTag     = "tg-in"
 	TelegramOutboundTag  = "telegram-out"
 
-	SettingInterval = "resolver_lists_sync_interval_minutes"
-	SettingLastSync = "resolver_lists_last_sync_at"
-	SettingListMeta = "resolver_list_meta"
-	DefaultInterval = 360
-	SettingEgress   = "singbox_egress_interface"
+	SettingInterval      = "resolver_lists_sync_interval_minutes"
+	SettingLastSync      = "resolver_lists_last_sync_at"
+	SettingListMeta      = "resolver_list_meta"
+	SettingBootstrapDNS  = "resolver_bootstrap_dns"
+	DefaultInterval      = 360
+	DefaultBootstrapDNS  = "1.1.1.1"
+	SettingEgress        = "singbox_egress_interface"
 
 	PingIdleTimeoutSec = 600
 )

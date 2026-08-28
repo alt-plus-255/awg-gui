@@ -61,7 +61,7 @@ func New(cfg config.Config, store *Store, kv *KV) *Service {
 		Docker: docker, Cache: cache,
 		Merged: &Merged{Docker: docker, Container: cfg.AWGContainer, Paths: paths, Files: files},
 	}
-	s.Lists = &Lists{Store: store, KV: kv, Paths: paths, Files: files, Merged: s.Merged}
+	s.Lists = &Lists{Store: store, KV: kv, Paths: paths, Files: files, Merged: s.Merged, Svc: s}
 	s.Probe = &ProbeManager{Svc: s}
 	s.Ping = &PingService{Svc: s}
 	s.Speed = &SpeedTest{Svc: s}
@@ -427,7 +427,7 @@ func (s *Service) BuildSingBoxConfig(ctx context.Context, configs []*AWGConfig, 
 	fallbackDNS := "1.1.1.1"
 	fallbackSet := false
 	dnsServers := []map[string]any{
-		{"type": "udp", "tag": "bootstrap", "server": "8.8.8.8", "server_port": 53},
+		{"type": "udp", "tag": "bootstrap", "server": s.BootstrapDNS(ctx), "server_port": 53},
 	}
 	for _, cfg := range configs {
 		upstream := strings.TrimSpace(strPtrVal(cfg.ResolverDNS))
