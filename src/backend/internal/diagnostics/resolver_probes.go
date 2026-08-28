@@ -61,12 +61,9 @@ func (s *Service) singboxListeners(ctx context.Context) map[string]bool {
 	if !s.Stats.IsContainerRunning(ctx, "") {
 		return out
 	}
-	r, err := s.Docker.Exec(ctx, s.Stats.ContainerName(), []string{"sh", "-c",
+	r := s.Docker.Exec(ctx, s.Stats.ContainerName(), []string{"sh", "-c",
 		`ss -uln 2>/dev/null | grep -q ':53 ' && echo dns_udp; ss -tln 2>/dev/null | grep -q ':53 ' && echo dns_tcp; ss -tln 2>/dev/null | grep -q ':1602 ' && echo tproxy_tcp; ss -uln 2>/dev/null | grep -q ':1603 ' && echo tproxy_udp; true`},
 		8*time.Second, "")
-	if err != nil {
-		return out
-	}
 	for _, line := range strings.Split(r.Stdout, "\n") {
 		line = strings.TrimSpace(line)
 		if _, ok := out[line]; ok {
