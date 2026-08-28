@@ -28,6 +28,11 @@ t() {
   shift
   case "${key}" in
     log_preparing_awg_recreate) printf '%s' 'Preparing awggui-awg for recreate (force-stop if needed) ...' ;;
+    log_preparing_host_kernel_awg_stop) printf '%s' 'Host amneziawg may wedge AWG stop — unloading or blacklisting before recreate ...' ;;
+    ok_host_kernel_unloaded) printf '%s' 'Host amneziawg unloaded — safe to recreate awggui-awg' ;;
+    ok_host_kernel_blacklist_present) printf '%s' 'Host amneziawg blacklist active — userspace datapath' ;;
+    warn_host_kernel_blacklisted) printf '%s' 'Could not unload amneziawg — blacklist-amneziawg.conf written' ;;
+    warn_upgrade_keep_images_retry) printf '%s' 'Upgrade failed before compose — image archives kept for retry' ;;
     log_force_removing_container) printf '%s' "Force-removing stuck container ${1:-} ..." ;;
     ok_force_removed_container) printf '%s' "Removed container ${1:-}" ;;
     warn_kill_container_host_pid) printf '%s' "Container ${1:-} did not exit — SIGKILL host PID ${2:-}" ;;

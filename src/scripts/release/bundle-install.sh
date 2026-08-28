@@ -407,10 +407,13 @@ on_install_exit() {
   local ec=$?
   if [[ "${UPGRADE_MODE}" -eq 1 && "${ec}" -ne 0 ]]; then
     finalize_running_update_state "failed" "Update failed with exit code ${ec}."
-    # Free disk for a retry: drop download/extract leftovers, loaded archives, and unused images.
     cleanup_tmp_install_artifacts || true
-    cleanup_loaded_image_archives || true
-    cleanup_unused_project_images || true
+    if [[ "${INSTALL_COMPOSE_SUCCEEDED:-0}" -eq 1 ]]; then
+      cleanup_loaded_image_archives || true
+      cleanup_unused_project_images || true
+    else
+      warn "$(t warn_upgrade_keep_images_retry)"
+    fi
   fi
 }
 
@@ -961,6 +964,7 @@ main() {
   [[ -f "${COMPOSE_FILE}" ]] || die "$(t err_missing_path "${COMPOSE_FILE}")"
   [[ -c /dev/net/tun ]] || [[ -e /dev/net/tun ]] || warn "$(t warn_tun_missing)"
 
+  INSTALL_COMPOSE_SUCCEEDED=0
   trap on_install_exit EXIT
 
   ensure_curl
@@ -1033,6 +1037,7 @@ main() {
 
   log "$(t log_starting_containers)"
   compose_up_with_awg_recovery
+  INSTALL_COMPOSE_SUCCEEDED=1
 
   wait_for_app || true
   wait_for_migrate_lock

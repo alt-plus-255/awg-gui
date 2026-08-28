@@ -56,24 +56,127 @@ _force_container_pid() {
   fi
 }
 
+_force_host_kernel_module_loaded() {
+  lsmod 2>/dev/null | awk '{print $1}' | grep -qx amneziawg
+}
+
+_force_host_kernel_blacklisted() {
+  [[ -f /etc/modprobe.d/blacklist-amneziawg.conf ]]
+}
+
+_force_kernel_host_script() {
+  if [[ -x /etc/awg-gui/awg-kernel-host.sh ]]; then
+    printf '%s' /etc/awg-gui/awg-kernel-host.sh
+    return 0
+  fi
+  return 1
+}
+
+# Container or persisted config marks kernel datapath as broken (setconf/oops).
+_force_awg_kernel_bad_marker() {
+  if docker inspect awggui-awg >/dev/null 2>&1; then
+    if _force_container_run_timeout 5 docker exec awggui-awg test -f /config/awg-kernel-bad 2>/dev/null; then
+      return 0
+    fi
+    if _force_container_run_timeout 5 docker exec awggui-awg test -f /run/awg-kernel-bad 2>/dev/null; then
+      return 0
+    fi
+  fi
+  local vol
+  vol="$(docker volume ls -q --filter name=awg_config 2>/dev/null | head -1 || true)"
+  [[ -n "${vol}" ]] || return 1
+  local img
+  img="$(docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep -E '^awggui-awg:' | head -1 || true)"
+  [[ -n "${img}" ]] || return 1
+  _force_container_run_timeout 15 docker run --rm --entrypoint '' -v "${vol}:/config:ro" "${img}" \
+    sh -c 'test -f /config/awg-kernel-bad' 2>/dev/null
+}
+
+# Unload/blacklist host amneziawg before stopping awggui-awg — prevents netlink wedge on upgrade.
+prepare_host_kernel_before_awg_recreate() {
+  local need=0
+  local script action=""
+
+  if _force_host_kernel_module_loaded; then
+    need=1
+  fi
+  if _force_host_kernel_blacklisted; then
+    need=1
+  fi
+  if _force_awg_kernel_bad_marker; then
+    need=1
+  fi
+  if [[ "${need}" -eq 0 ]]; then
+    return 0
+  fi
+
+  log "$(t log_preparing_host_kernel_awg_stop)"
+
+  if script="$(_force_kernel_host_script)"; then
+    action="$(_force_container_run_timeout_capture 15 "${script}" prepare-for-container-stop 2>/dev/null || true)"
+    case "${action}" in
+      *'"action":"unloaded"'*)
+        ok "$(t ok_host_kernel_unloaded)"
+        ;;
+      *'"action":"blacklisted"'*)
+        warn "$(t warn_host_kernel_blacklisted)"
+        ;;
+      *'"action":"blacklist_already_present"'*)
+        ok "$(t ok_host_kernel_blacklist_present)"
+        ;;
+    esac
+    return 0
+  fi
+
+  # Fallback when helper script is missing (dev tree install).
+  if _force_host_kernel_blacklisted; then
+    _force_container_run_timeout 5 modprobe -r amneziawg 2>/dev/null || true
+    ok "$(t ok_host_kernel_blacklist_present)"
+    return 0
+  fi
+  if _force_host_kernel_module_loaded; then
+    if _force_container_run_timeout 5 modprobe -r amneziawg 2>/dev/null; then
+      ok "$(t ok_host_kernel_unloaded)"
+      return 0
+    fi
+    warn "$(t warn_host_kernel_blacklisted)"
+    mkdir -p /etc/modprobe.d 2>/dev/null || true
+    printf '%s\n' 'blacklist amneziawg' > /etc/modprobe.d/blacklist-amneziawg.conf
+    _force_container_run_timeout 5 modprobe -r amneziawg 2>/dev/null || true
+  fi
+}
+
 # Best-effort teardown of AWG/WG ifaces + userspace inside a still-running container.
 _force_container_soft_teardown_awg() {
   local name="$1"
+  local skip_quick=0
   [[ "$(_force_container_status "${name}")" == "running" ]] || return 0
-  _force_container_run_timeout 25 docker exec "${name}" sh -c '
-    for conf in /config/*.conf; do
-      [ -f "$conf" ] || continue
-      awg-quick down "$conf" >/dev/null 2>&1 || true
-    done
+  if _force_host_kernel_module_loaded || _force_host_kernel_blacklisted || _force_awg_kernel_bad_marker; then
+    skip_quick=1
+  fi
+  _force_container_run_timeout 25 docker exec "${name}" sh -c "
+    skip_quick=${skip_quick}
+    if [[ \"\${skip_quick}\" -eq 0 ]]; then
+      for conf in /config/*.conf; do
+        [ -f \"\$conf\" ] || continue
+        timeout 8 awg-quick down \"\$conf\" >/dev/null 2>&1 || true
+      done
+    fi
     pkill -9 -f amneziawg-go >/dev/null 2>&1 || true
     pkill -9 sing-box >/dev/null 2>&1 || true
-    ip -o link show 2>/dev/null | awk -F": " "{print \$2}" | cut -d@ -f1 | while read -r iface; do
-      case "$iface" in
+    ip -o link show 2>/dev/null | awk -F\": \" \"{print \$2}\" | cut -d@ -f1 | while read -r iface; do
+      case \"\$iface\" in
         lo|eth*|docker*|br-*|cni*|veth*) continue ;;
-        *) ip link delete "$iface" >/dev/null 2>&1 || true ;;
+        *)
+          if command -v timeout >/dev/null 2>&1; then
+            timeout --signal=KILL 2 ip link delete \"\$iface\" >/dev/null 2>&1 || true
+          else
+            ip link delete \"\$iface\" >/dev/null 2>&1 || true
+          fi
+          ;;
       esac
     done
-  ' >/dev/null 2>&1 || true
+  " >/dev/null 2>&1 || true
 }
 
 # Delete tunnel ifaces in the container network namespace via nsenter (when exec fails).
@@ -243,6 +346,8 @@ prepare_awg_containers_for_recreate() {
   local name
   local names=()
   local failed=0
+
+  prepare_host_kernel_before_awg_recreate
 
   _force_remove_created_and_orphan_awggui
 

@@ -274,6 +274,11 @@ _awg_gui_msg_en() {
     ok_created_env_dev) printf '%s' 'Created %s from .env.example (random DB password generated)' ;;
     log_starting_containers) printf '%s' 'Starting containers ...' ;;
     log_preparing_awg_recreate) printf '%s' 'Preparing awggui-awg for recreate (force-stop if needed) ...' ;;
+    log_preparing_host_kernel_awg_stop) printf '%s' 'Host amneziawg module may wedge AWG stop — unloading or blacklisting before container recreate ...' ;;
+    ok_host_kernel_unloaded) printf '%s' 'Host amneziawg module unloaded — safe to recreate awggui-awg' ;;
+    ok_host_kernel_blacklist_present) printf '%s' 'Host amneziawg blacklist already active — userspace datapath' ;;
+    warn_host_kernel_blacklisted) printf '%s' 'Could not unload amneziawg — wrote blacklist-amneziawg.conf (userspace until DKMS is fixed)' ;;
+    warn_upgrade_keep_images_retry) printf '%s' 'Upgrade failed before compose up — keeping loaded image archives for retry (re-run installer without re-download if tar still in images/)' ;;
     log_force_removing_container) printf '%s' 'Force-removing stuck container %s ...' ;;
     ok_force_removed_container) printf '%s' 'Removed container %s' ;;
     warn_kill_container_host_pid) printf '%s' 'Container %s did not exit — sending SIGKILL to host PID %s' ;;
@@ -479,6 +484,11 @@ _awg_gui_msg_ru() {
     ok_created_env_dev) printf '%s' 'Создан %s из .env.example (сгенерирован случайный пароль БД)' ;;
     log_starting_containers) printf '%s' 'Запуск контейнеров ...' ;;
     log_preparing_awg_recreate) printf '%s' 'Подготовка awggui-awg к пересозданию (принудительная остановка при зависании) ...' ;;
+    log_preparing_host_kernel_awg_stop) printf '%s' 'Модуль amneziawg на хосте может зависнуть при остановке AWG — выгружаем или blacklist перед пересозданием ...' ;;
+    ok_host_kernel_unloaded) printf '%s' 'Модуль amneziawg на хосте выгружен — безопасно пересоздавать awggui-awg' ;;
+    ok_host_kernel_blacklist_present) printf '%s' 'Blacklist amneziawg на хосте уже активен — datapath userspace' ;;
+    warn_host_kernel_blacklisted) printf '%s' 'Не удалось выгрузить amneziawg — создан blacklist-amneziawg.conf (userspace до фикса DKMS)' ;;
+    warn_upgrade_keep_images_retry) printf '%s' 'Обновление упало до compose up — архивы образов сохранены для повтора (перезапустите установщик без повторной загрузки, если tar ещё в images/)' ;;
     log_force_removing_container) printf '%s' 'Принудительное удаление зависшего контейнера %s ...' ;;
     ok_force_removed_container) printf '%s' 'Контейнер %s удалён' ;;
     warn_kill_container_host_pid) printf '%s' 'Контейнер %s не завершился — SIGKILL процессу на хосте PID %s' ;;

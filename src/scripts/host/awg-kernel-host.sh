@@ -14,7 +14,7 @@ readonly AMNEZIA_PPA_DEB='deb https://ppa.launchpadcontent.net/amnezia/ppa/ubunt
 readonly AMNEZIA_PPA_DEB_SRC='deb-src https://ppa.launchpadcontent.net/amnezia/ppa/ubuntu focal main'
 
 usage() {
-  echo "usage: $0 {status|install|uninstall}" >&2
+  echo "usage: $0 {status|install|uninstall|prepare-for-container-stop}" >&2
   exit 2
 }
 
@@ -75,6 +75,22 @@ module_blacklisted() {
 
 clear_module_blacklist() {
   rm -f /etc/modprobe.d/blacklist-amneziawg.conf 2>/dev/null || true
+}
+
+write_module_blacklist() {
+  mkdir -p /etc/modprobe.d 2>/dev/null || true
+  printf '%s\n' 'blacklist amneziawg' > /etc/modprobe.d/blacklist-amneziawg.conf
+}
+
+unload_module_timed() {
+  if ! module_loaded; then
+    return 0
+  fi
+  if command -v timeout >/dev/null 2>&1; then
+    timeout --signal=KILL 5 modprobe -r "${MODULE_NAME}" 2>/dev/null && return 0
+  fi
+  modprobe -r "${MODULE_NAME}" 2>/dev/null && return 0
+  return 1
 }
 
 package_installed_debian() {
@@ -334,6 +350,34 @@ cmd_uninstall() {
   echo "AmneziaWG kernel module removed"
 }
 
+# Before upgrade/recreate: unload host module so awg-quick/setconf cannot wedge Docker stop.
+# If unload fails (wedged kernel path), blacklist and unload again — AWG will use userspace.
+cmd_prepare_for_container_stop() {
+  local action="none"
+  if module_blacklisted; then
+    unload_module_timed || true
+    action="blacklist_already_present"
+    printf '{"module_blacklisted":true,"module_loaded":false,"action":%s}\n' "$(json_escape "${action}")"
+    return 0
+  fi
+  if ! module_loaded; then
+    printf '{"module_blacklisted":false,"module_loaded":false,"action":"none"}\n'
+    return 0
+  fi
+  echo "Unloading ${MODULE_NAME} before AWG container stop..." >&2
+  if unload_module_timed; then
+    action="unloaded"
+    printf '{"module_blacklisted":false,"module_loaded":false,"action":%s}\n' "$(json_escape "${action}")"
+    return 0
+  fi
+  echo "WARN: cannot unload ${MODULE_NAME} — applying blacklist for safe userspace" >&2
+  write_module_blacklist
+  unload_module_timed || true
+  action="blacklisted"
+  printf '{"module_blacklisted":true,"module_loaded":false,"action":%s}\n' "$(json_escape "${action}")"
+  return 0
+}
+
 OP="${1:-}"
 case "${OP}" in
   status)
@@ -344,6 +388,9 @@ case "${OP}" in
     ;;
   uninstall)
     with_lock cmd_uninstall
+    ;;
+  prepare-for-container-stop)
+    cmd_prepare_for_container_stop
     ;;
   *)
     usage
