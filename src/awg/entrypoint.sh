@@ -21,6 +21,8 @@ AWG_SETCONF_TIMEOUT="${AWG_SETCONF_TIMEOUT:-15}"
 KERNEL_FAILED_COOLDOWN_BASE="${KERNEL_FAILED_COOLDOWN_BASE:-3600}"
 KERNEL_FAILED_COOLDOWN_MAX="${KERNEL_FAILED_COOLDOWN_MAX:-86400}"
 KERNEL_BAD_FILE=/run/awg-kernel-bad
+# Survive container restart so we do not immediately re-hang on a broken module.
+KERNEL_BAD_PERSIST="${CONFIG_DIR}/awg-kernel-bad"
 
 kernel_module_loaded() {
   # Host kernel module is visible in the container via sysfs/lsmod.
@@ -54,15 +56,46 @@ write_kernel_bad_marker() {
   local ver failed_at
   ver="$(kernel_module_version 2>/dev/null || echo unknown)"
   failed_at="$(date +%s)"
-  cat >"${KERNEL_BAD_FILE}" <<EOF
+  local body
+  body="$(cat <<EOF
 reason=${reason}
 module_version=${ver}
 failed_at=${failed_at}
 EOF
+)"
+  printf '%s\n' "${body}" >"${KERNEL_BAD_FILE}"
+  printf '%s\n' "${body}" >"${KERNEL_BAD_PERSIST}" 2>/dev/null || true
 }
 
 clear_kernel_bad_marker() {
-  rm -f "${KERNEL_BAD_FILE}"
+  rm -f "${KERNEL_BAD_FILE}" "${KERNEL_BAD_PERSIST}"
+}
+
+# Global marker: skip kernel path after setconf oops until cooldown or module version change.
+kernel_bad_active() {
+  local f="${KERNEL_BAD_FILE}"
+  [[ -f "${f}" ]] || f="${KERNEL_BAD_PERSIST}"
+  [[ -f "${f}" ]] || return 1
+
+  local marked_ver failed_at now cur_ver
+  marked_ver="$(awk -F= '/^module_version=/{print $2; exit}' "${f}" 2>/dev/null || true)"
+  failed_at="$(awk -F= '/^failed_at=/{print $2; exit}' "${f}" 2>/dev/null || true)"
+  cur_ver="$(kernel_module_version 2>/dev/null || echo unknown)"
+  if [[ -n "${marked_ver}" && "${marked_ver}" != "unknown" && "${cur_ver}" != "unknown" && "${marked_ver}" != "${cur_ver}" ]]; then
+    echo "[awg] Kernel module version changed (${marked_ver} → ${cur_ver}) — clearing kernel-bad marker"
+    clear_kernel_bad_marker
+    return 1
+  fi
+  failed_at="${failed_at:-0}"
+  now="$(date +%s)"
+  if (( now - failed_at >= KERNEL_FAILED_COOLDOWN_BASE )); then
+    return 1
+  fi
+  # Keep /run in sync for diagnostics after restart.
+  if [[ ! -f "${KERNEL_BAD_FILE}" && -f "${KERNEL_BAD_PERSIST}" ]]; then
+    cp "${KERNEL_BAD_PERSIST}" "${KERNEL_BAD_FILE}" 2>/dev/null || true
+  fi
+  return 0
 }
 
 clear_kernel_failed() {
@@ -192,10 +225,11 @@ cleanup_iface() {
 
   pkill -f "amneziawg-go ${IFACE}" 2>/dev/null || true
   # Prefer netlink delete first — avoids another awg-quick into a wedged kernel path.
-  ip link delete "${IFACE}" 2>/dev/null || true
+  # Timeout: oops/wedge can hang forever on ip link delete.
+  run_with_timeout 5 ip link delete "${IFACE}" 2>/dev/null || true
   if [[ -f "${CONF}" ]] && ip link show "${IFACE}" &>/dev/null; then
     run_with_timeout 10 awg-quick down "${CONF}" 2>/dev/null || true
-    ip link delete "${IFACE}" 2>/dev/null || true
+    run_with_timeout 5 ip link delete "${IFACE}" 2>/dev/null || true
   fi
   sleep 0.5
 }
@@ -205,49 +239,11 @@ awg_quick_up() {
   run_with_timeout "${AWG_QUICK_TIMEOUT}" awg-quick up "${CONF}"
 }
 
-apply_userspace() {
+# FORWARD / MASQUERADE / DNS REDIRECT when PostUp was empty/old or setconf failed after PostDown.
+ensure_userspace_iptables() {
   local IFACE="$1"
   local CONF="$2"
 
-  cleanup_iface "${IFACE}"
-
-  amneziawg-go "${IFACE}" &
-  sleep 1
-  if ! ip link show "${IFACE}" &>/dev/null; then
-    echo "[awg] ERROR: amneziawg-go failed to create ${IFACE}" >&2
-    return 1
-  fi
-
-  local strip_file rc=0
-  strip_file="$(mktemp)"
-  if ! awg-quick strip "${CONF}" >"${strip_file}" 2>/dev/null; then
-    echo "[awg] ERROR: awg-quick strip failed for ${IFACE}" >&2
-    rm -f "${strip_file}"
-    return 1
-  fi
-  if ! run_with_timeout "${AWG_SETCONF_TIMEOUT}" awg setconf "${IFACE}" "${strip_file}"; then
-    echo "[awg] ERROR: userspace awg setconf failed/timed out for ${IFACE}" >&2
-    rc=1
-  fi
-  rm -f "${strip_file}"
-  if [[ "${rc}" -ne 0 ]]; then
-    return 1
-  fi
-
-  # Bring iface up before Address so the kernel installs a connected route.
-  ip link set "${IFACE}" up 2>/dev/null || true
-
-  local addr
-  addr="$(awk -F' = ' '/^Address/{print $2; exit}' "${CONF}" || true)"
-  if [[ -n "${addr}" ]]; then
-    ip address replace "${addr}" dev "${IFACE}" 2>/dev/null || true
-    ensure_connected_route "${IFACE}" "${addr}"
-  fi
-
-  # Full PostUp from panel-generated conf (FORWARD, MASQUERADE, DNS REDIRECT, resolver-mark).
-  run_conf_hook "${CONF}" "PostUp" "${IFACE}"
-
-  # Idempotent fallbacks if PostUp was empty/old or partially failed.
   iptables -C FORWARD -i "${IFACE}" -j ACCEPT 2>/dev/null \
     || iptables -A FORWARD -i "${IFACE}" -j ACCEPT || true
   iptables -C FORWARD -o "${IFACE}" -j ACCEPT 2>/dev/null \
@@ -263,6 +259,65 @@ apply_userspace() {
   # Drop legacy eth+ MASQUERADE if present from older images.
   iptables -t nat -D POSTROUTING -o eth+ -j MASQUERADE 2>/dev/null || true
 
+  # DNS REDIRECT if panel PostUp includes it (resolver enabled).
+  if [[ -f "${CONF}" ]] && grep -qE -- '--dport 53 -j REDIRECT' "${CONF}" 2>/dev/null; then
+    iptables -t nat -C PREROUTING -i "${IFACE}" -p udp --dport 53 -j REDIRECT --to-ports 53 2>/dev/null \
+      || iptables -t nat -A PREROUTING -i "${IFACE}" -p udp --dport 53 -j REDIRECT --to-ports 53 || true
+    iptables -t nat -C PREROUTING -i "${IFACE}" -p tcp --dport 53 -j REDIRECT --to-ports 53 2>/dev/null \
+      || iptables -t nat -A PREROUTING -i "${IFACE}" -p tcp --dport 53 -j REDIRECT --to-ports 53 || true
+  fi
+}
+
+apply_userspace() {
+  local IFACE="$1"
+  local CONF="$2"
+
+  cleanup_iface "${IFACE}"
+
+  amneziawg-go "${IFACE}" &
+  sleep 1
+  if ! ip link show "${IFACE}" &>/dev/null; then
+    echo "[awg] ERROR: amneziawg-go failed to create ${IFACE}" >&2
+    return 1
+  fi
+  if ! iface_userspace_running "${IFACE}"; then
+    echo "[awg] ERROR: amneziawg-go not running for ${IFACE} (iface may be wedged kernel leftover)" >&2
+    return 1
+  fi
+
+  local strip_file rc=0
+  strip_file="$(mktemp)"
+  if ! awg-quick strip "${CONF}" >"${strip_file}" 2>/dev/null; then
+    echo "[awg] ERROR: awg-quick strip failed for ${IFACE}" >&2
+    rm -f "${strip_file}"
+    return 1
+  fi
+  if ! run_with_timeout "${AWG_SETCONF_TIMEOUT}" awg setconf "${IFACE}" "${strip_file}"; then
+    echo "[awg] ERROR: userspace awg setconf failed/timed out for ${IFACE}" >&2
+    rc=1
+  fi
+  rm -f "${strip_file}"
+
+  # Always bring link/Address/PostUp even if setconf failed. cleanup_iface already ran
+  # PostDown (stripped MASQUERADE/DNS); skipping PostUp leaves a half-up path.
+  ip link set "${IFACE}" up 2>/dev/null || true
+
+  local addr
+  addr="$(awk -F' = ' '/^Address/{print $2; exit}' "${CONF}" || true)"
+  if [[ -n "${addr}" ]]; then
+    ip address replace "${addr}" dev "${IFACE}" 2>/dev/null || true
+    ensure_connected_route "${IFACE}" "${addr}"
+  fi
+
+  # Full PostUp from panel-generated conf (FORWARD, MASQUERADE, DNS REDIRECT, resolver-mark).
+  run_conf_hook "${CONF}" "PostUp" "${IFACE}"
+  ensure_userspace_iptables "${IFACE}" "${CONF}"
+
+  if [[ "${rc}" -ne 0 ]]; then
+    echo "[awg] WARN: ${IFACE} userspace active with incomplete setconf — PostUp/NAT applied anyway" >&2
+    return 1
+  fi
+
   echo "[awg] ${IFACE} userspace path active"
   return 0
 }
@@ -277,7 +332,7 @@ apply_config() {
     return 1
   fi
 
-  if kernel_failed_active "${IFACE}"; then
+  if kernel_failed_active "${IFACE}" || kernel_bad_active; then
     skip_kernel=1
   fi
 
@@ -343,6 +398,10 @@ maybe_migrate_userspace_to_kernel() {
   LAST_KERNEL_MODULE_PRESENT="${module_present}"
 
   if (( module_present == 0 )); then
+    return 0
+  fi
+
+  if kernel_bad_active; then
     return 0
   fi
 
@@ -418,9 +477,17 @@ sync_singbox() {
   fi
 }
 
+if [[ -f "${KERNEL_BAD_PERSIST}" ]]; then
+  cp "${KERNEL_BAD_PERSIST}" "${KERNEL_BAD_FILE}" 2>/dev/null || true
+fi
+
 if kernel_module_loaded; then
   LAST_KERNEL_MODULE_PRESENT=1
-  echo "[awg] Host kernel module amneziawg is loaded — preferring awg-quick (timeout ${AWG_QUICK_TIMEOUT}s)"
+  if kernel_bad_active; then
+    echo "[awg] Host kernel module amneziawg is loaded but marked bad — preferring userspace until cooldown/version change"
+  else
+    echo "[awg] Host kernel module amneziawg is loaded — preferring awg-quick (timeout ${AWG_QUICK_TIMEOUT}s)"
+  fi
 else
   LAST_KERNEL_MODULE_PRESENT=0
   echo "[awg] No amneziawg kernel module — userspace fallback available"
