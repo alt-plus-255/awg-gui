@@ -19,6 +19,8 @@ func NewHandler() http.Handler {
 	mux.HandleFunc("POST /ops/update/clear-log", requireAuth(handleClearUpdateLog))
 	mux.HandleFunc("POST /ops/awg-kernel/install", requireAuth(handleKernelInstall))
 	mux.HandleFunc("POST /ops/awg-kernel/uninstall", requireAuth(handleKernelUninstall))
+	mux.HandleFunc("POST /ops/awg-kernel/recover", requireAuth(handleKernelRecover))
+	mux.HandleFunc("GET /ops/host-debug", requireAuth(handleHostDebug))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h, pattern := mux.Handler(r)
 		if pattern == "" {
@@ -127,6 +129,20 @@ func handleKernelUninstall(w http.ResponseWriter, _ *http.Request) {
 		status = s
 	}
 	writeJSON(w, status, result)
+}
+
+func handleKernelRecover(w http.ResponseWriter, _ *http.Request) {
+	result := ops.StartAWGKernelOp("recover")
+	status := http.StatusAccepted
+	if s, ok := result["status"].(int); ok {
+		status = s
+	}
+	writeJSON(w, status, result)
+}
+
+func handleHostDebug(w http.ResponseWriter, _ *http.Request) {
+	result := ops.CollectHostDebug()
+	writeJSON(w, http.StatusOK, result)
 }
 
 func writeJSON(w http.ResponseWriter, status int, body map[string]any) {

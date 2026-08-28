@@ -11,12 +11,13 @@ import (
 
 	"github.com/awggui/backend/internal/i18n"
 	"github.com/awggui/backend/internal/models"
+	"github.com/awggui/backend/internal/resolver"
 )
 
 var diagDNSHostRE = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,253}$`)
 
 func (s *Service) bootstrapDNS(ctx context.Context) string {
-	const fallback = "1.1.1.1"
+	fallback := resolver.DefaultBootstrapDNS
 	if s.Settings == nil {
 		return fallback
 	}

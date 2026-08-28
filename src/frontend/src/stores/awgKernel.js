@@ -10,6 +10,7 @@ export const useAwgKernelStore = defineStore('awgKernel', () => {
   const module_loaded = ref(false)
   const package_installed = ref(false)
   const module_blacklisted = ref(false)
+  const kernel_path_broken = ref(false)
   const awg_datapath = ref('unknown')
   const os_family = ref('unknown')
   const script_present = ref(false)
@@ -29,6 +30,7 @@ export const useAwgKernelStore = defineStore('awgKernel', () => {
     module_loaded.value = !!data.module_loaded
     package_installed.value = !!data.package_installed
     module_blacklisted.value = !!data.module_blacklisted
+    kernel_path_broken.value = !!data.kernel_path_broken
     awg_datapath.value = data.awg_datapath || 'unknown'
     os_family.value = data.os_family || 'unknown'
     script_present.value = data.script_present !== false
@@ -76,10 +78,10 @@ export const useAwgKernelStore = defineStore('awgKernel', () => {
     }
   }
 
-  async function startInstall () {
+  async function startOp (path) {
     starting.value = true
     try {
-      await api.post('/api/settings/awg-kernel/install')
+      await api.post(path)
       running.value = true
       op_status.value = 'running'
       await fetchStatus({ silent: true })
@@ -89,17 +91,20 @@ export const useAwgKernelStore = defineStore('awgKernel', () => {
     }
   }
 
+  async function startInstall () {
+    return startOp('/api/settings/awg-kernel/install')
+  }
+
+  async function startReinstall () {
+    return startOp('/api/settings/awg-kernel/reinstall')
+  }
+
+  async function startRestartAwg () {
+    return startOp('/api/settings/awg-kernel/restart-awg')
+  }
+
   async function startUninstall () {
-    starting.value = true
-    try {
-      await api.post('/api/settings/awg-kernel/uninstall')
-      running.value = true
-      op_status.value = 'running'
-      await fetchStatus({ silent: true })
-    } finally {
-      starting.value = false
-      schedulePoll()
-    }
+    return startOp('/api/settings/awg-kernel/uninstall')
   }
 
   return {
@@ -109,6 +114,7 @@ export const useAwgKernelStore = defineStore('awgKernel', () => {
     module_loaded,
     package_installed,
     module_blacklisted,
+    kernel_path_broken,
     awg_datapath,
     os_family,
     script_present,
@@ -120,6 +126,8 @@ export const useAwgKernelStore = defineStore('awgKernel', () => {
     error,
     fetchStatus,
     startInstall,
+    startReinstall,
+    startRestartAwg,
     startUninstall,
     stopPoll
   }

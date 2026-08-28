@@ -24,6 +24,12 @@ const (
 	ClashAPIAddr      = "127.0.0.1:9090"
 	ClashProbeAPIAddr = "127.0.0.1:9091"
 	ClashSpeedAPIAddr = "127.0.0.1:9092"
+	SpeedMixedListen  = "127.0.0.1"
+	SpeedMixedPort    = 19091
+	SpeedMixedTag     = "speedtest-in"
+	SpeedTestBytes    = 25_000_000
+	SpeedDownURL      = "https://speed.cloudflare.com/__down?bytes=25000000"
+	SpeedUpURL        = "https://speed.cloudflare.com/__up"
 	DelayTestURL      = "https://www.gstatic.com/generate_204"
 	RulesetBaseURL    = "https://github.com/itdoginfo/allow-domains/releases/latest/download"
 
@@ -38,7 +44,7 @@ const (
 	SettingListMeta      = "resolver_list_meta"
 	SettingBootstrapDNS  = "resolver_bootstrap_dns"
 	DefaultInterval      = 360
-	DefaultBootstrapDNS  = "1.1.1.1"
+	DefaultBootstrapDNS  = "77.88.8.8"
 	SettingEgress        = "singbox_egress_interface"
 
 	PingIdleTimeoutSec = 600

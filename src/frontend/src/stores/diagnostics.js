@@ -11,6 +11,7 @@ export const useDiagnosticsStore = defineStore('diagnostics', () => {
   const selectedConfigIds = ref([])
   const singBoxModal = ref({ open: false, loading: false, content: '', error: null, updatedAt: null })
   const awgModal = ref({ open: false, loading: false, configs: [], error: null })
+  const downloadingSupportBundle = ref(false)
 
   const configs = computed(() => status.value?.configs || [])
   const containers = computed(() => status.value?.containers || [])
@@ -119,6 +120,29 @@ export const useDiagnosticsStore = defineStore('diagnostics', () => {
     awgModal.value = { ...awgModal.value, open: false }
   }
 
+  async function downloadSupportBundle () {
+    downloadingSupportBundle.value = true
+    try {
+      const { data, headers } = await api.get('/api/diagnostics/support-bundle', { responseType: 'blob' })
+      const blob = data instanceof Blob ? data : new Blob([data], { type: 'text/plain;charset=utf-8' })
+      let filename = 'awg-gui-support.txt'
+      const disposition = headers?.['content-disposition'] || ''
+      const match = /filename="([^"]+)"/.exec(disposition)
+      if (match?.[1]) filename = match[1]
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+      return true
+    } finally {
+      downloadingSupportBundle.value = false
+    }
+  }
+
   const failedChecks = computed(() => {
     const out = []
     for (const g of result.value?.groups || []) {
@@ -209,6 +233,7 @@ export const useDiagnosticsStore = defineStore('diagnostics', () => {
     selectedConfigIds,
     singBoxModal,
     awgModal,
+    downloadingSupportBundle,
     configs,
     containers,
     singbox,
@@ -226,6 +251,7 @@ export const useDiagnosticsStore = defineStore('diagnostics', () => {
     openAwgConfigs,
     closeSingBoxModal,
     closeAwgModal,
+    downloadSupportBundle,
     dumpText,
     errorReportJson
   }

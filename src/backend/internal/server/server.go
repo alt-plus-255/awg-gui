@@ -160,6 +160,7 @@ func New(cfg config.Config, db *sql.DB) *App {
 		apiR.Post("/diagnostics/run", diagCtrl.Run)
 		apiR.Get("/diagnostics/configs/sing-box", diagCtrl.SingBoxConfig)
 		apiR.Get("/diagnostics/configs/awg", diagCtrl.AwgConfigs)
+		apiR.Get("/diagnostics/support-bundle", diagCtrl.SupportBundle)
 
 		apiR.Get("/ws/token", wsTokenCtrl.Show)
 
@@ -217,6 +218,8 @@ func New(cfg config.Config, db *sql.DB) *App {
 		apiR.Get("/settings/awg-kernel", settingsCtrl.AWGKernelStatus)
 		apiR.Post("/settings/awg-kernel/install", settingsCtrl.AWGKernelInstall)
 		apiR.Post("/settings/awg-kernel/uninstall", settingsCtrl.AWGKernelUninstall)
+		apiR.Post("/settings/awg-kernel/reinstall", settingsCtrl.AWGKernelReinstall)
+		apiR.Post("/settings/awg-kernel/restart-awg", settingsCtrl.AWGKernelRestartAWG)
 		apiR.Post("/settings/test-webhook", settingsCtrl.TestWebhook)
 		apiR.Post("/settings/test-telegram", settingsCtrl.TestTelegram)
 		apiR.Post("/settings/test-telegram-proxy", settingsCtrl.TestTelegramProxy)

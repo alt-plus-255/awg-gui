@@ -179,6 +179,9 @@ var resolverMessages = map[string]map[string]string{
 		"resolver.speed_test_api_not_ready":                "Speed-test Clash API probe is not ready",
 		"resolver.speed_test_ping_failed":                  "Ping via outbound failed",
 		"resolver.speed_test_unreachable":                  "Node unreachable (ping) — speed measurement skipped",
+		"resolver.speed_test_download_failed":              "Download speed test failed",
+		"resolver.speed_test_upload_failed":                "Upload speed test failed",
+		"resolver.speed_test_http_failed":                  "Speed-test HTTP :code",
 		"resolver.speed_test_stub":                         "Speed-test measurement is queued; full probe is not available in this runtime.",
 	},
 	"ru": {
@@ -348,6 +351,9 @@ var resolverMessages = map[string]map[string]string{
 		"resolver.speed_test_api_not_ready":                "Clash API speed-test probe не готов",
 		"resolver.speed_test_ping_failed":                  "Ping через outbound не удался",
 		"resolver.speed_test_unreachable":                  "Нода недоступна (ping) — замер скорости пропущен",
+		"resolver.speed_test_download_failed":              "Download speed-test не удался",
+		"resolver.speed_test_upload_failed":                "Upload speed-test не удался",
+		"resolver.speed_test_http_failed":                  "Speed-test HTTP :code",
 		"resolver.speed_test_stub":                         "Замер скорости поставлен в очередь; полный probe в этом runtime недоступен.",
 	},
 }

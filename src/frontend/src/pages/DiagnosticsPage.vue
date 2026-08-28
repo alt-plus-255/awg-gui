@@ -23,7 +23,15 @@
             {{ t('diagnostics.description') }}
           </div>
         </div>
-        <div class="col-auto gt-sm">
+        <div class="col-auto gt-sm row q-gutter-sm">
+          <q-btn
+            flat
+            color="primary"
+            icon="download"
+            :label="t('diagnostics.downloadSupportBundle')"
+            :loading="store.downloadingSupportBundle"
+            @click="downloadSupportBundle"
+          />
           <q-btn
             flat
             color="primary"
@@ -446,6 +454,18 @@ async function refreshStatus () {
     await store.fetchStatus()
   } catch (e) {
     $q.notify({ type: 'negative', message: e?.response?.data?.message || t('diagnostics.loadStatusError') })
+  }
+}
+
+async function downloadSupportBundle () {
+  try {
+    await store.downloadSupportBundle()
+    $q.notify({ type: 'positive', message: t('diagnostics.supportBundleDownloaded') })
+  } catch (e) {
+    $q.notify({
+      type: 'negative',
+      message: e?.response?.data?.message || t('diagnostics.supportBundleDownloadError')
+    })
   }
 }
 

@@ -60,7 +60,9 @@ func (c *Client) AWGKernelStatus() (map[string]any, error) {
 }
 
 func (c *Client) StartAWGKernelOp(op string) (map[string]any, error) {
-	if op != "install" && op != "uninstall" {
+	switch op {
+	case "install", "uninstall", "recover":
+	default:
 		return nil, fmt.Errorf("Invalid awg-kernel op")
 	}
 	body, status, err := c.do(http.MethodPost, "/ops/awg-kernel/"+op, map[string]any{}, 15*time.Second)
@@ -76,6 +78,21 @@ func (c *Client) StartAWGKernelOp(op string) (map[string]any, error) {
 	parsed := decodeMap(body)
 	if parsed == nil {
 		return map[string]any{"ok": true}, nil
+	}
+	return parsed, nil
+}
+
+func (c *Client) CollectHostDebug() (map[string]any, error) {
+	body, status, err := c.do(http.MethodGet, "/ops/host-debug", nil, 90*time.Second)
+	if err != nil {
+		return nil, err
+	}
+	if status < 200 || status >= 300 {
+		return nil, fmt.Errorf("%s", errorFromBody(body, "panel-ops host-debug failed"))
+	}
+	parsed := decodeMap(body)
+	if parsed == nil {
+		return map[string]any{"ok": false}, nil
 	}
 	return parsed, nil
 }

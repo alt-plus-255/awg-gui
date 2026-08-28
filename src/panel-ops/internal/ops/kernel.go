@@ -43,6 +43,17 @@ func IsKernelOpRunning(state map[string]any) bool {
 	return time.Since(t) < 30*time.Minute
 }
 
+func kernelPathBroken() bool {
+	awgContainer := Env("AWG_CONTAINER", "awggui-awg")
+	cmd := exec.Command("docker", "exec", awgContainer, "sh", "-c",
+		"test -f /run/awg-kernel-bad && echo yes || test -f /config/awg-kernel-bad && echo yes || echo no")
+	out, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+	return strings.TrimSpace(string(out)) == "yes"
+}
+
 func AWGKernelStatus() map[string]any {
 	hostCmd := ShellQuote(kernelHostScript()) + " status"
 	stdout, stderr, err := RunNsenterBashCapture(120*time.Second, hostCmd)
@@ -77,6 +88,7 @@ func AWGKernelStatus() map[string]any {
 			"module_loaded":      false,
 			"package_installed":  false,
 			"module_blacklisted": false,
+			"kernel_path_broken": false,
 			"awg_datapath":       "unknown",
 			"os_family":          "unknown",
 			"detail":             detail,
@@ -111,6 +123,7 @@ func AWGKernelStatus() map[string]any {
 		"module_loaded":      moduleLoaded,
 		"package_installed":  AsBool(host["package_installed"]),
 		"module_blacklisted": moduleBlacklisted,
+		"kernel_path_broken": kernelPathBroken(),
 		"awg_datapath":       datapath,
 		"os_family":          stringOr(host["os_family"], "unknown"),
 		"detail":             AsString(host["detail"]),
@@ -128,7 +141,9 @@ func stringOr(v any, fallback string) string {
 }
 
 func StartAWGKernelOp(op string) map[string]any {
-	if op != "install" && op != "uninstall" {
+	switch op {
+	case "install", "uninstall", "recover":
+	default:
 		return map[string]any{"ok": false, "error": "Invalid op", "status": 400}
 	}
 
@@ -151,8 +166,11 @@ func StartAWGKernelOp(op string) map[string]any {
 	pid := os.Getpid()
 	startedAt := IsoNow()
 	msg := "Removing AmneziaWG kernel module..."
-	if op == "install" {
+	switch op {
+	case "install":
 		msg = "Installing AmneziaWG kernel module..."
+	case "recover":
+		msg = "Recovering AmneziaWG kernel datapath..."
 	}
 	state := map[string]any{
 		"pid":         pid,
@@ -167,8 +185,11 @@ func StartAWGKernelOp(op string) map[string]any {
 	go runKernelOp(op, pid, startedAt)
 
 	outMsg := "Kernel module uninstall has started."
-	if op == "install" {
+	switch op {
+	case "install":
 		outMsg = "Kernel module install has started."
+	case "recover":
+		outMsg = "AWG kernel datapath recovery has started."
 	}
 	return map[string]any{
 		"ok":      true,
@@ -183,8 +204,11 @@ func runKernelOp(op string, pid int, startedAt string) {
 	logPath := KernelLogPath()
 
 	msg := "Removing AmneziaWG kernel module..."
-	if op == "install" {
+	switch op {
+	case "install":
 		msg = "Installing AmneziaWG kernel module..."
+	case "recover":
+		msg = "Recovering AmneziaWG kernel datapath..."
 	}
 	state := map[string]any{
 		"pid":         pid,
@@ -237,9 +261,12 @@ func runKernelOp(op string, pid int, startedAt string) {
 
 	state["status"] = "ok"
 	state["finished_at"] = IsoNow()
-	if op == "install" {
+	switch op {
+	case "install":
 		state["message"] = "Kernel module install finished."
-	} else {
+	case "recover":
+		state["message"] = "AWG kernel datapath recovery finished."
+	default:
 		state["message"] = "Kernel module uninstall finished."
 	}
 	WriteJSONMap(statePath, state)

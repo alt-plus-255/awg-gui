@@ -47,5 +47,9 @@
   "copied": "Скопировано",
   "copyFailed": "Не удалось скопировать",
   "loadSingboxError": "Не удалось загрузить sing-box.json",
-  "loadAwgConfigsError": "Не удалось загрузить AWG конфиги"
+  "loadAwgConfigsError": "Не удалось загрузить AWG конфиги",
+  "downloadSupportBundle": "Скачать отладочный журнал",
+  "supportBundleDownloaded": "Отладочный журнал скачан",
+  "supportBundleDownloadError": "Не удалось скачать отладочный журнал",
+  "supportBundleHint": "Один файл: kernel status, dmesg, docker logs всех контейнеров. Может содержать IP — не публикуйте открыто."
 }

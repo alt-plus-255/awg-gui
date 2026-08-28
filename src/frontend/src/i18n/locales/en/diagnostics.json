@@ -47,5 +47,9 @@
   "copied": "Copied",
   "copyFailed": "Failed to copy",
   "loadSingboxError": "Failed to load sing-box.json",
-  "loadAwgConfigsError": "Failed to load AWG configs"
+  "loadAwgConfigsError": "Failed to load AWG configs",
+  "downloadSupportBundle": "Download debug log",
+  "supportBundleDownloaded": "Debug log downloaded",
+  "supportBundleDownloadError": "Failed to download debug log",
+  "supportBundleHint": "Single file: kernel status, dmesg, docker logs for all containers. May contain IPs — do not publish publicly."
 }

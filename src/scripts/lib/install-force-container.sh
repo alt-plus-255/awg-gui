@@ -20,7 +20,19 @@ _force_container_run_timeout() {
     timeout --signal=KILL "${secs}s" "$@" 2>/dev/null
     return $?
   fi
-  "$@"
+  "$@" &
+  local pid=$!
+  local waited=0
+  while kill -0 "${pid}" 2>/dev/null; do
+    if [[ "${waited}" -ge "${secs}" ]]; then
+      kill -9 "${pid}" 2>/dev/null || true
+      wait "${pid}" 2>/dev/null || true
+      return 124
+    fi
+    sleep 1
+    waited=$((waited + 1))
+  done
+  wait "${pid}"
 }
 
 # Like _force_container_run_timeout but keep stderr for exit-event detection.
@@ -31,7 +43,19 @@ _force_container_run_timeout_capture() {
     timeout --signal=KILL "${secs}s" "$@" 2>&1
     return $?
   fi
-  "$@" 2>&1
+  "$@" &
+  local pid=$!
+  local waited=0
+  while kill -0 "${pid}" 2>/dev/null; do
+    if [[ "${waited}" -ge "${secs}" ]]; then
+      kill -9 "${pid}" 2>/dev/null || true
+      wait "${pid}" 2>/dev/null || true
+      return 124
+    fi
+    sleep 1
+    waited=$((waited + 1))
+  done
+  wait "${pid}"
 }
 
 _force_container_exit_event_stuck() {
@@ -130,7 +154,6 @@ prepare_host_kernel_before_awg_recreate() {
 
   # Fallback when helper script is missing (dev tree install).
   if _force_host_kernel_blacklisted; then
-    _force_container_run_timeout 5 modprobe -r amneziawg 2>/dev/null || true
     ok "$(t ok_host_kernel_blacklist_present)"
     return 0
   fi
@@ -142,7 +165,6 @@ prepare_host_kernel_before_awg_recreate() {
     warn "$(t warn_host_kernel_blacklisted)"
     mkdir -p /etc/modprobe.d 2>/dev/null || true
     printf '%s\n' 'blacklist amneziawg' > /etc/modprobe.d/blacklist-amneziawg.conf
-    _force_container_run_timeout 5 modprobe -r amneziawg 2>/dev/null || true
   fi
 }
 

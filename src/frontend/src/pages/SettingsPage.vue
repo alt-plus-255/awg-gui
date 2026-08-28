@@ -285,6 +285,12 @@
               <div v-if="awgKernel.module_blacklisted" class="text-negative text-caption q-mb-md">
                 {{ t('settings.awgKernelBlacklistWarn') }}
               </div>
+              <div v-else-if="awgKernel.kernel_path_broken" class="text-negative text-caption q-mb-md">
+                {{ t('settings.awgKernelBrokenWarn') }}
+              </div>
+              <div v-else-if="awgKernelUserspaceDespiteModule" class="text-warning text-caption q-mb-md">
+                {{ t('settings.awgKernelUserspaceWarn') }}
+              </div>
               <div class="row q-col-gutter-md q-mb-md">
                 <div class="col-12 col-sm-6 col-md-3">
                   <div class="text-caption text-grey-5">{{ t('settings.awgKernelModule') }}</div>
@@ -319,6 +325,23 @@
                   @click="onAwgKernelInstall"
                 />
                 <q-btn
+                  v-if="awgKernelShowReinstall"
+                  color="primary"
+                  :label="t('settings.awgKernelReinstall')"
+                  :loading="awgKernel.starting || awgKernel.running"
+                  :disable="!awgKernel.script_present || awgKernel.running"
+                  @click="onAwgKernelReinstall"
+                />
+                <q-btn
+                  v-if="awgKernelShowRestart"
+                  outline
+                  color="primary"
+                  :label="t('settings.awgKernelRestartAwg')"
+                  :loading="awgKernel.starting || awgKernel.running"
+                  :disable="!awgKernel.script_present || awgKernel.running"
+                  @click="onAwgKernelRestartAwg"
+                />
+                <q-btn
                   v-if="awgKernelInstalled"
                   outline
                   color="negative"
@@ -328,12 +351,24 @@
                   @click="onAwgKernelUninstall"
                 />
                 <q-btn
+                  v-if="awgKernelShowDebugDownload"
+                  flat
+                  color="grey-5"
+                  icon="download"
+                  :label="t('settings.awgKernelDownloadDebugLog')"
+                  :loading="downloadingKernelDebugLog"
+                  @click="onDownloadKernelDebugLog"
+                />
+                <q-btn
                   flat
                   color="grey-5"
                   :label="t('common.refresh')"
                   :loading="awgKernel.loading"
                   @click="() => awgKernel.fetchStatus()"
                 />
+              </div>
+              <div v-if="awgKernelShowDebugDownload" class="text-caption text-grey-6 q-mt-sm">
+                {{ t('settings.awgKernelDebugLogHint') }}
               </div>
             </q-tab-panel>
 
@@ -889,6 +924,7 @@ import { useLocaleStore } from '@/stores/locale'
 import { useSettingsStore } from '@/stores/settings'
 import { useProjectUpdateStore } from '@/stores/projectUpdate'
 import { useAwgKernelStore } from '@/stores/awgKernel'
+import { useDiagnosticsStore } from '@/stores/diagnostics'
 import { useSoundStore } from '@/sounds/store'
 import { useUiChromeStore } from '@/stores/uiChrome'
 import { useMobileDialog } from '@/composables/useMobileDialog'
@@ -919,6 +955,8 @@ function onAutoTo (value) {
 const settingsStore = useSettingsStore()
 const projectUpdate = useProjectUpdateStore()
 const awgKernel = useAwgKernelStore()
+const diagnostics = useDiagnosticsStore()
+const downloadingKernelDebugLog = ref(false)
 const activeTab = ref('general')
 const saving = ref(false)
 const testing = ref(false)
@@ -1780,6 +1818,36 @@ const awgKernelInstalled = computed(() =>
   !!awgKernel.package_installed || !!awgKernel.module_loaded
 )
 
+const awgKernelUserspaceDespiteModule = computed(() =>
+  awgKernel.awg_datapath === 'userspace' &&
+  !!awgKernel.package_installed &&
+  !awgKernel.module_blacklisted &&
+  !awgKernel.kernel_path_broken
+)
+
+const awgKernelNeedsRecover = computed(() =>
+  !!awgKernel.module_blacklisted ||
+  !!awgKernel.kernel_path_broken ||
+  (!!awgKernel.package_installed && awgKernel.awg_datapath === 'userspace')
+)
+
+const awgKernelShowReinstall = computed(() =>
+  awgKernelInstalled.value && awgKernelNeedsRecover.value
+)
+
+const awgKernelShowRestart = computed(() =>
+  awgKernel.awg_datapath === 'userspace' &&
+  !!awgKernel.script_present &&
+  (!!awgKernel.module_loaded || !!awgKernel.kernel_path_broken || !!awgKernel.package_installed)
+)
+
+const awgKernelShowDebugDownload = computed(() =>
+  !!awgKernel.module_blacklisted ||
+  !!awgKernel.kernel_path_broken ||
+  awgKernel.awg_datapath === 'userspace' ||
+  awgKernel.op_status === 'error'
+)
+
 const awgKernelStatusLabel = computed(() => {
   if (awgKernel.running) return t('settings.awgKernelRunning')
   const map = {
@@ -1798,9 +1866,9 @@ const awgKernelStatusClass = computed(() => {
   return 'text-grey-5'
 })
 
-async function onAwgKernelInstall () {
+async function runAwgKernelOp (fn) {
   try {
-    await awgKernel.startInstall()
+    await fn()
     $q.notify({ type: 'positive', message: t('settings.awgKernelStarted') })
   } catch (e) {
     const code = e?.response?.status
@@ -1811,6 +1879,36 @@ async function onAwgKernelInstall () {
   }
 }
 
+function onAwgKernelInstall () {
+  $q.dialog({
+    title: t('settings.awgKernelInstallConfirmTitle'),
+    message: t('settings.awgKernelInstallConfirmText'),
+    cancel: { label: t('common.cancel'), flat: true },
+    ok: { label: t('settings.confirm'), color: 'primary' },
+    persistent: true
+  }).onOk(() => runAwgKernelOp(() => awgKernel.startInstall()))
+}
+
+function onAwgKernelReinstall () {
+  $q.dialog({
+    title: t('settings.awgKernelReinstallConfirmTitle'),
+    message: t('settings.awgKernelReinstallConfirmText'),
+    cancel: { label: t('common.cancel'), flat: true },
+    ok: { label: t('settings.confirm'), color: 'primary' },
+    persistent: true
+  }).onOk(() => runAwgKernelOp(() => awgKernel.startReinstall()))
+}
+
+function onAwgKernelRestartAwg () {
+  $q.dialog({
+    title: t('settings.awgKernelRestartConfirmTitle'),
+    message: t('settings.awgKernelRestartConfirmText'),
+    cancel: { label: t('common.cancel'), flat: true },
+    ok: { label: t('settings.confirm'), color: 'primary' },
+    persistent: true
+  }).onOk(() => runAwgKernelOp(() => awgKernel.startRestartAwg()))
+}
+
 function onAwgKernelUninstall () {
   $q.dialog({
     title: t('settings.awgKernelUninstallConfirmTitle'),
@@ -1819,17 +1917,23 @@ function onAwgKernelUninstall () {
     ok: { label: t('settings.confirm'), color: 'negative' },
     persistent: true
   }).onOk(async () => {
-    try {
-      await awgKernel.startUninstall()
-      $q.notify({ type: 'positive', message: t('settings.awgKernelStarted') })
-    } catch (e) {
-      const code = e?.response?.status
-      $q.notify({
-        type: code === 409 ? 'warning' : 'negative',
-        message: e?.response?.data?.message || t(code === 409 ? 'settings.awgKernelAlreadyRunning' : 'settings.awgKernelStartError')
-      })
-    }
+    await runAwgKernelOp(() => awgKernel.startUninstall())
   })
+}
+
+async function onDownloadKernelDebugLog () {
+  downloadingKernelDebugLog.value = true
+  try {
+    await diagnostics.downloadSupportBundle()
+    $q.notify({ type: 'positive', message: t('diagnostics.supportBundleDownloaded') })
+  } catch (e) {
+    $q.notify({
+      type: 'negative',
+      message: e?.response?.data?.message || t('diagnostics.supportBundleDownloadError')
+    })
+  } finally {
+    downloadingKernelDebugLog.value = false
+  }
 }
 
 async function checkForUpdatesFromSettings () {

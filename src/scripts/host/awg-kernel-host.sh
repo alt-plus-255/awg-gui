@@ -14,7 +14,7 @@ readonly AMNEZIA_PPA_DEB='deb https://ppa.launchpadcontent.net/amnezia/ppa/ubunt
 readonly AMNEZIA_PPA_DEB_SRC='deb-src https://ppa.launchpadcontent.net/amnezia/ppa/ubuntu focal main'
 
 usage() {
-  echo "usage: $0 {status|install|uninstall|prepare-for-container-stop}" >&2
+  echo "usage: $0 {status|install|uninstall|recover|prepare-for-container-stop}" >&2
   exit 2
 }
 
@@ -82,14 +82,34 @@ write_module_blacklist() {
   printf '%s\n' 'blacklist amneziawg' > /etc/modprobe.d/blacklist-amneziawg.conf
 }
 
+# Hard wall-clock limit even when coreutils `timeout` is missing (minimal images).
+_run_timed() {
+  local secs="$1"
+  shift
+  if command -v timeout >/dev/null 2>&1; then
+    timeout --signal=KILL "${secs}s" "$@" 2>/dev/null
+    return $?
+  fi
+  "$@" &
+  local pid=$!
+  local waited=0
+  while kill -0 "${pid}" 2>/dev/null; do
+    if [[ "${waited}" -ge "${secs}" ]]; then
+      kill -9 "${pid}" 2>/dev/null || true
+      wait "${pid}" 2>/dev/null || true
+      return 124
+    fi
+    sleep 1
+    waited=$((waited + 1))
+  done
+  wait "${pid}"
+}
+
 unload_module_timed() {
   if ! module_loaded; then
     return 0
   fi
-  if command -v timeout >/dev/null 2>&1; then
-    timeout --signal=KILL 5 modprobe -r "${MODULE_NAME}" 2>/dev/null && return 0
-  fi
-  modprobe -r "${MODULE_NAME}" 2>/dev/null && return 0
+  _run_timed 5 modprobe -r "${MODULE_NAME}" 2>/dev/null && return 0
   return 1
 }
 
@@ -350,14 +370,53 @@ cmd_uninstall() {
   echo "AmneziaWG kernel module removed"
 }
 
+clear_awg_kernel_bad_markers() {
+  if ! command -v docker >/dev/null 2>&1 || ! docker inspect "${AWG_CONTAINER}" >/dev/null 2>&1; then
+    return 0
+  fi
+  docker exec "${AWG_CONTAINER}" sh -c 'rm -f /run/awg-kernel-bad /config/awg-kernel-bad' 2>/dev/null || true
+}
+
+cmd_recover() {
+  write_state "running" "Recovering AmneziaWG kernel datapath..."
+  clear_module_blacklist
+  if module_loaded; then
+    unload_module_timed || true
+  fi
+  if package_installed || module_loaded; then
+    load_module || modprobe "${MODULE_NAME}" 2>/dev/null || true
+  elif ! module_loaded; then
+    load_module 2>/dev/null || modprobe "${MODULE_NAME}" 2>/dev/null || true
+  fi
+  clear_awg_kernel_bad_markers
+  force_awg_kernel_datapath
+  restart_awg_container
+  force_awg_kernel_datapath
+  if module_loaded && ! docker exec "${AWG_CONTAINER}" sh -c 'ps aux 2>/dev/null | grep -q "[a]mneziawg-go "' 2>/dev/null; then
+    write_state "ok" "AWG recovered to kernel datapath"
+    echo "AWG recovered to kernel datapath"
+    return 0
+  fi
+  if module_loaded; then
+    write_state "error" "Module loaded but AWG still on userspace (awg-quick/setconf failed — check dmesg for amneziawg oops)"
+  elif package_installed; then
+    write_state "error" "Package installed but module not loaded — check modprobe/dkms build"
+  else
+    write_state "error" "Kernel module not installed — run install first"
+  fi
+  echo "AWG recover finished (see state for datapath result)" >&2
+}
+
 # Before upgrade/recreate: unload host module so awg-quick/setconf cannot wedge Docker stop.
 # If unload fails (wedged kernel path), blacklist and unload again — AWG will use userspace.
 cmd_prepare_for_container_stop() {
   local action="none"
   if module_blacklisted; then
-    unload_module_timed || true
+    # Blacklist means userspace path — never modprobe -r here (wedged module can hang forever).
     action="blacklist_already_present"
-    printf '{"module_blacklisted":true,"module_loaded":false,"action":%s}\n' "$(json_escape "${action}")"
+    printf '{"module_blacklisted":true,"module_loaded":%s,"action":%s}\n' \
+      "$(module_loaded && echo true || echo false)" \
+      "$(json_escape "${action}")"
     return 0
   fi
   if ! module_loaded; then
@@ -372,9 +431,10 @@ cmd_prepare_for_container_stop() {
   fi
   echo "WARN: cannot unload ${MODULE_NAME} — applying blacklist for safe userspace" >&2
   write_module_blacklist
-  unload_module_timed || true
   action="blacklisted"
-  printf '{"module_blacklisted":true,"module_loaded":false,"action":%s}\n' "$(json_escape "${action}")"
+  printf '{"module_blacklisted":true,"module_loaded":%s,"action":%s}\n' \
+    "$(module_loaded && echo true || echo false)" \
+    "$(json_escape "${action}")"
   return 0
 }
 
@@ -388,6 +448,9 @@ case "${OP}" in
     ;;
   uninstall)
     with_lock cmd_uninstall
+    ;;
+  recover)
+    with_lock cmd_recover
     ;;
   prepare-for-container-stop)
     cmd_prepare_for_container_stop

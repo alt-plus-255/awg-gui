@@ -36,7 +36,7 @@
               :hint="t('resolver.bootstrapDnsHint')"
               filled
               dense
-              placeholder="1.1.1.1"
+              placeholder="77.88.8.8"
             />
           </div>
           <div class="col-12 col-sm-auto">
@@ -327,7 +327,7 @@ const syncingAll = ref(false)
 const syncingTag = ref(null)
 const deletingId = ref(null)
 const intervalMinutes = ref(360)
-const bootstrapDns = ref('1.1.1.1')
+const bootstrapDns = ref('77.88.8.8')
 const lastSyncAt = ref(null)
 const lists = ref([])
 const modalOpen = ref(false)
@@ -368,7 +368,7 @@ function formatSize (bytes) {
 
 function applyPayload (data) {
   intervalMinutes.value = data.sync_interval_minutes ?? 360
-  bootstrapDns.value = data.bootstrap_dns || '1.1.1.1'
+  bootstrapDns.value = data.bootstrap_dns || '77.88.8.8'
   lastSyncAt.value = data.last_sync_at || null
   lists.value = data.lists || []
 }
@@ -394,7 +394,7 @@ async function saveSettings () {
   try {
     const { data } = await api.put('/api/resolver/settings', {
       sync_interval_minutes: Number(intervalMinutes.value),
-      bootstrap_dns: String(bootstrapDns.value || '1.1.1.1').trim()
+      bootstrap_dns: String(bootstrapDns.value || '77.88.8.8').trim()
     })
     applyPayload(data)
     $q.notify({ type: 'positive', message: t('resolver.settingsSaved') })
