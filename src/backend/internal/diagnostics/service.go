@@ -142,6 +142,10 @@ func (s *Service) Run(ctx context.Context, locale string, configIDs []int64) map
 	groups = append(groups, resolverGroup)
 	hints = append(hints, stringSlice(resolverGroup["hints"])...)
 
+	streamingGroup := s.groupStreaming(ctx, locale, cfgs)
+	groups = append(groups, streamingGroup)
+	hints = append(hints, stringSlice(streamingGroup["hints"])...)
+
 	outboundsGroup := s.groupOutbounds(ctx, locale, cfgs)
 	groups = append(groups, outboundsGroup)
 	hints = append(hints, stringSlice(outboundsGroup["hints"])...)
@@ -403,21 +407,35 @@ func (s *Service) groupAwgIfaces(ctx context.Context, locale string, configs []m
 		if c.Type == "virtual_network" {
 			typeLabel = "VN"
 		}
-		detail := "up · awg show OK"
-		if showOk && showDetail == "via dump" {
-			detail = i18n.T(locale, "system.awg_show_ok_via_dump")
+		ifaceMode := "unknown"
+		if up && running {
+			ifaceMode = s.ifaceDatapath(ctx, c.Iface)
 		}
-		if !up {
-			detail = "iface down"
-		} else if !showOk {
-			if showDetail != "" {
-				detail = i18n.Tf(locale, "system.awg_show_unavailable_detail", map[string]string{"detail": showDetail})
-			} else {
-				detail = i18n.T(locale, "system.awg_show_unavailable")
+		detail := "iface down"
+		if up {
+			dpLabel := datapathShortLabel(locale, ifaceMode)
+			switch {
+			case !showOk && showDetail != "":
+				detail = "up · " + dpLabel + " · awg show failed (" + showDetail + ")"
+			case !showOk:
+				detail = "up · " + dpLabel + " · awg show failed"
+			case showDetail == "via dump":
+				detail = "up · " + dpLabel + " · awg show dump OK"
+			default:
+				detail = "up · " + dpLabel + " · awg show OK"
+			}
+		}
+		ifaceOK := up && showOk
+		if up && ifaceMode == "userspace" && kernelLoaded {
+			blacklisted := s.moduleBlacklisted()
+			kernelBroken := running && s.kernelPathBroken(ctx)
+			if !blacklisted && !kernelBroken {
+				ifaceOK = false
+				hints = append(hints, i18n.Tf(locale, "system.awg_iface_userspace_despite_kernel_hint", map[string]string{"iface": c.Iface, "name": c.Name}))
 			}
 		}
 		checks = append(checks, map[string]any{
-			"id": "iface_" + c.Iface, "ok": up && showOk,
+			"id": "iface_" + c.Iface, "ok": ifaceOK,
 			"label": c.Name + " (" + c.Iface + ", " + typeLabel + ")", "detail": detail,
 		})
 		if !up {
@@ -655,6 +673,7 @@ func (s *Service) groupResolver(ctx context.Context, locale string, configs []mo
 		}
 		hints = append(hints, i18n.Tf(locale, "system.reject_quic_abr_hint", map[string]string{"name": c.Name}))
 	}
+	hints = append(hints, i18n.T(locale, "system.resolver_not_amnezia_go_hint"))
 
 	g := finalizeGroup("resolver", i18n.T(locale, "system.group_resolver"), checks, hints)
 	g["details"] = nil
@@ -703,10 +722,17 @@ func (s *Service) groupOutbounds(ctx context.Context, locale string, configs []m
 	for _, conn := range conns {
 		tag := "conn_" + strconv.FormatInt(conn.ID, 10)
 		result := s.testOutboundDelay(ctx, locale, tag)
-		ok, _ := result["ok"].(bool)
+		latencyOK, _ := result["ok"].(bool)
+		ms := 0
+		if latencyOK {
+			if msVal, okn := result["latency_ms"].(int); okn {
+				ms = msVal
+			}
+		}
+		ok := latencyOK && (ms <= 0 || ms < streamingRTTThresholdMS)
 		detail := i18n.T(locale, "system.latency_error")
-		if ok {
-			if ms, okn := result["latency_ms"].(int); okn && ms > 0 {
+		if latencyOK {
+			if ms > 0 {
 				detail = strconv.Itoa(ms) + " ms"
 			} else {
 				detail = "OK"
@@ -718,13 +744,13 @@ func (s *Service) groupOutbounds(ctx context.Context, locale string, configs []m
 			"id": "outbound_" + strconv.FormatInt(conn.ID, 10), "ok": ok,
 			"label": conn.Name + " (" + tag + ")", "detail": detail,
 		})
-		if !ok {
+		if !latencyOK {
 			errStr, _ := result["error"].(string)
 			if errStr == "" {
 				errStr = i18n.T(locale, "system.no_clash_api_response")
 			}
 			hints = append(hints, i18n.Tf(locale, "system.connection_no_clash_response", map[string]string{"name": conn.Name, "error": errStr}))
-		} else if ms, okn := result["latency_ms"].(int); okn && ms >= 200 {
+		} else if ms >= streamingRTTThresholdMS {
 			hints = append(hints, i18n.Tf(locale, "system.outbound_high_rtt_hint", map[string]string{
 				"name": conn.Name,
 				"ms":   strconv.Itoa(ms),
@@ -897,18 +923,6 @@ func (s *Service) pingProbeStatus(ctx context.Context) map[string]any {
 }
 
 var diagIfaceRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,14}$`)
-
-func (s *Service) awgDatapath(ctx context.Context) string {
-	// Prefer real process check over pgrep -f (shell argv false positive). userspace wins if go is running.
-	r := s.Docker.Exec(ctx, s.Stats.ContainerName(), []string{"sh", "-c",
-		`if ps aux 2>/dev/null | grep -q '[a]mneziawg-go '; then echo userspace; elif [ -d /sys/module/amneziawg ] || lsmod 2>/dev/null | awk '{print $1}' | grep -qx amneziawg; then echo kernel; else echo unknown; fi`},
-		8*time.Second, "")
-	v := strings.TrimSpace(r.Stdout)
-	if v == "kernel" || v == "userspace" || v == "unknown" {
-		return v
-	}
-	return "unknown"
-}
 
 func (s *Service) kernelPathBroken(ctx context.Context) bool {
 	r := s.Docker.Exec(ctx, s.Stats.ContainerName(), []string{"sh", "-c",

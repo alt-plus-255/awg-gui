@@ -399,6 +399,7 @@ func (r *UpdateRouter) togglePeerEnabled(ctx context.Context, chatID string, mes
 	}
 	m.Enabled = !m.Enabled
 	_ = r.Peers.Update(ctx, m)
+	r.AWG.InvalidateAllowedIPCache(configID, m.ID)
 	_ = r.AWG.ApplyConfig(ctx, cfg, false, false)
 	r.showPeerDetail(ctx, chatID, messageID, configID, clientID)
 }
@@ -412,6 +413,7 @@ func (r *UpdateRouter) deletePeer(ctx context.Context, chatID string, messageID 
 	_ = r.Peers.DeleteMembership(ctx, configID, clientID)
 	r.pruneExcludedClientID(ctx, cfg, clientID)
 	r.pruneClientFromZones(ctx, cfg, clientID)
+	r.AWG.InvalidateConfigPeerCaches(configID)
 	_ = r.AWG.ApplyConfig(ctx, cfg, false, false)
 	r.showPeersList(ctx, chatID, messageID, configID)
 }
@@ -862,6 +864,7 @@ func (r *UpdateRouter) attachPeer(ctx context.Context, cfg *models.AwgConfig, cl
 	if err := r.Peers.Create(ctx, m); err != nil {
 		return err
 	}
+	r.AWG.InvalidateAllowedIPCache(cfg.ID, m.ID)
 	_, _ = r.AWG.EnsurePeerKeys(ctx, m)
 	_ = r.AWG.ApplyConfig(ctx, cfg, false, false)
 	return nil

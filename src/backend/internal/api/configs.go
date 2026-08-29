@@ -342,6 +342,14 @@ func (c *ConfigController) Update(w http.ResponseWriter, r *http.Request) {
 		cfg.ResolverLastError = nil
 	}
 
+	allowedIPsFieldsChanged := false
+	for _, k := range []string{"internal_subnet", "server_address", "client_allowed_ips", "vn_policy", "resolver_enabled"} {
+		if _, ok := req[k]; ok {
+			allowedIPsFieldsChanged = true
+			break
+		}
+	}
+
 	if _, subnetSet := req["internal_subnet"]; subnetSet {
 		if _, addrSet := req["server_address"]; !addrSet {
 			_ = c.AWG.SyncServerAddressFromSubnet(r.Context(), cfg)
@@ -352,6 +360,10 @@ func (c *ConfigController) Update(w http.ResponseWriter, r *http.Request) {
 	} else if err := c.Configs.Update(r.Context(), cfg); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"message": err.Error()})
 		return
+	}
+
+	if allowedIPsFieldsChanged {
+		c.AWG.InvalidateConfigPeerCaches(cfg.ID)
 	}
 
 	_ = c.AWG.ApplyConfig(r.Context(), nil, true, true)
@@ -499,6 +511,7 @@ func (c *ConfigController) AttachPeer(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"message": err.Error()})
 		return
 	}
+	c.AWG.InvalidateAllowedIPCache(cfg.ID, m.ID)
 	_, _ = c.AWG.EnsurePeerKeys(r.Context(), m)
 	fresh, _ := c.Peers.Find(r.Context(), m.ID)
 	if fresh == nil {
@@ -574,6 +587,7 @@ func (c *ConfigController) UpdatePeer(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"message": err.Error()})
 		return
 	}
+	c.AWG.InvalidateAllowedIPCache(cfg.ID, m.ID)
 	_ = c.AWG.ApplyConfig(r.Context(), cfg, false, false)
 	fresh, _ := c.Peers.Find(r.Context(), m.ID)
 	if fresh == nil {
@@ -592,6 +606,7 @@ func (c *ConfigController) DetachPeer(w http.ResponseWriter, r *http.Request) {
 	_ = c.Peers.DeleteMembership(r.Context(), cfg.ID, client.ID)
 	c.pruneExcludedClientID(r, cfg, client.ID)
 	c.pruneClientFromZones(r, cfg, client.ID)
+	c.AWG.InvalidateConfigPeerCaches(cfg.ID)
 	_ = c.AWG.ApplyConfig(r.Context(), cfg, false, false)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
@@ -621,6 +636,7 @@ func (c *ConfigController) UpdateZones(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"message": err.Error()})
 		return
 	}
+	c.AWG.InvalidateConfigPeerCaches(cfg.ID)
 	_ = c.AWG.ApplyConfig(r.Context(), nil, true, true)
 	fresh, _ := c.Configs.Find(r.Context(), cfg.ID)
 	if fresh == nil {

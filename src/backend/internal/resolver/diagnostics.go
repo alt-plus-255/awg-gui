@@ -153,9 +153,12 @@ func diagnose(ctx context.Context, s *Service) map[string]any {
 }
 
 func detectDatapath(ctx context.Context, s *Service) string {
-	// Prefer real process check over pgrep -f (shell argv false positive). userspace wins if go is running.
 	r, err := s.Docker.Exec(ctx, s.Cfg.AWGContainer, []string{"sh", "-c",
-		`if ps aux 2>/dev/null | grep -q '[a]mneziawg-go '; then echo userspace; elif [ -d /sys/module/amneziawg ] || lsmod 2>/dev/null | awk '{print $1}' | grep -qx amneziawg; then echo kernel; else echo unknown; fi`},
+		`if ps aux 2>/dev/null | grep -q '[a]mneziawg-go '; then echo userspace; exit 0; fi
+for iface in $(ip -o link show 2>/dev/null | awk -F': ' '{print $2}' | grep -E '^awg[0-9]+$'); do
+  if pgrep -f "amneziawg-go ${iface}" >/dev/null 2>&1; then echo userspace; exit 0; fi
+done
+if [ -d /sys/module/amneziawg ] || lsmod 2>/dev/null | awk '{print $1}' | grep -qx amneziawg; then echo kernel; else echo unknown; fi`},
 		8*time.Second)
 	if err != nil {
 		return "unknown"

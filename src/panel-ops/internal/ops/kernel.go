@@ -3,6 +3,7 @@ package ops
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -43,10 +44,21 @@ func IsKernelOpRunning(state map[string]any) bool {
 	return time.Since(t) < 30*time.Minute
 }
 
+func awgContainerRunning() bool {
+	awgContainer := Env("AWG_CONTAINER", "awggui-awg")
+	cmd := exec.Command("docker", "inspect", "-f", "{{.State.Running}}", awgContainer)
+	out, err := cmd.Output()
+	return err == nil && strings.TrimSpace(string(out)) == "true"
+}
+
 func kernelPathBroken() bool {
+	if !awgContainerRunning() {
+		return false
+	}
 	awgContainer := Env("AWG_CONTAINER", "awggui-awg")
 	cmd := exec.Command("docker", "exec", awgContainer, "sh", "-c",
 		"test -f /run/awg-kernel-bad && echo yes || test -f /config/awg-kernel-bad && echo yes || echo no")
+	cmd.Stderr = io.Discard
 	out, err := cmd.Output()
 	if err != nil {
 		return false
@@ -90,6 +102,7 @@ func AWGKernelStatus() map[string]any {
 			"module_blacklisted": false,
 			"kernel_path_broken": false,
 			"awg_datapath":       "unknown",
+			"iface_datapaths":    []any{},
 			"os_family":          "unknown",
 			"detail":             detail,
 			"script_present":     false,
@@ -125,6 +138,7 @@ func AWGKernelStatus() map[string]any {
 		"module_blacklisted": moduleBlacklisted,
 		"kernel_path_broken": kernelPathBroken(),
 		"awg_datapath":       datapath,
+		"iface_datapaths":    host["iface_datapaths"],
 		"os_family":          stringOr(host["os_family"], "unknown"),
 		"detail":             AsString(host["detail"]),
 		"script_present":     true,

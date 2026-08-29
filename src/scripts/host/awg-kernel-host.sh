@@ -129,16 +129,59 @@ package_installed() {
   esac
 }
 
+# Docker state for awggui-awg: missing | created | running | restarting | …
+awg_container_state() {
+  if ! command -v docker >/dev/null 2>&1; then
+    echo "missing"
+    return
+  fi
+  docker inspect -f '{{.State.Status}}' "${AWG_CONTAINER}" 2>/dev/null || echo "missing"
+}
+
+awg_container_exec_ready() {
+  [[ "$(awg_container_state)" == "running" ]]
+}
+
+# docker exec only when the container is running; stderr suppressed (avoid OCI noise during recreate).
+awg_container_exec() {
+  if ! awg_container_exec_ready; then
+    return 125
+  fi
+  docker exec "${AWG_CONTAINER}" "$@" 2>/dev/null
+}
+
+wait_awg_container_running() {
+  local max_wait="${1:-60}"
+  local i state
+  for i in $(seq 1 "${max_wait}"); do
+    state="$(awg_container_state)"
+    if [[ "${state}" == "running" ]]; then
+      return 0
+    fi
+    if [[ "${state}" == "missing" ]]; then
+      return 1
+    fi
+    sleep 1
+  done
+  return 1
+}
+
 awg_datapath() {
   if ! command -v docker >/dev/null 2>&1; then
     echo "unknown"
     return
   fi
-  if ! docker inspect "${AWG_CONTAINER}" >/dev/null 2>&1; then
+  local state
+  state="$(awg_container_state)"
+  if [[ "${state}" == "missing" || "${state}" != "running" ]]; then
     echo "unknown"
     return
   fi
-  if docker exec "${AWG_CONTAINER}" sh -c 'ps aux 2>/dev/null | grep -q "[a]mneziawg-go "' 2>/dev/null; then
+  if awg_container_exec sh -c 'ps aux 2>/dev/null | grep -q "[a]mneziawg-go "'; then
+    echo "userspace"
+    return
+  fi
+  if awg_container_exec sh -c 'for iface in $(ip -o link show 2>/dev/null | awk -F": " "{print \$2}" | grep -E "^awg[0-9]+$"); do pgrep -f "amneziawg-go ${iface}" >/dev/null 2>&1 && exit 0; done; exit 1'; then
     echo "userspace"
     return
   fi
@@ -149,8 +192,47 @@ awg_datapath() {
   echo "unknown"
 }
 
+iface_datapaths_json() {
+  if ! command -v docker >/dev/null 2>&1; then
+    printf '[]'
+    return
+  fi
+  if ! awg_container_exec_ready; then
+    printf '[]'
+    return
+  fi
+  local lines
+  lines="$(awg_container_exec sh -c '
+    for conf in /config/awg*.conf; do
+      [ -f "$conf" ] || continue
+      iface=$(basename "$conf" .conf)
+      mode=unknown
+      if pgrep -f "amneziawg-go ${iface}" >/dev/null 2>&1; then
+        mode=userspace
+      elif ip link show "${iface}" >/dev/null 2>&1 && { [ -d /sys/module/amneziawg ] || lsmod 2>/dev/null | awk "{print \$1}" | grep -qx amneziawg; }; then
+        mode=kernel
+      fi
+      printf "%s:%s\n" "$iface" "$mode"
+    done
+  ' 2>/dev/null || true)"
+  printf '['
+  local first=1
+  local line iface mode
+  while IFS= read -r line; do
+    line="${line//$'\r'/}"
+    [ -z "${line}" ] && continue
+    iface="${line%%:*}"
+    mode="${line#*:}"
+    [ -z "${iface}" ] && continue
+    [ "${first}" -eq 0 ] && printf ','
+    first=0
+    printf '{"iface":%s,"mode":%s}' "$(json_escape "${iface}")" "$(json_escape "${mode}")"
+  done <<< "${lines}"
+  printf ']'
+}
+
 cmd_status() {
-  local family loaded pkg path detail blacklisted
+  local family loaded pkg path detail blacklisted container_state
   family="$(detect_family)"
   loaded=false
   pkg=false
@@ -158,8 +240,9 @@ cmd_status() {
   module_loaded && loaded=true
   package_installed && pkg=true
   module_blacklisted && blacklisted=true
+  container_state="$(awg_container_state)"
   path="$(awg_datapath)"
-  detail="os_family=${family}"
+  detail="os_family=${family};container=${container_state}"
   if [[ "${blacklisted}" == "true" ]]; then
     detail="${detail};blacklist=1"
   fi
@@ -168,6 +251,7 @@ cmd_status() {
   printf '"package_installed":%s,' "${pkg}"
   printf '"module_blacklisted":%s,' "${blacklisted}"
   printf '"awg_datapath":%s,' "$(json_escape "${path}")"
+  printf '"iface_datapaths":%s,' "$(iface_datapaths_json)"
   printf '"os_family":%s,' "$(json_escape "${family}")"
   printf '"detail":%s' "$(json_escape "${detail}")"
   printf '}\n'
@@ -282,19 +366,21 @@ with_lock() {
 }
 
 restart_awg_container() {
-  if command -v docker >/dev/null 2>&1 && docker inspect "${AWG_CONTAINER}" >/dev/null 2>&1; then
-    docker restart "${AWG_CONTAINER}" >/dev/null || true
-    # Wait for entrypoint to prefer awg-quick when the module is loaded.
-    local i
-    for i in $(seq 1 30); do
-      sleep 2
-      if ! docker exec "${AWG_CONTAINER}" sh -c 'ps aux 2>/dev/null | grep -q "[a]mneziawg-go "' 2>/dev/null; then
-        if docker exec "${AWG_CONTAINER}" sh -c 'ip link show type wireguard >/dev/null 2>&1 || ip link show type amneziawg >/dev/null 2>&1 || ls /sys/class/net/awg* >/dev/null 2>&1'; then
-          return 0
-        fi
-      fi
-    done
+  if ! command -v docker >/dev/null 2>&1 || ! docker inspect "${AWG_CONTAINER}" >/dev/null 2>&1; then
+    return 0
   fi
+  docker restart "${AWG_CONTAINER}" >/dev/null 2>&1 || true
+  wait_awg_container_running 90 || return 0
+  # Wait for entrypoint to prefer awg-quick when the module is loaded.
+  local i
+  for i in $(seq 1 30); do
+    sleep 2
+    if ! awg_container_exec sh -c 'ps aux 2>/dev/null | grep -q "[a]mneziawg-go "'; then
+      if awg_container_exec sh -c 'ip link show type wireguard >/dev/null 2>&1 || ip link show type amneziawg >/dev/null 2>&1 || ls /sys/class/net/awg* >/dev/null 2>&1'; then
+        return 0
+      fi
+    fi
+  done
 }
 
 force_awg_kernel_datapath() {
@@ -302,18 +388,20 @@ force_awg_kernel_datapath() {
   if ! command -v docker >/dev/null 2>&1 || ! docker inspect "${AWG_CONTAINER}" >/dev/null 2>&1; then
     return 0
   fi
-  docker exec "${AWG_CONTAINER}" sh -c '
+  wait_awg_container_running 90 || return 0
+  awg_container_exec sh -c '
     if [ -d /sys/module/amneziawg ]; then
       for c in /config/awg*.conf; do
         [ -f "$c" ] || continue
         touch "$c"
       done
     fi
-  ' 2>/dev/null || true
+  ' || true
   local i
   for i in $(seq 1 20); do
     sleep 2
-    if docker exec "${AWG_CONTAINER}" sh -c 'ps aux 2>/dev/null | grep -q "[a]mneziawg-go "'; then
+    awg_container_exec_ready || continue
+    if awg_container_exec sh -c 'ps aux 2>/dev/null | grep -q "[a]mneziawg-go "'; then
       continue
     fi
     if module_loaded; then
@@ -341,12 +429,14 @@ cmd_install() {
   apply_host_streaming_sysctl
   restart_awg_container
   force_awg_kernel_datapath
-  if module_loaded && ! docker exec "${AWG_CONTAINER}" sh -c 'ps aux 2>/dev/null | grep -q "[a]mneziawg-go "' 2>/dev/null; then
-    write_state "ok" "AmneziaWG kernel module installed; AWG using kernel datapath"
-  elif module_loaded; then
-    write_state "error" "Kernel module loaded but AWG still on userspace (awg-quick/setconf failed — check dmesg for amneziawg oops). AWG will retry kernel after backoff or use stable userspace."
-  else
+  if ! module_loaded; then
     write_state "ok" "AmneziaWG kernel module installed; module not loaded yet — reboot or modprobe amneziawg"
+  elif ! awg_container_exec_ready; then
+    write_state "ok" "AmneziaWG kernel module installed; AWG container still starting — refresh status in a minute"
+  elif ! awg_container_exec sh -c 'ps aux 2>/dev/null | grep -q "[a]mneziawg-go "'; then
+    write_state "ok" "AmneziaWG kernel module installed; AWG using kernel datapath"
+  else
+    write_state "error" "Kernel module loaded but AWG still on userspace (awg-quick/setconf failed — check dmesg for amneziawg oops). AWG will retry kernel after backoff or use stable userspace."
   fi
   echo "AmneziaWG kernel module installed"
 }
@@ -374,7 +464,7 @@ clear_awg_kernel_bad_markers() {
   if ! command -v docker >/dev/null 2>&1 || ! docker inspect "${AWG_CONTAINER}" >/dev/null 2>&1; then
     return 0
   fi
-  docker exec "${AWG_CONTAINER}" sh -c 'rm -f /run/awg-kernel-bad /config/awg-kernel-bad' 2>/dev/null || true
+  awg_container_exec sh -c 'rm -f /run/awg-kernel-bad /config/awg-kernel-bad' || true
 }
 
 cmd_recover() {
@@ -392,9 +482,14 @@ cmd_recover() {
   force_awg_kernel_datapath
   restart_awg_container
   force_awg_kernel_datapath
-  if module_loaded && ! docker exec "${AWG_CONTAINER}" sh -c 'ps aux 2>/dev/null | grep -q "[a]mneziawg-go "' 2>/dev/null; then
+  if module_loaded && awg_container_exec_ready && ! awg_container_exec sh -c 'ps aux 2>/dev/null | grep -q "[a]mneziawg-go "'; then
     write_state "ok" "AWG recovered to kernel datapath"
     echo "AWG recovered to kernel datapath"
+    return 0
+  fi
+  if module_loaded && ! awg_container_exec_ready; then
+    write_state "ok" "Kernel module loaded; AWG container still starting — refresh status in a minute"
+    echo "AWG recover: container still starting"
     return 0
   fi
   if module_loaded; then

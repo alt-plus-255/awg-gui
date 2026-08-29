@@ -175,8 +175,31 @@ func (s *Service) ClientAllowedIPs(ctx context.Context, cfg *models.AwgConfig, m
 	return ips
 }
 
+func allowedIPCacheKey(configID, membershipID int64) string {
+	return strconv.FormatInt(configID, 10) + ":" + strconv.FormatInt(membershipID, 10)
+}
+
+func (s *Service) InvalidateAllowedIPCache(configID, membershipID int64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.clientAllowedIPCache, allowedIPCacheKey(configID, membershipID))
+	delete(s.enabledPeersCache, configID)
+}
+
+func (s *Service) InvalidateConfigPeerCaches(configID int64) {
+	prefix := strconv.FormatInt(configID, 10) + ":"
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.enabledPeersCache, configID)
+	for k := range s.clientAllowedIPCache {
+		if strings.HasPrefix(k, prefix) {
+			delete(s.clientAllowedIPCache, k)
+		}
+	}
+}
+
 func (s *Service) ClientAllowedIPsString(ctx context.Context, cfg *models.AwgConfig, membership *models.AwgConfigPeer) string {
-	key := strconv.FormatInt(cfg.ID, 10) + ":" + strconv.FormatInt(membership.ID, 10)
+	key := allowedIPCacheKey(cfg.ID, membership.ID)
 	s.mu.Lock()
 	if v, ok := s.clientAllowedIPCache[key]; ok {
 		s.mu.Unlock()

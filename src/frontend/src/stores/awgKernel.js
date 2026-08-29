@@ -12,6 +12,7 @@ export const useAwgKernelStore = defineStore('awgKernel', () => {
   const module_blacklisted = ref(false)
   const kernel_path_broken = ref(false)
   const awg_datapath = ref('unknown')
+  const iface_datapaths = ref([])
   const os_family = ref('unknown')
   const script_present = ref(false)
   const detail = ref('')
@@ -32,6 +33,7 @@ export const useAwgKernelStore = defineStore('awgKernel', () => {
     module_blacklisted.value = !!data.module_blacklisted
     kernel_path_broken.value = !!data.kernel_path_broken
     awg_datapath.value = data.awg_datapath || 'unknown'
+    iface_datapaths.value = Array.isArray(data.iface_datapaths) ? data.iface_datapaths : []
     os_family.value = data.os_family || 'unknown'
     script_present.value = data.script_present !== false
     detail.value = data.detail || ''
@@ -116,6 +118,7 @@ export const useAwgKernelStore = defineStore('awgKernel', () => {
     module_blacklisted,
     kernel_path_broken,
     awg_datapath,
+    iface_datapaths,
     os_family,
     script_present,
     detail,

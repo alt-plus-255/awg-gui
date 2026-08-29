@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log"
 	"math"
 	"net/url"
 	"os"
@@ -25,7 +26,7 @@ const (
 	speedJobTTL       = 6 * time.Hour
 	speedResultsTTL   = 30 * 24 * time.Hour
 	speedLockTTL      = 180 * time.Second
-	speedPingTimeout  = 3000
+	speedPingTimeout  = 6000
 )
 
 type SpeedTest struct {
@@ -259,6 +260,12 @@ func (s *SpeedTest) run(ctx context.Context, conn *Connection, nodeKey *string) 
 	if err != nil {
 		return nil, err
 	}
+	if (nodeKey == nil || *nodeKey == "") && conn.IsURLTestMode() {
+		parent := conn.OutboundTag()
+		if active := s.Svc.RoutingOutboundTag(ctx, conn); active != "" && strings.HasPrefix(active, parent+"_") {
+			targetTag = active
+		}
+	}
 	cfg := s.buildConfig(ctx, outbounds, targetTag)
 	if err := s.writeConfig(cfg); err != nil {
 		return nil, err
@@ -273,6 +280,7 @@ func (s *SpeedTest) run(ctx context.Context, conn *Connection, nodeKey *string) 
 	ping := s.measurePing(ctx, targetTag)
 	reachable := ping.ms != nil && *ping.ms > 0
 	if !reachable {
+		s.logSpeedProbeOnPingFailure(ctx, conn.ID, targetTag, ping.err)
 		errMsg := i18n.T(locale, "resolver.speed_test_unreachable")
 		if ping.err != nil && *ping.err != "" {
 			errMsg = *ping.err
@@ -392,7 +400,7 @@ func (s *SpeedTest) buildConfig(ctx context.Context, outbounds []map[string]any,
 	return map[string]any{
 		"log": map[string]any{"level": "warn", "timestamp": true},
 		"dns": map[string]any{
-			"servers": []map[string]any{{"type": "udp", "tag": "bootstrap", "server": "8.8.8.8", "server_port": 53}},
+			"servers": []map[string]any{{"type": "udp", "tag": "bootstrap", "server": s.Svc.BootstrapDNS(ctx), "server_port": 53}},
 			"final":   "bootstrap", "strategy": "ipv4_only",
 		},
 		"inbounds": []map[string]any{{
@@ -525,10 +533,24 @@ func (s *SpeedTest) measurePing(ctx context.Context, tag string) pingSample {
 	msg := i18n.T(locale, "resolver.speed_test_unreachable")
 	if decoded != nil {
 		if m := strVal(decoded["message"]); m != "" {
-			msg = m
+			msg = localizeDelay(locale, m)
 		}
 	}
 	return pingSample{err: &msg}
+}
+
+func (s *SpeedTest) logSpeedProbeOnPingFailure(ctx context.Context, connID int64, tag string, pingErr *string) {
+	errDetail := ""
+	if pingErr != nil {
+		errDetail = *pingErr
+	}
+	r, err := s.Svc.Docker.Exec(ctx, s.Svc.Cfg.AWGContainer,
+		[]string{"tail", "-n", "20", "/config/sing-box-speed.log"}, 5*time.Second)
+	if err != nil {
+		log.Printf("speed-test ping failed conn=%d tag=%s err=%q: could not read sing-box-speed.log: %v", connID, tag, errDetail, err)
+		return
+	}
+	log.Printf("speed-test ping failed conn=%d tag=%s err=%q; sing-box-speed.log tail:\n%s", connID, tag, errDetail, strings.TrimSpace(r.Stdout))
 }
 
 func (s *SpeedTest) measureDownload(ctx context.Context) speedSample {

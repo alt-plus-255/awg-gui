@@ -291,6 +291,9 @@
               <div v-else-if="awgKernelUserspaceDespiteModule" class="text-warning text-caption q-mb-md">
                 {{ t('settings.awgKernelUserspaceWarn') }}
               </div>
+              <div v-else-if="awgKernelContainerBusy" class="text-warning text-caption q-mb-md">
+                {{ t('settings.awgKernelContainerBusyWarn') }}
+              </div>
               <div class="row q-col-gutter-md q-mb-md">
                 <div class="col-12 col-sm-6 col-md-3">
                   <div class="text-caption text-grey-5">{{ t('settings.awgKernelModule') }}</div>
@@ -303,10 +306,26 @@
                 <div class="col-12 col-sm-6 col-md-3">
                   <div class="text-caption text-grey-5">{{ t('settings.awgKernelDatapath') }}</div>
                   <div class="text-body2 mono">{{ awgKernel.awg_datapath }}</div>
+                  <div class="text-caption text-grey-6 q-mt-xs">{{ t('settings.awgKernelDatapathHint') }}</div>
                 </div>
                 <div class="col-12 col-sm-6 col-md-3">
                   <div class="text-caption text-grey-5">{{ t('settings.awgKernelOs') }}</div>
                   <div class="text-body2 mono">{{ awgKernel.os_family }}</div>
+                </div>
+              </div>
+              <div v-if="awgKernel.iface_datapaths.length" class="q-mb-md">
+                <div class="text-caption text-grey-5 q-mb-xs">{{ t('settings.awgKernelIfaceDatapaths') }}</div>
+                <div class="row q-gutter-xs">
+                  <q-chip
+                    v-for="item in awgKernel.iface_datapaths"
+                    :key="item.iface"
+                    dense
+                    outline
+                    color="primary"
+                    class="mono"
+                  >
+                    {{ item.iface }}: {{ item.mode }}
+                  </q-chip>
                 </div>
               </div>
               <div class="text-caption text-grey-5 q-mb-xs">{{ t('settings.awgKernelStatus') }}</div>
@@ -1824,6 +1843,12 @@ const awgKernelUserspaceDespiteModule = computed(() =>
   !awgKernel.module_blacklisted &&
   !awgKernel.kernel_path_broken
 )
+
+const awgKernelContainerBusy = computed(() => {
+  const d = awgKernel.detail || ''
+  if (/container=(restarting|starting|removing|created|dead)/.test(d)) return true
+  return awgKernel.awg_datapath === 'unknown' && !!awgKernel.module_loaded && /container=/.test(d) && !/container=running/.test(d)
+})
 
 const awgKernelNeedsRecover = computed(() =>
   !!awgKernel.module_blacklisted ||

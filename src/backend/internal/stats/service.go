@@ -398,6 +398,9 @@ func (s *Service) AwgShowProbe(ctx context.Context, iface string) (ok bool, deta
 	if errMsg == "" {
 		errMsg = "exit " + strconv.Itoa(r.ExitCode)
 	}
+	if strings.Contains(errMsg, "OCI runtime exec failed") || strings.Contains(errMsg, "failed to open /proc/") {
+		errMsg = "container busy (restarting?)"
+	}
 	if len(errMsg) > 120 {
 		errMsg = errMsg[:120] + "…"
 	}

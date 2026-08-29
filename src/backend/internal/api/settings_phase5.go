@@ -381,7 +381,7 @@ func (c *SettingsController) AWGKernelStatus(w http.ResponseWriter, r *http.Requ
 	if c.PanelOps == nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]any{
 			"ok": false, "message": "panel-ops unavailable", "module_loaded": false, "package_installed": false,
-			"module_blacklisted": false, "kernel_path_broken": false, "awg_datapath": "unknown", "os_family": "unknown", "script_present": false,
+			"module_blacklisted": false, "kernel_path_broken": false, "awg_datapath": "unknown", "iface_datapaths": []any{}, "os_family": "unknown", "script_present": false,
 			"op": map[string]any{"status": "error", "message": "panel-ops unavailable", "running": false},
 		})
 		return
@@ -390,7 +390,7 @@ func (c *SettingsController) AWGKernelStatus(w http.ResponseWriter, r *http.Requ
 	if err != nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]any{
 			"ok": false, "message": err.Error(), "module_loaded": false, "package_installed": false,
-			"module_blacklisted": false, "kernel_path_broken": false, "awg_datapath": "unknown", "os_family": "unknown", "script_present": false,
+			"module_blacklisted": false, "kernel_path_broken": false, "awg_datapath": "unknown", "iface_datapaths": []any{}, "os_family": "unknown", "script_present": false,
 			"op": map[string]any{"status": "error", "message": err.Error(), "running": false},
 		})
 		return
