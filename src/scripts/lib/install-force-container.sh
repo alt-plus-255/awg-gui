@@ -446,7 +446,7 @@ _awg_iface_containers_present() {
 quiesce_docker_exec_clients() {
   local name stopped=0
   log "$(t log_quiesce_exec_clients)"
-  for name in awggui-app awggui-panel-ops; do
+  for name in awggui-app awggui-panel-ops awggui-caddy; do
     if docker inspect "${name}" >/dev/null 2>&1; then
       if _force_container_run_timeout 30 docker stop -t 10 "${name}" >/dev/null 2>&1; then
         stopped=1
@@ -496,12 +496,68 @@ prepare_awg_containers_for_recreate() {
 }
 
 # Caller must define: compose() wrapping `docker compose ...`.
+# timeout(1) cannot invoke shell functions — run compose via bash -c with export -f.
+compose_up_timed_capture() {
+  local ec=0 out=""
+  if ! declare -F compose >/dev/null 2>&1; then
+    out="$(_force_container_run_timeout_capture "${_AWG_COMPOSE_UP_TIMEOUT}" compose "$@" 2>&1)" || ec=$?
+    printf '%s' "${out}"
+    return "${ec}"
+  fi
+  export -f compose 2>/dev/null || true
+  if command -v timeout >/dev/null 2>&1; then
+    out="$(timeout --signal=KILL "${_AWG_COMPOSE_UP_TIMEOUT}s" bash -c 'compose "$@"' _ "$@" 2>&1)" || ec=$?
+  else
+    out="$(compose "$@" 2>&1)" || ec=$?
+  fi
+  printf '%s' "${out}"
+  return "${ec}"
+}
+
 compose_up_timed() {
-  _force_container_run_timeout "${_AWG_COMPOSE_UP_TIMEOUT}" compose "$@"
+  compose_up_timed_capture "$@" >/dev/null
 }
 
 compose_down_timed() {
-  _force_container_run_timeout "${_AWG_COMPOSE_DOWN_TIMEOUT}" compose "$@"
+  local ec=0
+  if declare -F compose >/dev/null 2>&1; then
+    export -f compose 2>/dev/null || true
+    if command -v timeout >/dev/null 2>&1; then
+      timeout --signal=KILL "${_AWG_COMPOSE_DOWN_TIMEOUT}s" bash -c 'compose "$@"' _ "$@" >/dev/null 2>&1
+      return $?
+    fi
+    compose "$@" >/dev/null 2>&1
+    return $?
+  fi
+  _force_container_run_timeout "${_AWG_COMPOSE_DOWN_TIMEOUT}" compose "$@" >/dev/null 2>&1
+}
+
+_compose_upgrade_up() {
+  local phase="$1"
+  local allow_die="${2:-1}"
+  local out="" ec=0 msg=""
+  shift 2
+  case "${phase}" in
+    base) msg="$(t log_upgrade_compose_phase_base)" ;;
+    awg) msg="$(t log_upgrade_compose_phase_awg)" ;;
+    front) msg="$(t log_upgrade_compose_phase_front)" ;;
+    *) msg="$(t log_upgrade_compose_phase "${phase}")" ;;
+  esac
+  log "${msg}"
+  out="$(compose_up_timed_capture "$@")" || ec=$?
+  if [[ "${ec}" -eq 0 ]]; then
+    return 0
+  fi
+  if [[ -n "${out}" ]]; then
+    printf '%s\n' "${out}" >&2
+  fi
+  if [[ "${allow_die}" -eq 0 ]]; then
+    return "${ec}"
+  fi
+  if [[ "${ec}" -eq 124 ]]; then
+    die "$(t err_upgrade_compose_timeout "${phase}")"
+  fi
+  die "$(t err_upgrade_compose_failed "${phase}")"
 }
 
 # Phased upgrade: quiesce exec clients, strict AWG remove, then compose up in stages.
@@ -521,17 +577,13 @@ compose_upgrade_with_awg_recovery() {
   fi
 
   _upgrade_log_phase compose
-  if ! compose_up_timed up -d db docker-proxy; then
-    die "$(t err_upgrade_compose_timeout)"
-  fi
-  if ! compose_up_timed up -d awg; then
+  _compose_upgrade_up base 1 up -d --no-deps db docker-proxy
+  if ! _compose_upgrade_up awg 0 up -d --no-deps awg; then
     warn "$(t warn_compose_up_stuck_retry)"
     prepare_awg_containers_for_recreate 1 || die "$(t err_awg_container_stuck_reboot)"
-    compose_up_timed up -d awg || die "$(t err_upgrade_compose_timeout)"
+    _compose_upgrade_up awg 1 up -d --no-deps awg
   fi
-  if ! compose_up_timed up -d app panel-ops caddy --remove-orphans; then
-    die "$(t err_upgrade_compose_timeout)"
-  fi
+  _compose_upgrade_up front 1 up -d app panel-ops caddy --remove-orphans
   return 0
 }
 
