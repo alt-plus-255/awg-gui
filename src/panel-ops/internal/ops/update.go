@@ -173,11 +173,14 @@ func buildHostUpdateJobScript(version *string, installURL string) string {
 	}
 	b.WriteString(`install_args=(--yes)
 kernel_present=0
-if [[ -x /etc/awg-gui/awg-kernel-host.sh ]]; then
-  st="$(/etc/awg-gui/awg-kernel-host.sh status 2>/dev/null || true)"
-  if echo "$st" | grep -qE '"package_installed":true|"module_loaded":true'; then
-    kernel_present=1
-  fi
+if lsmod 2>/dev/null | awk '{print $1}' | grep -qx amneziawg; then
+  kernel_present=1
+elif [[ -f /etc/modprobe.d/blacklist-amneziawg.conf ]]; then
+  kernel_present=1
+elif dpkg -s amneziawg >/dev/null 2>&1 || dpkg -s amneziawg-dkms >/dev/null 2>&1; then
+  kernel_present=1
+elif rpm -q amneziawg-dkms >/dev/null 2>&1 || rpm -q amneziawg >/dev/null 2>&1; then
+  kernel_present=1
 fi
 wanted="$(grep -E '^AWG_KERNEL_WANTED=' /opt/awg-gui/runtime/.env 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '"' || true)"
 if [[ "$kernel_present" -ne 1 && "$wanted" != "1" ]]; then
@@ -206,7 +209,7 @@ systemctl stop awg-gui-update.service >/dev/null 2>&1 || true
 systemctl reset-failed awg-gui-update.service >/dev/null 2>&1 || true
 systemd-run --no-block --collect --unit=awg-gui-update.service \
   --property=Type=oneshot \
-  --property=TimeoutStartSec=infinity \
+  --property=TimeoutStartSec=3600 \
   --property=TimeoutStopSec=300 \
   /bin/bash /etc/awg-gui/update-job.sh
 `

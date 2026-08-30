@@ -87,6 +87,19 @@ type RefreshResult struct {
 	ByPublicKey    map[string]map[string]any
 }
 
+func (s *Service) hostUpdateRunning() bool {
+	if s == nil {
+		return false
+	}
+	path := strings.TrimRight(s.Cfg.HostAWGGUIDir, "/") + "/update.state"
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	text := string(raw)
+	return strings.Contains(text, `"status": "running"`) || strings.Contains(text, `"status":"running"`)
+}
+
 func (s *Service) dumpStatsForIface(ctx context.Context, iface string) DumpResult {
 	out := DumpResult{Available: false, ByPub: map[string]DumpStat{}}
 	if s.Docker == nil {
@@ -139,6 +152,9 @@ func dumpFromParts(pub, endpoint, hs, rx, tx string) *DumpStat {
 }
 
 func (s *Service) LivePeerStats(ctx context.Context, configIDs []int64) LiveResult {
+	if s.hostUpdateRunning() {
+		return LiveResult{StatsAvailable: false, ByPublicKey: map[string]map[string]any{}}
+	}
 	configs := s.enabledConfigs(ctx, configIDs)
 	statsAvailable := true
 	byPublicKey := map[string]map[string]any{}
@@ -376,6 +392,9 @@ func (s *Service) AwgShowAvailable(ctx context.Context, iface string) bool {
 // AwgShowProbe runs awg show, falling back to awg show dump (same as stats).
 // detail is a short stderr/exit summary when unsuccessful.
 func (s *Service) AwgShowProbe(ctx context.Context, iface string) (ok bool, detail string) {
+	if s.hostUpdateRunning() {
+		return false, "update in progress"
+	}
 	if s.Docker == nil {
 		return false, "no docker runtime"
 	}
@@ -408,6 +427,9 @@ func (s *Service) AwgShowProbe(ctx context.Context, iface string) (ok bool, deta
 }
 
 func (s *Service) IfaceIsUp(ctx context.Context, iface string) bool {
+	if s.hostUpdateRunning() {
+		return false
+	}
 	if !ifaceRE.MatchString(iface) || s.Docker == nil {
 		return false
 	}
@@ -417,6 +439,9 @@ func (s *Service) IfaceIsUp(ctx context.Context, iface string) bool {
 
 // KernelModuleLoaded reports whether amneziawg is visible inside the AWG container.
 func (s *Service) KernelModuleLoaded(ctx context.Context) bool {
+	if s.hostUpdateRunning() {
+		return false
+	}
 	if s.Docker == nil || !s.IsContainerRunning(ctx, "") {
 		return false
 	}

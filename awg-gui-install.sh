@@ -897,7 +897,11 @@ main() {
   docker builder prune -af >/dev/null 2>&1 || true
   log "$(t log_building_containers)"
   COMPOSE_PARALLEL_LIMIT=1 compose build
-  compose_up_with_awg_recovery
+  if [[ "${UPGRADE_MODE}" -eq 1 ]]; then
+    compose_upgrade_with_awg_recovery
+  else
+    compose_up_with_awg_recovery
+  fi
 
   wait_for_app || true
   wait_for_migrate_lock

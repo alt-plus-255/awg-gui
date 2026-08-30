@@ -118,3 +118,22 @@ curl -fsSL -o src/awg/vendor/sing-box-1.13.14-linux-amd64.tar.gz \
 ```
 
 Для ARM замените `amd64` на `arm64` или `armv7`.
+
+## Обновление зависло на awggui-awg
+
+Если обновление из панели или `install.sh --yes` зависло с ошибками `OCI runtime exec failed` / `failed to open /proc/.../ns/ipc`, контейнер AWG попал в известный Docker wedge (exit-event). Данные в volumes сохраняются.
+
+**Аварийное восстановление по SSH:**
+
+```bash
+sudo systemctl stop awg-gui-update.service 2>/dev/null || true
+sudo pkill -f 'awg-gui-install' 2>/dev/null || true
+sudo systemctl restart docker
+sleep 5
+sudo docker rm -f awggui-awg 2>/dev/null || true
+cd /opt/awg-gui/runtime && sudo docker compose up -d --remove-orphans
+```
+
+Если `compose up` снова висит более 2 минут — перезагрузите сервер и выполните `sudo awg-gui ensure-up`.
+
+Повторяйте обновление до версии с исправленным установщиком (поэтапный upgrade, таймауты, quiesce app перед AWG). Пока модуль `amneziawg` в blacklist (`/etc/modprobe.d/blacklist-amneziawg.conf`), AWG работает в userspace — это нормально до исправления DKMS.

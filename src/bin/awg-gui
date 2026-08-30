@@ -41,6 +41,14 @@ t() {
     warn_exit_event_stuck) printf '%s' "Docker could not kill ${1:-} (no exit event) — restarting Docker engine ..." ;;
     warn_compose_up_stuck_retry) printf '%s' 'compose up failed stopping a container — recovering and retrying ...' ;;
     err_awg_container_stuck_reboot) printf '%s' 'Could not remove hung awggui-awg. Reboot the server, then run: awg-gui ensure-up (volumes preserved).' ;;
+    log_quiesce_exec_clients) printf '%s' 'Stopping app and panel-ops before AWG recreate ...' ;;
+    log_upgrade_phase_quiesce) printf '%s' 'Upgrade phase: quiesce exec clients ...' ;;
+    log_upgrade_phase_kernel) printf '%s' 'Upgrade phase: host kernel prepare ...' ;;
+    log_upgrade_phase_awg_remove) printf '%s' 'Upgrade phase: remove awggui-awg ...' ;;
+    log_upgrade_phase_compose) printf '%s' 'Upgrade phase: compose up (phased) ...' ;;
+    err_force_remove_timeout) printf '%s' 'Timed out removing container %s' ;;
+    warn_docker_restart_required) printf '%s' 'Container process gone but Docker still tracks it — restarting Docker engine ...' ;;
+    err_upgrade_compose_timeout) printf '%s' 'compose up timed out during upgrade' ;;
     *) printf '%s' "${key}" ;;
   esac
 }

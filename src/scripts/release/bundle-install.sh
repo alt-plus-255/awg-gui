@@ -1065,7 +1065,11 @@ main() {
   load_images
 
   log "$(t log_starting_containers)"
-  compose_up_with_awg_recovery
+  if [[ "${UPGRADE_MODE}" -eq 1 ]]; then
+    compose_upgrade_with_awg_recovery
+  else
+    compose_up_with_awg_recovery
+  fi
   INSTALL_COMPOSE_SUCCEEDED=1
 
   wait_for_app || true

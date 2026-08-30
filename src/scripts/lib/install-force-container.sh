@@ -5,13 +5,35 @@
 # AmneziaWG containers with NET_ADMIN / tun / kernel datapath can leave Docker
 # unable to kill them ("tried to kill container, but did not receive an exit event").
 # Compose then hangs on recreate during upgrades. Call
-# prepare_awg_containers_for_recreate before `compose up`, and use
-# compose_up_with_awg_recovery for start+retry.
+# prepare_awg_containers_for_recreate before `compose up`, use
+# compose_upgrade_with_awg_recovery for upgrades, and
+# compose_up_with_awg_recovery for fresh install/repair.
 
 if [[ -n "${_AWG_GUI_FORCE_CONTAINER_LOADED:-}" ]]; then
   return 0 2>/dev/null || true
 fi
 _AWG_GUI_FORCE_CONTAINER_LOADED=1
+readonly _AWG_COMPOSE_UP_TIMEOUT="${AWG_COMPOSE_UP_TIMEOUT:-300}"
+readonly _AWG_FORCE_REMOVE_BUDGET="${AWG_FORCE_REMOVE_BUDGET:-120}"
+readonly _AWG_COMPOSE_DOWN_TIMEOUT="${AWG_COMPOSE_DOWN_TIMEOUT:-180}"
+
+_upgrade_log_phase() {
+  local phase="$1"
+  local ts msg=""
+  ts="$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || true)"
+  [[ -n "${ts}" ]] || return 0
+  if [[ -f /etc/awg-gui/update.log ]]; then
+    echo "[${ts}] [phase] ${phase}" >> /etc/awg-gui/update.log 2>/dev/null || true
+  fi
+  case "${phase}" in
+    quiesce) msg="$(t log_upgrade_phase_quiesce)" ;;
+    kernel) msg="$(t log_upgrade_phase_kernel)" ;;
+    awg_remove) msg="$(t log_upgrade_phase_awg_remove)" ;;
+    compose) msg="$(t log_upgrade_phase_compose)" ;;
+    *) msg="Upgrade phase: ${phase}" ;;
+  esac
+  log "${msg}"
+}
 
 _force_container_run_timeout() {
   local secs="$1"
@@ -63,6 +85,23 @@ _force_container_exit_event_stuck() {
   printf '%s' "${text}" | grep -qi 'did not receive an exit event'
 }
 
+_force_container_oci_zombie_stuck() {
+  local text="$1"
+  printf '%s' "${text}" | grep -qiE 'failed to open /proc/[0-9]+/ns/ipc|OCI runtime exec failed'
+}
+
+_force_remove_budget_exceeded() {
+  local deadline="$1"
+  [[ "$(date +%s)" -ge "${deadline}" ]]
+}
+
+_force_container_zombie_pid() {
+  local name="$1"
+  local pid=""
+  pid="$(_force_container_pid "${name}")"
+  [[ -n "${pid}" && ! -d "/proc/${pid}" ]]
+}
+
 _force_container_exists() {
   local name="$1"
   docker inspect "${name}" >/dev/null 2>&1
@@ -99,11 +138,13 @@ _force_kernel_host_script() {
 # Container or persisted config marks kernel datapath as broken (setconf/oops).
 _force_awg_kernel_bad_marker() {
   if docker inspect awggui-awg >/dev/null 2>&1; then
-    if _force_container_run_timeout 5 docker exec awggui-awg test -f /config/awg-kernel-bad 2>/dev/null; then
-      return 0
-    fi
-    if _force_container_run_timeout 5 docker exec awggui-awg test -f /run/awg-kernel-bad 2>/dev/null; then
-      return 0
+    if [[ "$(_force_container_status awggui-awg)" == "running" ]]; then
+      if _force_container_run_timeout 5 docker exec awggui-awg test -f /config/awg-kernel-bad 2>/dev/null; then
+        return 0
+      fi
+      if _force_container_run_timeout 5 docker exec awggui-awg test -f /run/awg-kernel-bad 2>/dev/null; then
+        return 0
+      fi
     fi
   fi
   local vol
@@ -270,12 +311,31 @@ _force_container_rm_loop() {
   return 0
 }
 
+_force_container_restart_docker_for_stuck() {
+  local name="$1"
+  local reason="$2"
+  if [[ "${reason}" == "exit_event" ]]; then
+    warn "$(t warn_exit_event_stuck "${name}")"
+  else
+    warn "$(t warn_docker_restart_required)"
+  fi
+  if _force_container_restart_docker; then
+    sleep 2
+    if _force_container_rm_loop "${name}" 10; then
+      ok "$(t ok_force_removed_container "${name}")"
+      return 0
+    fi
+  fi
+  return 1
+}
+
 # Force-remove one container. Volumes are never touched.
 # Returns 0 if gone (or never existed), 1 if still present after all escalations.
 force_remove_container() {
   local name="$1"
   local allow_docker_restart="${2:-1}"
-  local status="" out="" exit_stuck=0
+  local status="" out="" exit_stuck=0 zombie=0
+  local deadline=$(( $(date +%s) + _AWG_FORCE_REMOVE_BUDGET ))
 
   _force_container_exists "${name}" || return 0
 
@@ -286,30 +346,56 @@ force_remove_container() {
     *awggui-awg) _force_container_soft_teardown_awg "${name}" ;;
   esac
 
+  if _force_remove_budget_exceeded "${deadline}"; then
+    warn "$(t err_force_remove_timeout "${name}")"
+    return 1
+  fi
+
   # 2) docker stop / kill — detect "did not receive an exit event" early.
   out="$(_force_container_run_timeout_capture 20 docker stop -t 8 "${name}" || true)"
-  if _force_container_exit_event_stuck "${out}"; then
+  if _force_container_exit_event_stuck "${out}" || _force_container_oci_zombie_stuck "${out}"; then
     exit_stuck=1
   fi
   status="$(_force_container_status "${name}")"
   if [[ "${status}" == "exited" || "${status}" == "created" || "${status}" == "dead" ]]; then
     out="$(_force_container_run_timeout_capture 30 docker rm -f "${name}" || true)"
-    if _force_container_exit_event_stuck "${out}"; then
+    if _force_container_exit_event_stuck "${out}" || _force_container_oci_zombie_stuck "${out}"; then
       exit_stuck=1
     fi
     _force_container_exists "${name}" || { ok "$(t ok_force_removed_container "${name}")"; return 0; }
   fi
 
+  if _force_remove_budget_exceeded "${deadline}"; then
+    warn "$(t err_force_remove_timeout "${name}")"
+    return 1
+  fi
+
   out="$(_force_container_run_timeout_capture 15 docker kill -s KILL "${name}" || true)"
-  if _force_container_exit_event_stuck "${out}"; then
+  if _force_container_exit_event_stuck "${out}" || _force_container_oci_zombie_stuck "${out}"; then
     exit_stuck=1
   fi
   sleep 1
 
   # 3) Host PID + netns iface cleanup
   _force_container_host_kill "${name}"
+  if _force_container_zombie_pid "${name}"; then
+    zombie=1
+  fi
+  if [[ "${allow_docker_restart}" == "1" ]] && { [[ "${zombie}" -eq 1 ]] || [[ "${exit_stuck}" -eq 1 ]]; }; then
+    local reason="zombie"
+    [[ "${exit_stuck}" -eq 1 && "${zombie}" -eq 0 ]] && reason="exit_event"
+    if _force_container_restart_docker_for_stuck "${name}" "${reason}"; then
+      return 0
+    fi
+  fi
+
+  if _force_remove_budget_exceeded "${deadline}"; then
+    warn "$(t err_force_remove_timeout "${name}")"
+    return 1
+  fi
+
   out="$(_force_container_run_timeout_capture 30 docker rm -f "${name}" || true)"
-  if _force_container_exit_event_stuck "${out}"; then
+  if _force_container_exit_event_stuck "${out}" || _force_container_oci_zombie_stuck "${out}"; then
     exit_stuck=1
   fi
   if _force_container_rm_loop "${name}" 5; then
@@ -319,15 +405,8 @@ force_remove_container() {
 
   # 4) Exit-event wedge or still present → restart Docker engine immediately.
   if [[ "${allow_docker_restart}" == "1" ]] && { [[ "${exit_stuck}" -eq 1 ]] || _force_container_exists "${name}"; }; then
-    if [[ "${exit_stuck}" -eq 1 ]]; then
-      warn "$(t warn_exit_event_stuck "${name}")"
-    fi
-    if _force_container_restart_docker; then
-      sleep 2
-      if _force_container_rm_loop "${name}" 10; then
-        ok "$(t ok_force_removed_container "${name}")"
-        return 0
-      fi
+    if _force_container_restart_docker_for_stuck "${name}" "exit_event"; then
+      return 0
     fi
   fi
 
@@ -363,8 +442,25 @@ _awg_iface_containers_present() {
   docker ps -a --format '{{.Names}}' 2>/dev/null | grep -qE '(^|_)awggui-awg$'
 }
 
+# Stop containers that docker exec into awggui-awg during upgrades.
+quiesce_docker_exec_clients() {
+  local name stopped=0
+  log "$(t log_quiesce_exec_clients)"
+  for name in awggui-app awggui-panel-ops; do
+    if docker inspect "${name}" >/dev/null 2>&1; then
+      if _force_container_run_timeout 30 docker stop -t 10 "${name}" >/dev/null 2>&1; then
+        stopped=1
+      fi
+    fi
+  done
+  [[ "${stopped}" -eq 1 ]] && sleep 2
+  return 0
+}
+
 # Remove awggui-awg and compose recreate leftovers (*_awggui-awg) before up/recreate.
+# strict=1: die immediately if AWG cannot be removed (upgrade path).
 prepare_awg_containers_for_recreate() {
+  local strict="${1:-0}"
   local name
   local names=()
   local failed=0
@@ -392,24 +488,68 @@ prepare_awg_containers_for_recreate() {
   # Second pass for Created leftovers after awg remove.
   _force_remove_created_and_orphan_awggui
 
+  if [[ "${strict}" -eq 1 && "${failed}" -eq 1 ]]; then
+    die "$(t err_awg_container_stuck_reboot)"
+  fi
+
   return "${failed}"
 }
 
-# compose up with pre-cleanup and one recovery retry on stuck-kill errors.
 # Caller must define: compose() wrapping `docker compose ...`.
-# Aborts (die) if awg container cannot be removed — avoid doomed recreate loops.
-compose_up_with_awg_recovery() {
-  prepare_awg_containers_for_recreate || true
+compose_up_timed() {
+  _force_container_run_timeout "${_AWG_COMPOSE_UP_TIMEOUT}" compose "$@"
+}
+
+compose_down_timed() {
+  _force_container_run_timeout "${_AWG_COMPOSE_DOWN_TIMEOUT}" compose "$@"
+}
+
+# Phased upgrade: quiesce exec clients, strict AWG remove, then compose up in stages.
+compose_upgrade_with_awg_recovery() {
+  _upgrade_log_phase quiesce
+  quiesce_docker_exec_clients
+
+  _upgrade_log_phase kernel
+  prepare_host_kernel_before_awg_recreate
+
+  _upgrade_log_phase awg_remove
+  if ! prepare_awg_containers_for_recreate 1; then
+    die "$(t err_awg_container_stuck_reboot)"
+  fi
   if _awg_iface_containers_present; then
     die "$(t err_awg_container_stuck_reboot)"
   fi
 
-  if compose up -d --remove-orphans; then
+  _upgrade_log_phase compose
+  if ! compose_up_timed up -d db docker-proxy; then
+    die "$(t err_upgrade_compose_timeout)"
+  fi
+  if ! compose_up_timed up -d awg; then
+    warn "$(t warn_compose_up_stuck_retry)"
+    prepare_awg_containers_for_recreate 1 || die "$(t err_awg_container_stuck_reboot)"
+    compose_up_timed up -d awg || die "$(t err_upgrade_compose_timeout)"
+  fi
+  if ! compose_up_timed up -d app panel-ops caddy --remove-orphans; then
+    die "$(t err_upgrade_compose_timeout)"
+  fi
+  return 0
+}
+
+# compose up with pre-cleanup and one recovery retry on stuck-kill errors.
+# Aborts (die) if awg container cannot be removed — avoid doomed recreate loops.
+compose_up_with_awg_recovery() {
+  prepare_awg_containers_for_recreate 0 || true
+  if _awg_iface_containers_present; then
+    die "$(t err_awg_container_stuck_reboot)"
+  fi
+
+  if compose_up_timed up -d --remove-orphans; then
     return 0
   fi
 
   warn "$(t warn_compose_up_stuck_retry)"
-  prepare_awg_containers_for_recreate || true
+  quiesce_docker_exec_clients || true
+  prepare_awg_containers_for_recreate 0 || true
 
   # Broader pass: force-remove containers compose may have tried to recreate
   # (keep healthy db / docker-proxy when possible).
@@ -430,5 +570,5 @@ compose_up_with_awg_recovery() {
     die "$(t err_awg_container_stuck_reboot)"
   fi
 
-  compose up -d --remove-orphans
+  compose_up_timed up -d --remove-orphans
 }

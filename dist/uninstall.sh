@@ -12,10 +12,12 @@ GITHUB_REPO="${AWG_GUI_GITHUB_REPO:-alt-plus-255/awg-gui}"
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 CYAN='\033[0;36m'
+YELLOW='\033[1;33m'
 NC='\033[0m'
 
 log() { echo -e "${CYAN}[uninstall]${NC} $*" >&2; }
 ok() { echo -e "${GREEN}[ok]${NC} $*" >&2; }
+warn() { echo -e "${YELLOW}[warn]${NC} $*" >&2; }
 die() { echo -e "${RED}[error]${NC} $*" >&2; exit 1; }
 
 load_install_i18n() {
@@ -286,13 +288,39 @@ systemctl daemon-reload 2>/dev/null || true
 
 remove_project_logs
 
+_force_lib=""
+for _force_lib in \
+  "${INSTALL_DIR}/lib/install-force-container.sh" \
+  "${INSTALL_DIR}/runtime/../lib/install-force-container.sh"; do
+  if [[ -f "${_force_lib}" ]]; then
+    # shellcheck disable=SC1090
+    source "${_force_lib}"
+    break
+  fi
+done
+unset _force_lib
+
+if declare -F quiesce_docker_exec_clients >/dev/null 2>&1; then
+  quiesce_docker_exec_clients || true
+  prepare_awg_containers_for_recreate 0 || true
+fi
+
 if [[ -f "${COMPOSE_FILE}" ]]; then
   down_args=(down -v --remove-orphans)
   [[ "${REMOVE_IMAGES}" -eq 1 ]] && down_args+=(--rmi all)
+  down_timeout="${_AWG_COMPOSE_DOWN_TIMEOUT:-180}"
   if [[ -f "${ENV_FILE}" ]]; then
-    docker compose -p "${PROJECT_NAME}" --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" "${down_args[@]}" || true
+    if declare -F _force_container_run_timeout >/dev/null 2>&1; then
+      _force_container_run_timeout "${down_timeout}" docker compose -p "${PROJECT_NAME}" --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" "${down_args[@]}" || true
+    else
+      docker compose -p "${PROJECT_NAME}" --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" "${down_args[@]}" || true
+    fi
   else
-    docker compose -p "${PROJECT_NAME}" -f "${COMPOSE_FILE}" "${down_args[@]}" || true
+    if declare -F _force_container_run_timeout >/dev/null 2>&1; then
+      _force_container_run_timeout "${down_timeout}" docker compose -p "${PROJECT_NAME}" -f "${COMPOSE_FILE}" "${down_args[@]}" || true
+    else
+      docker compose -p "${PROJECT_NAME}" -f "${COMPOSE_FILE}" "${down_args[@]}" || true
+    fi
   fi
 fi
 

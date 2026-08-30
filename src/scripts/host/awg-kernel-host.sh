@@ -173,7 +173,7 @@ awg_datapath() {
   fi
   local state
   state="$(awg_container_state)"
-  if [[ "${state}" == "missing" || "${state}" != "running" ]]; then
+  if [[ "${state}" != "running" ]]; then
     echo "unknown"
     return
   fi
@@ -201,7 +201,7 @@ iface_datapaths_json() {
     printf '[]'
     return
   fi
-  local lines
+  local lines="" ec=0
   lines="$(awg_container_exec sh -c '
     for conf in /config/awg*.conf; do
       [ -f "$conf" ] || continue
@@ -214,7 +214,11 @@ iface_datapaths_json() {
       fi
       printf "%s:%s\n" "$iface" "$mode"
     done
-  ' 2>/dev/null || true)"
+  ' 2>/dev/null)" || ec=$?
+  if [[ "${ec}" -ne 0 ]] || printf '%s' "${lines}" | grep -qi 'OCI runtime exec failed'; then
+    printf '[]'
+    return
+  fi
   printf '['
   local first=1
   local line iface mode

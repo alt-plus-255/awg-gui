@@ -152,13 +152,22 @@ remove_project_logs() {
 
 compose_down() {
   local args=(down -v --remove-orphans)
+  local down_timeout="${_AWG_COMPOSE_DOWN_TIMEOUT:-180}"
   if [[ "${REMOVE_IMAGES}" -eq 1 ]]; then
     args+=(--rmi all)
   fi
   if [[ -f "${ENV_FILE}" ]]; then
-    docker compose -p "${PROJECT_NAME}" --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" "${args[@]}"
+    if declare -F _force_container_run_timeout >/dev/null 2>&1; then
+      _force_container_run_timeout "${down_timeout}" docker compose -p "${PROJECT_NAME}" --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" "${args[@]}"
+    else
+      docker compose -p "${PROJECT_NAME}" --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" "${args[@]}"
+    fi
   else
-    docker compose -p "${PROJECT_NAME}" -f "${COMPOSE_FILE}" "${args[@]}"
+    if declare -F _force_container_run_timeout >/dev/null 2>&1; then
+      _force_container_run_timeout "${down_timeout}" docker compose -p "${PROJECT_NAME}" -f "${COMPOSE_FILE}" "${args[@]}"
+    else
+      docker compose -p "${PROJECT_NAME}" -f "${COMPOSE_FILE}" "${args[@]}"
+    fi
   fi
 }
 
@@ -237,6 +246,11 @@ systemctl daemon-reload || true
 ok "$(t ok_systemd_removed)"
 
 remove_project_logs
+
+if declare -F quiesce_docker_exec_clients >/dev/null 2>&1; then
+  quiesce_docker_exec_clients || true
+  prepare_awg_containers_for_recreate 0 || true
+fi
 
 if [[ -f "${COMPOSE_FILE}" ]]; then
   compose_down || true
