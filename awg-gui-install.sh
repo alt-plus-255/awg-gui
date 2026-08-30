@@ -108,8 +108,12 @@ select_install_lang
 export AWG_GUI_LANG
 
 compose() {
-  docker compose -p "${PROJECT_NAME}" --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" "$@"
+  env -u DOCKER_HOST docker compose -p "${PROJECT_NAME}" \
+    --project-directory "${SRC_DIR}" \
+    --env-file "${ENV_FILE}" \
+    -f "${COMPOSE_FILE}" "$@"
 }
+export PROJECT_NAME ENV_FILE COMPOSE_FILE SRC_DIR
 
 detect_os() {
   # shellcheck disable=SC1091

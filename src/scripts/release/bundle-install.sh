@@ -131,8 +131,13 @@ select_install_lang
 export AWG_GUI_LANG
 
 compose() {
-  docker compose -p "${PROJECT_NAME}" --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" "$@"
+  # DOCKER_HOST in .env is for the app container (tcp://docker-proxy:2375), not the host CLI.
+  env -u DOCKER_HOST docker compose -p "${PROJECT_NAME}" \
+    --project-directory "${RUNTIME_DIR}" \
+    --env-file "${ENV_FILE}" \
+    -f "${COMPOSE_FILE}" "$@"
 }
+export PROJECT_NAME ENV_FILE COMPOSE_FILE RUNTIME_DIR
 
 _ENSURE_DOCKER=""
 if [[ -f "${SCRIPT_DIR}/lib/ensure-docker.sh" ]]; then
@@ -717,18 +722,35 @@ cleanup_after_install() {
 }
 
 load_images() {
-  local tar_file=""
-  for tar_file in "${SCRIPT_DIR}"/images/awggui-all-*.tar.gz "${SCRIPT_DIR}"/images/awggui-all-*.tar; do
-    [[ -f "${tar_file}" ]] && break
-  done
-  [[ -f "${tar_file}" ]] || die "$(t err_missing_image_archive "${SCRIPT_DIR}")"
-
+  local tar_file="" want=""
+  if [[ -f "${SCRIPT_DIR}/VERSION" ]]; then
+    want="$(tr -d '[:space:]' < "${SCRIPT_DIR}/VERSION")"
+    BUNDLE_VERSION="${want}"
+  fi
   detect_bundle_version || true
+  [[ -n "${want}" ]] || want="${BUNDLE_VERSION}"
+  if [[ -n "${want}" && -f "${SCRIPT_DIR}/images/awggui-all-${want}.tar.gz" ]]; then
+    tar_file="${SCRIPT_DIR}/images/awggui-all-${want}.tar.gz"
+  elif [[ -n "${want}" && -f "${SCRIPT_DIR}/images/awggui-all-${want}.tar" ]]; then
+    tar_file="${SCRIPT_DIR}/images/awggui-all-${want}.tar"
+  else
+    for tar_file in "${SCRIPT_DIR}"/images/awggui-all-*.tar.gz "${SCRIPT_DIR}"/images/awggui-all-*.tar; do
+      [[ -f "${tar_file}" ]] && break
+    done
+  fi
+  [[ -f "${tar_file}" ]] || die "$(t err_missing_image_archive "${SCRIPT_DIR}")"
 
   log "$(t log_loading_images "${tar_file}")"
   docker load -i "${tar_file}"
   ok "$(t ok_images_loaded)"
-  # Keep tar until compose up succeeds so a recreate failure can retry without re-download.
+  # Drop stale archives from prior versions so the next upgrade loads the right tar.
+  local stale
+  for stale in "${SCRIPT_DIR}"/images/awggui-all-*.tar.gz "${SCRIPT_DIR}"/images/awggui-all-*.tar; do
+    [[ -f "${stale}" ]] || continue
+    [[ "${stale}" == "${tar_file}" ]] && continue
+    rm -f "${stale}"
+  done
+  # Keep current tar until compose up succeeds so a recreate failure can retry without re-download.
 }
 
 seed_host_ssl_files() {

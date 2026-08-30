@@ -495,6 +495,13 @@ prepare_awg_containers_for_recreate() {
   return "${failed}"
 }
 
+_awg_compose_prepare_subshell() {
+  export PROJECT_NAME ENV_FILE COMPOSE_FILE RUNTIME_DIR 2>/dev/null || true
+  if declare -F compose >/dev/null 2>&1; then
+    export -f compose 2>/dev/null || true
+  fi
+}
+
 # Caller must define: compose() wrapping `docker compose ...`.
 # timeout(1) cannot invoke shell functions — run compose via bash -c with export -f.
 compose_up_timed_capture() {
@@ -504,7 +511,7 @@ compose_up_timed_capture() {
     printf '%s' "${out}"
     return "${ec}"
   fi
-  export -f compose 2>/dev/null || true
+  _awg_compose_prepare_subshell
   if command -v timeout >/dev/null 2>&1; then
     out="$(timeout --signal=KILL "${_AWG_COMPOSE_UP_TIMEOUT}s" bash -c 'compose "$@"' _ "$@" 2>&1)" || ec=$?
   else
@@ -521,7 +528,7 @@ compose_up_timed() {
 compose_down_timed() {
   local ec=0
   if declare -F compose >/dev/null 2>&1; then
-    export -f compose 2>/dev/null || true
+    _awg_compose_prepare_subshell
     if command -v timeout >/dev/null 2>&1; then
       timeout --signal=KILL "${_AWG_COMPOSE_DOWN_TIMEOUT}s" bash -c 'compose "$@"' _ "$@" >/dev/null 2>&1
       return $?

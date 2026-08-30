@@ -175,7 +175,10 @@ require_root() {
 
 compose() {
   # DOCKER_HOST in .env is for the app container (tcp://docker-proxy:2375), not the host CLI.
-  env -u DOCKER_HOST docker compose -p "${PROJECT_NAME}" --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" "$@"
+  env -u DOCKER_HOST docker compose -p "${PROJECT_NAME}" \
+    --project-directory "$(dirname "${COMPOSE_FILE}")" \
+    --env-file "${ENV_FILE}" \
+    -f "${COMPOSE_FILE}" "$@"
 }
 
 load_webhook() {
