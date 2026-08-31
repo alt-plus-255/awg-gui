@@ -468,6 +468,8 @@ func (s *Service) groupAwgIfaces(ctx context.Context, locale string, configs []m
 			hints = append(hints, i18n.T(locale, "system.nat_masquerade_hint"))
 		}
 
+		s.appendPeerFirewallChecks(ctx, locale, targets, &checks, &hints)
+
 		var missingRoutes []string
 		for _, c := range targets {
 			if !s.Stats.IfaceIsUp(ctx, c.Iface) {

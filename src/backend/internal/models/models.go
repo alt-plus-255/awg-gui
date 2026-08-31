@@ -185,10 +185,12 @@ type AwgConfigPeer struct {
 	PublicKey          string
 	PresharedKey       *string
 	Address            string
-	ExtraAllowedIPs    []string
-	ExcludedClientIDs  []int64
-	ExclusionsMutual   bool
-	Keepalive          *int
+	ExtraAllowedIPs      []string
+	ExcludedClientIDs    []int64
+	ExclusionsMutual     bool
+	Keepalive            *int
+	ForwardPolicy        string
+	ForwardAllowedCIDRs  []string
 	RuntimeEndpoint    *string
 	LatestHandshake    *int64
 	TransferRx         int64

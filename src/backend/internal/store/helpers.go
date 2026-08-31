@@ -95,3 +95,10 @@ func ptrBool(n sql.NullBool) *bool {
 	v := n.Bool
 	return &v
 }
+
+func stringOrDefault(v, d string) string {
+	if v == "" {
+		return d
+	}
+	return v
+}

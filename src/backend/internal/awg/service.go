@@ -417,6 +417,7 @@ func (s *Service) syncIfaceLive(ctx context.Context, cfg *models.AwgConfig) {
 	path := s.ConfigPath(cfg)
 	cmd := "awg syncconf " + cfg.Iface + " <(awg-quick strip " + path + ") 2>/dev/null || true"
 	_ = s.Docker.Exec(ctx, s.ContainerName(), []string{"sh", "-c", cmd}, 15*time.Second, "")
+	s.ApplyPeerFirewall(ctx, cfg)
 }
 
 func (s *Service) IsAWGRestarting(ctx context.Context) bool {

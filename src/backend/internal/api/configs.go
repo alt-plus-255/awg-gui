@@ -453,6 +453,10 @@ func (c *ConfigController) AttachPeer(w http.ResponseWriter, r *http.Request) {
 	if !c.assertVNSubnet(w, r, cfg, extraIPs) {
 		return
 	}
+	forwardPolicy, forwardCIDRs, ok := c.normalizeForwardFirewall(w, r, cfg, req)
+	if !ok {
+		return
+	}
 	excluded, ok := c.normalizeExcluded(w, r, cfg, client.ID, req["excluded_client_ids"])
 	if !ok {
 		return
@@ -502,10 +506,12 @@ func (c *ConfigController) AttachPeer(w http.ResponseWriter, r *http.Request) {
 		PublicKey:         keys.Public,
 		PresharedKey:      psk,
 		Address:           addr,
-		ExtraAllowedIPs:   extraIPs,
-		ExcludedClientIDs: excluded,
-		ExclusionsMutual:  mutual,
-		Keepalive:         keepalive,
+		ExtraAllowedIPs:     extraIPs,
+		ExcludedClientIDs:   excluded,
+		ExclusionsMutual:    mutual,
+		Keepalive:           keepalive,
+		ForwardPolicy:       forwardPolicy,
+		ForwardAllowedCIDRs: forwardCIDRs,
 	}
 	if err := c.Peers.Create(r.Context(), m); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"message": err.Error()})
@@ -566,6 +572,17 @@ func (c *ConfigController) UpdatePeer(w http.ResponseWriter, r *http.Request) {
 		if b, ok := asBool(v); ok {
 			m.ExclusionsMutual = b
 		}
+	}
+	if _, hasForward := req["forward_policy"]; hasForward || req["forward_allowed_cidrs"] != nil {
+		if _, ok := req["forward_policy"]; !ok {
+			req["forward_policy"] = m.ForwardPolicy
+		}
+		forwardPolicy, forwardCIDRs, ok := c.normalizeForwardFirewall(w, r, cfg, req)
+		if !ok {
+			return
+		}
+		m.ForwardPolicy = forwardPolicy
+		m.ForwardAllowedCIDRs = forwardCIDRs
 	}
 	if v, ok := req["use_preshared_key"]; ok {
 		if b, ok := asBool(v); ok {
@@ -1079,6 +1096,71 @@ func (c *ConfigController) normalizeExtraIPs(w http.ResponseWriter, r *http.Requ
 		}
 		if cidr == "0.0.0.0/0" || cidr == "::/0" {
 			writeValidation(w, r, "extra_allowed_ips", "configs.full_tunnel_cidr_forbidden", map[string]string{"cidr": cidr})
+			return nil, false
+		}
+		if !seen[cidr] {
+			seen[cidr] = true
+			out = append(out, cidr)
+		}
+	}
+	return out, true
+}
+
+func (c *ConfigController) normalizeForwardFirewall(w http.ResponseWriter, r *http.Request, cfg *models.AwgConfig, req map[string]any) (string, []string, bool) {
+	if cfg.Type != "server" {
+		return "allow_all", []string{}, true
+	}
+	rawPolicy := strings.TrimSpace(asString(req["forward_policy"]))
+	if rawPolicy != "" && rawPolicy != "allow_all" && rawPolicy != "restricted" {
+		writeValidation(w, r, "forward_policy", "configs.forward_policy_invalid", nil)
+		return "", nil, false
+	}
+	policy := awg.NormalizeForwardPolicy(rawPolicy)
+	var cidrs []string
+	if raw, ok := req["forward_allowed_cidrs"]; ok {
+		var okCIDRs bool
+		cidrs, okCIDRs = c.normalizeCIDRList(w, r, "forward_allowed_cidrs", raw)
+		if !okCIDRs {
+			return "", nil, false
+		}
+	}
+	if policy == "restricted" && len(cidrs) == 0 {
+		writeValidation(w, r, "forward_allowed_cidrs", "configs.forward_cidrs_required", nil)
+		return "", nil, false
+	}
+	if policy != "restricted" {
+		cidrs = []string{}
+	}
+	return policy, cidrs, true
+}
+
+func (c *ConfigController) normalizeCIDRList(w http.ResponseWriter, r *http.Request, field string, raw any) ([]string, bool) {
+	if raw == nil {
+		return []string{}, true
+	}
+	arr, ok := raw.([]any)
+	if !ok {
+		writeValidation(w, r, field, "api.http_422", nil)
+		return nil, false
+	}
+	var out []string
+	seen := map[string]bool{}
+	for _, item := range arr {
+		cidr := strings.TrimSpace(asString(item))
+		if cidr == "" {
+			continue
+		}
+		if !cidrRE.MatchString(cidr) {
+			writeValidation(w, r, field, "configs.invalid_cidr", map[string]string{"cidr": cidr})
+			return nil, false
+		}
+		host := strings.SplitN(cidr, "/", 2)[0]
+		if net.ParseIP(host) == nil {
+			writeValidation(w, r, field, "configs.invalid_ip_in_cidr", map[string]string{"cidr": cidr})
+			return nil, false
+		}
+		if cidr == "0.0.0.0/0" || cidr == "::/0" {
+			writeValidation(w, r, field, "configs.full_tunnel_cidr_forbidden", map[string]string{"cidr": cidr})
 			return nil, false
 		}
 		if !seen[cidr] {

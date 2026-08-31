@@ -934,6 +934,7 @@ EOF
   install_cli_and_systemd
   mark_install_complete
   cleanup_unused_project_images
+  recover_awg_kernel_after_install
 
   local url="http://${display_host}:${panel_port}"
   print_helper

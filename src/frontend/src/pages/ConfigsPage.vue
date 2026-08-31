@@ -562,6 +562,28 @@
               <q-btn flat dense icon="close" color="negative" @click="peerForm.extra_allowed_ips.splice(idx, 1)" />
             </div>
             <q-btn flat dense color="primary" icon="add" :label="t('configs.addCidr')" class="q-mb-md" @click="peerForm.extra_allowed_ips.push('')" />
+
+            <q-separator class="q-my-md" />
+            <div class="text-subtitle2 q-mb-sm">{{ t('configs.peerForwardFirewall') }}</div>
+            <div class="text-caption text-grey-5 q-mb-sm">
+              {{ activeConfig?.resolver_enabled ? t('configs.peerForwardFirewallResolverHint') : t('configs.peerForwardFirewallHint') }}
+            </div>
+            <q-toggle
+              v-model="peerForwardRestricted"
+              :label="t('configs.peerForwardRestrict')"
+              color="primary"
+              class="q-mb-sm"
+            />
+            <template v-if="peerForwardRestricted">
+              <div v-for="(ip, idx) in peerForm.forward_allowed_cidrs" :key="'fw-' + idx" class="row q-gutter-sm q-mb-sm items-center">
+                <q-input v-model="peerForm.forward_allowed_cidrs[idx]" :label="t('configs.peerForwardDestCidr')" filled dense class="col" />
+                <q-btn flat dense icon="close" color="negative" @click="peerForm.forward_allowed_cidrs.splice(idx, 1)" />
+              </div>
+              <q-btn flat dense color="primary" icon="add" :label="t('configs.addCidr')" class="q-mb-sm" @click="peerForm.forward_allowed_cidrs.push('')" />
+              <q-banner v-if="peerForwardRouteWarning" dense rounded class="bg-amber-9 text-grey-2 q-mb-sm">
+                {{ peerForwardRouteWarning }}
+              </q-banner>
+            </template>
           </template>
 
           <div v-if="peerPreview" class="q-mb-md">
@@ -874,6 +896,8 @@ const peerForm = reactive({
   local_subnet: '',
   excluded_client_ids: [],
   exclusions_mutual: false,
+  forward_policy: 'allow_all',
+  forward_allowed_cidrs: [],
   use_preshared_key: true
 })
 
@@ -937,6 +961,30 @@ const exclusionOptions = computed(() => {
   return (peersState[activeConfig.value.id]?.peers || [])
     .filter((p) => p.client_id !== ownId)
     .map((p) => ({ client_id: p.client_id, name: p.name || `peer #${p.client_id}` }))
+})
+
+const peerForwardRestricted = computed({
+  get () {
+    return peerForm.forward_policy === 'restricted'
+  },
+  set (v) {
+    peerForm.forward_policy = v ? 'restricted' : 'allow_all'
+    if (v && !peerForm.forward_allowed_cidrs.length) {
+      peerForm.forward_allowed_cidrs.push('')
+    }
+  }
+})
+
+const peerForwardRouteWarning = computed(() => {
+  if (peerForm.forward_policy !== 'restricted') return ''
+  const extras = (peerForm.extra_allowed_ips || []).map((x) => String(x || '').trim()).filter(Boolean)
+  const fw = (peerForm.forward_allowed_cidrs || []).map((x) => String(x || '').trim()).filter(Boolean)
+  if (!fw.length) return ''
+  if (!extras.length) return t('configs.peerForwardNoClientRoutes')
+  const extraSet = new Set(extras)
+  const uncovered = fw.filter((c) => !extraSet.has(c))
+  if (!uncovered.length) return ''
+  return t('configs.peerForwardRouteMismatch')
 })
 
 function configRules (config) {
@@ -1797,6 +1845,8 @@ function openAddPeer (config) {
   peerForm.local_subnet = ''
   peerForm.excluded_client_ids = []
   peerForm.exclusions_mutual = false
+  peerForm.forward_policy = 'allow_all'
+  peerForm.forward_allowed_cidrs = []
   peerForm.use_preshared_key = true
   peerFormOpen.value = true
 }
@@ -1841,6 +1891,9 @@ function openEditPeer (config, row) {
   peerForm.local_subnet = (row.extra_allowed_ips || [])[0] || ''
   peerForm.excluded_client_ids = [...(row.excluded_client_ids || [])]
   peerForm.exclusions_mutual = !!row.exclusions_mutual
+  peerForm.forward_policy = row.forward_policy || 'allow_all'
+  peerForm.forward_allowed_cidrs = [...(row.forward_allowed_cidrs || [])]
+  if (!peerForm.forward_allowed_cidrs.length) peerForm.forward_allowed_cidrs.push('')
   peerFormOpen.value = true
 }
 
@@ -1867,6 +1920,18 @@ async function savePeer () {
     if (config.type === 'virtual_network') {
       membershipPayload.excluded_client_ids = peerForm.excluded_client_ids || []
       membershipPayload.exclusions_mutual = peerForm.exclusions_mutual
+    } else {
+      membershipPayload.forward_policy = peerForm.forward_policy || 'allow_all'
+      if (peerForm.forward_policy === 'restricted') {
+        const fwCidrs = peerForm.forward_allowed_cidrs.filter((x) => String(x).trim())
+        if (!fwCidrs.length) {
+          $q.notify({ type: 'negative', message: t('configs.peerForwardCidrsRequired') })
+          return
+        }
+        membershipPayload.forward_allowed_cidrs = fwCidrs
+      } else {
+        membershipPayload.forward_allowed_cidrs = []
+      }
     }
 
     if (editingPeerId.value) {

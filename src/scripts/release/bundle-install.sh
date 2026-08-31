@@ -1122,6 +1122,7 @@ EOF
   install_cli_and_systemd
   mark_install_complete
   cleanup_after_install
+  recover_awg_kernel_after_install
 
   if [[ "${UPGRADE_MODE}" -eq 1 ]]; then
     finalize_running_update_state "success" "Update completed successfully."

@@ -104,6 +104,10 @@ var systemEN = map[string]string{
 	"system.streaming_fakeip_counters_detail": "RSNAT pkts=:nat, TPROXY UDP pkts=:udp",
 	"system.resolver_not_amnezia_go_hint":     "Resolver listed-domain traffic goes through sing-box (NAT REDIRECT :1602 + TPROXY :1603), not through amneziawg-go. AWG datapath only affects the client→VDS tunnel.",
 	"system.awg_iface_userspace_despite_kernel_hint": "Interface :iface («:name») uses userspace amneziawg-go while the kernel module is loaded — ABR video will stutter. Restart AWG or check docker logs awggui-awg.",
+	"system.peer_firewall_label":              "Peer firewall",
+	"system.peer_firewall_active_detail":      ":count restricted peer(s), chain :chain active",
+	"system.peer_firewall_chain_missing_detail": "iptables chain :chain not found",
+	"system.peer_firewall_chain_missing_hint":   "Config «:name»: peer firewall rules missing. Save a peer or restart AWG to apply PostUp.",
 }
 
 var systemRU = map[string]string{
@@ -201,4 +205,8 @@ var systemRU = map[string]string{
 	"system.streaming_fakeip_counters_detail": "RSNAT pkts=:nat, TPROXY UDP pkts=:udp",
 	"system.resolver_not_amnezia_go_hint":     "Трафик по спискам резолвера идёт через sing-box (NAT REDIRECT :1602 + TPROXY :1603), не через amneziawg-go. AWG datapath влияет только на туннель клиент→VDS.",
 	"system.awg_iface_userspace_despite_kernel_hint": "Интерфейс :iface («:name») на userspace amneziawg-go при загруженном kernel-модуле — ABR-видео будет дёргаться. Перезапустите AWG или смотрите docker logs awggui-awg.",
+	"system.peer_firewall_label":              "Firewall пиров",
+	"system.peer_firewall_active_detail":      ":count пир(ов) с ограничением, цепочка :chain активна",
+	"system.peer_firewall_chain_missing_detail": "iptables-цепочка :chain не найдена",
+	"system.peer_firewall_chain_missing_hint":   "Конфиг «:name»: правила firewall пиров отсутствуют. Сохраните пир или перезапустите AWG для PostUp.",
 }

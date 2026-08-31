@@ -216,6 +216,9 @@ _awg_gui_msg_en() {
     warn_kernel_failed) printf '%s' 'Kernel module install failed — continuing with userspace amneziawg-go' ;;
     log_kernel_skipped_user) printf '%s' 'Kernel module skipped by user' ;;
     log_kernel_skip_upgrade_not_installed) printf '%s' 'AmneziaWG kernel module is not installed — skipping forced install on upgrade' ;;
+    log_kernel_recover_after_install) printf '%s' 'Recovering AmneziaWG kernel module after install ...' ;;
+    ok_kernel_recovered_after_install) printf '%s' 'AmneziaWG kernel module reloaded — AWG on kernel datapath' ;;
+    warn_kernel_recover_failed) printf '%s' 'Failed to recover kernel datapath — AWG may stay on userspace amneziawg-go' ;;
     warn_leftover_env) printf '%s' 'Leftover %s without containers — clean install with new passwords' ;;
     warn_incomplete_repair) printf '%s' 'Incomplete install detected — continuing automatic repair ...' ;;
     log_existing_upgrade_yes) printf '%s' 'Existing install detected → upgrade mode (--yes)' ;;
@@ -439,6 +442,9 @@ _awg_gui_msg_ru() {
     warn_kernel_failed) printf '%s' 'Установка модуля ядра не удалась — продолжаем с userspace amneziawg-go' ;;
     log_kernel_skipped_user) printf '%s' 'Модуль ядра пропущен пользователем' ;;
     log_kernel_skip_upgrade_not_installed) printf '%s' 'Модуль ядра AmneziaWG не установлен — принудительная установка при обновлении пропущена' ;;
+    log_kernel_recover_after_install) printf '%s' 'Восстанавливаем модуль ядра AmneziaWG после установки ...' ;;
+    ok_kernel_recovered_after_install) printf '%s' 'Модуль ядра перезагружен — AWG на kernel datapath' ;;
+    warn_kernel_recover_failed) printf '%s' 'Не удалось восстановить kernel datapath — AWG может остаться на userspace amneziawg-go' ;;
     warn_leftover_env) printf '%s' 'Найден оставшийся %s без контейнеров — чистая установка с новыми паролями' ;;
     warn_incomplete_repair) printf '%s' 'Обнаружена незавершённая установка — продолжаем восстановление автоматически ...' ;;
     log_existing_upgrade_yes) printf '%s' 'Обнаружена установка → режим обновления (--yes)' ;;

@@ -209,6 +209,45 @@ prepare_host_kernel_before_awg_recreate() {
   fi
 }
 
+_force_host_kernel_package_installed() {
+  dpkg -s amneziawg >/dev/null 2>&1 || dpkg -s amneziawg-dkms >/dev/null 2>&1 || \
+    rpm -q amneziawg-dkms >/dev/null 2>&1 || rpm -q amneziawg >/dev/null 2>&1
+}
+
+# After install/upgrade: reload amneziawg and nudge AWG back to kernel datapath when the package is present.
+recover_awg_kernel_after_install() {
+  local script status="" pkg_installed=0 blacklisted=0
+
+  if [[ "${SKIP_KERNEL:-0}" -eq 1 ]]; then
+    return 0
+  fi
+  if ! script="$(_force_kernel_host_script)"; then
+    return 0
+  fi
+
+  status="$("${script}" status 2>/dev/null || true)"
+  if echo "${status}" | grep -qE '"package_installed":true'; then
+    pkg_installed=1
+  fi
+  if echo "${status}" | grep -qE '"module_blacklisted":true'; then
+    blacklisted=1
+  fi
+  if [[ -z "${status}" ]]; then
+    _force_host_kernel_package_installed && pkg_installed=1
+    _force_host_kernel_blacklisted && blacklisted=1
+  fi
+
+  [[ "${pkg_installed}" -eq 1 ]] || return 0
+  [[ "${blacklisted}" -eq 0 ]] || return 0
+
+  log "$(t log_kernel_recover_after_install)"
+  if "${script}" recover; then
+    ok "$(t ok_kernel_recovered_after_install)"
+  else
+    warn "$(t warn_kernel_recover_failed)"
+  fi
+}
+
 # Best-effort teardown of AWG/WG ifaces + userspace inside a still-running container.
 _force_container_soft_teardown_awg() {
   local name="$1"

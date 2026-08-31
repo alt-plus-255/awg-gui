@@ -105,6 +105,8 @@ func (s *Service) SerializePeer(cfg *models.AwgConfig, m *models.AwgConfigPeer, 
 		"extra_allowed_ips":      extras,
 		"excluded_client_ids":    excluded,
 		"exclusions_mutual":      m.ExclusionsMutual,
+		"forward_policy":         normalizeForwardPolicy(m.ForwardPolicy),
+		"forward_allowed_cidrs":  forwardAllowedCIDRsNonNil(m.ForwardAllowedCIDRs),
 		"server_allowed_ips":     serverPeerAllowedIpsString(cfg, m),
 		"client_allowed_ips":     clientAllowedIpsString(cfg, m, enabled),
 		"public_key":             m.PublicKey,
@@ -360,4 +362,19 @@ func (s *Service) PeerLinks(ctx context.Context, configID *int64) []map[string]a
 		}
 	}
 	return links
+}
+
+func normalizeForwardPolicy(v string) string {
+	v = strings.TrimSpace(v)
+	if v == "restricted" {
+		return "restricted"
+	}
+	return "allow_all"
+}
+
+func forwardAllowedCIDRsNonNil(in []string) []string {
+	if in == nil {
+		return []string{}
+	}
+	return in
 }

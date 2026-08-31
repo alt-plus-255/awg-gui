@@ -202,11 +202,15 @@ func (s *Service) BuildClientConfig(ctx context.Context, membership *models.AwgC
 
 func (s *Service) buildPostUp(ctx context.Context, cfg *models.AwgConfig) string {
 	egress := s.ResolveEgress(ctx)
-	parts := []string{
+	parts := []string{}
+	if fw := s.peerFirewallPostUpParts(ctx, cfg); len(fw) > 0 {
+		parts = append(parts, fw...)
+	}
+	parts = append(parts,
 		"iptables -A FORWARD -i %i -j ACCEPT",
 		"iptables -A FORWARD -o %i -j ACCEPT",
-		"iptables -t nat -A POSTROUTING -o " + egress + " -j MASQUERADE",
-	}
+		"iptables -t nat -A POSTROUTING -o "+egress+" -j MASQUERADE",
+	)
 	if cfg.IsResolverEnabled() {
 		parts = append(parts,
 			"iptables -t nat -A PREROUTING -i %i -p udp --dport 53 -j REDIRECT --to-ports "+strconv.Itoa(DNSListenPort),
@@ -224,12 +228,16 @@ func (s *Service) buildPostUp(ctx context.Context, cfg *models.AwgConfig) string
 
 func (s *Service) buildPostDown(ctx context.Context, cfg *models.AwgConfig) string {
 	egress := s.ResolveEgress(ctx)
-	parts := []string{
+	parts := []string{}
+	if fw := s.peerFirewallPostDownParts(cfg); len(fw) > 0 {
+		parts = append(parts, fw...)
+	}
+	parts = append(parts,
 		"iptables -D FORWARD -i %i -j ACCEPT",
 		"iptables -D FORWARD -o %i -j ACCEPT",
-		"iptables -t nat -D POSTROUTING -o " + egress + " -j MASQUERADE",
+		"iptables -t nat -D POSTROUTING -o "+egress+" -j MASQUERADE",
 		"iptables -t nat -D POSTROUTING -o eth+ -j MASQUERADE 2>/dev/null || true",
-	}
+	)
 	if cfg.IsResolverEnabled() {
 		parts = append(parts,
 			"iptables -t nat -D PREROUTING -i %i -p udp --dport 53 -j REDIRECT --to-ports "+strconv.Itoa(DNSListenPort)+" 2>/dev/null || true",

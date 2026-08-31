@@ -146,13 +146,15 @@ func (c *ClientController) serialize(r *http.Request, client *models.VpnClient, 
 		m := &memberships[i]
 		cfg, _ := c.Configs.Find(ctx, m.AwgConfigID)
 		row := map[string]any{
-			"membership_id":     m.ID,
-			"config_id":         m.AwgConfigID,
-			"config_name":       nil,
-			"config_type":       nil,
-			"enabled":           m.Enabled,
-			"address":           m.Address,
-			"extra_allowed_ips": nonNil(m.ExtraAllowedIPs),
+			"membership_id":         m.ID,
+			"config_id":             m.AwgConfigID,
+			"config_name":           nil,
+			"config_type":           nil,
+			"enabled":               m.Enabled,
+			"address":               m.Address,
+			"extra_allowed_ips":     nonNil(m.ExtraAllowedIPs),
+			"forward_policy":        awg.NormalizeForwardPolicy(m.ForwardPolicy),
+			"forward_allowed_cidrs": nonNil(m.ForwardAllowedCIDRs),
 		}
 		if cfg != nil {
 			row["config_name"] = cfg.Name
