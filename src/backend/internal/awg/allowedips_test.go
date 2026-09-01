@@ -15,6 +15,25 @@ func testAllowedIPsService() *Service {
 	}
 }
 
+func TestClientAllowedIPsFullTunnelIgnoresExtrasWithoutSplitFlag(t *testing.T) {
+	s := testAllowedIPsService()
+	cfg := &models.AwgConfig{
+		ID:               1,
+		Type:             "server",
+		ClientAllowedIPs: "0.0.0.0/0, ::/0",
+	}
+	membership := &models.AwgConfigPeer{
+		ID:              10,
+		SplitTunnel:     false,
+		ExtraAllowedIPs: []string{"192.168.1.0/24"},
+	}
+	got := s.ClientAllowedIPs(context.Background(), cfg, membership)
+	want := []string{"0.0.0.0/0", "::/0"}
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+}
+
 func TestClientAllowedIPsSplitTunnelMultipleCIDRs(t *testing.T) {
 	s := testAllowedIPsService()
 	cfg := &models.AwgConfig{
@@ -23,7 +42,8 @@ func TestClientAllowedIPsSplitTunnelMultipleCIDRs(t *testing.T) {
 		InternalSubnet: "10.66.66.1/24",
 	}
 	membership := &models.AwgConfigPeer{
-		ID: 10,
+		ID:              10,
+		SplitTunnel:     true,
 		ExtraAllowedIPs: []string{
 			"192.168.1.13/32",
 			"77.88.8.8/32",
@@ -58,6 +78,7 @@ func TestClientAllowedIPsStringCacheInvalidation(t *testing.T) {
 	}
 	membership := &models.AwgConfigPeer{
 		ID:              10,
+		SplitTunnel:     true,
 		ExtraAllowedIPs: []string{"192.168.1.13/32"},
 	}
 

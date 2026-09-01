@@ -144,7 +144,7 @@ func (s *Service) ClientAllowedIPs(ctx context.Context, cfg *models.AwgConfig, m
 		splitCidrs = append(splitCidrs, canonical)
 	}
 	splitCidrs = uniqueNonEmpty(splitCidrs)
-	if len(splitCidrs) > 0 {
+	if membership.SplitTunnel {
 		var ips []string
 		tunnel := strings.TrimSpace(cfg.InternalSubnet)
 		if tunnel == "" {
@@ -173,6 +173,13 @@ func (s *Service) ClientAllowedIPs(ctx context.Context, cfg *models.AwgConfig, m
 		}
 	}
 	return ips
+}
+
+func (s *Service) PeerClientConfigOmitsDNS(cfg *models.AwgConfig, membership *models.AwgConfigPeer) bool {
+	if cfg.IsResolverEnabled() {
+		return false
+	}
+	return membership.SplitTunnel
 }
 
 func allowedIPCacheKey(configID, membershipID int64) string {

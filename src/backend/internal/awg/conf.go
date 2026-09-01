@@ -160,13 +160,6 @@ func (s *Service) BuildClientConfig(ctx context.Context, membership *models.AwgC
 	}
 
 	endpointHost := s.ResolveEndpointHost(ctx, "")
-	dns := cfg.PeerDNS
-	if dns == "" {
-		dns = "1.1.1.1"
-	}
-	if cfg.IsResolverEnabled() {
-		dns = s.GatewayIP(cfg)
-	}
 	allowed := s.ClientAllowedIPsString(ctx, cfg, membership)
 	keepalive := 25
 	if cfg.PersistentKeepalive > 0 {
@@ -185,9 +178,17 @@ func (s *Service) BuildClientConfig(ctx context.Context, membership *models.AwgC
 		"[Interface]",
 		"PrivateKey = " + membership.PrivateKey,
 		"Address = " + membership.Address,
-		"DNS = " + dns,
-		"MTU = 1420",
 	}
+	if !s.PeerClientConfigOmitsDNS(cfg, membership) {
+		dns := cfg.PeerDNS
+		if cfg.IsResolverEnabled() {
+			dns = s.GatewayIP(cfg)
+		} else if dns == "" {
+			dns = "1.1.1.1"
+		}
+		lines = append(lines, "DNS = "+dns)
+	}
+	lines = append(lines, "MTU = 1420")
 	lines = append(lines, s.ProfileFor(cfg).ConfObfuscationLines(cfg)...)
 	lines = append(lines, "", "[Peer]")
 	lines = append(lines, "PublicKey = "+cfg.ServerPublicKey)

@@ -136,6 +136,8 @@
   "peerForwardCidrsRequired": "Укажите хотя бы один CIDR назначения для firewall",
   "peerForwardNoClientRoutes": "Нет маршрутов клиента — устройство не отправит такой трафик в туннель. Добавьте CIDR выше или используйте полный туннель.",
   "peerForwardRouteMismatch": "Часть адресов firewall не указана в маршрутах клиента. Клиент может не маршрутизировать этот трафик; сервер всё равно отрежет остальное.",
+  "peerSplitTunnel": "Split-tunnel",
+  "peerSplitTunnelHint": "В VPN уходит только указанный трафик; интернет — через сим-карту/Wi‑Fi. DNS из .conf убирается (удобно для Android). Если выключено — полный туннель из настроек конфига, DNS в .conf есть.",
   "addCidr": "Добавить CIDR",
   "clientConfAllowedIps": "Разрешённые IP-адреса (в клиентском .conf)",
   "restartAwgTitle": "Перезапустить AWG",

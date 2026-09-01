@@ -551,6 +551,15 @@
             >
               {{ t('configs.clientVpnRoutesHint') }}
             </div>
+            <q-toggle
+              v-if="!activeConfig?.resolver_enabled"
+              v-model="peerForm.split_tunnel"
+              :label="t('configs.peerSplitTunnel')"
+              color="primary"
+              class="q-mb-sm"
+            >
+              <q-tooltip>{{ t('configs.peerSplitTunnelHint') }}</q-tooltip>
+            </q-toggle>
             <div
               v-else
               class="text-caption text-grey-5 q-mb-sm"
@@ -898,6 +907,7 @@ const peerForm = reactive({
   exclusions_mutual: false,
   forward_policy: 'allow_all',
   forward_allowed_cidrs: [],
+  split_tunnel: false,
   use_preshared_key: true
 })
 
@@ -977,12 +987,12 @@ const peerForwardRestricted = computed({
 
 const peerForwardRouteWarning = computed(() => {
   if (peerForm.forward_policy !== 'restricted') return ''
+  if (!peerForm.split_tunnel) return ''
   const extras = (peerForm.extra_allowed_ips || []).map((x) => String(x || '').trim()).filter(Boolean)
   const fw = (peerForm.forward_allowed_cidrs || []).map((x) => String(x || '').trim()).filter(Boolean)
   if (!fw.length) return ''
   if (!extras.length) return t('configs.peerForwardNoClientRoutes')
-  const extraSet = new Set(extras)
-  const uncovered = fw.filter((c) => !extraSet.has(c))
+  const uncovered = fw.filter((c) => !firewallCidrCoveredByRoutes(c, extras))
   if (!uncovered.length) return ''
   return t('configs.peerForwardRouteMismatch')
 })
@@ -1011,12 +1021,11 @@ function ruleDirection (rules, ownId, otherId) {
 const peerPreview = computed(() => {
   if (!activeConfig.value) return ''
 
-  // Server without resolver: split-tunnel preview when peer CIDRs are set
-  if (activeConfig.value.type === 'server' && !activeConfig.value.resolver_enabled) {
+  // Server without resolver: split-tunnel preview when enabled
+  if (activeConfig.value.type === 'server' && !activeConfig.value.resolver_enabled && peerForm.split_tunnel) {
     const cidrs = (peerForm.extra_allowed_ips || [])
       .map((x) => String(x || '').trim())
       .filter((x) => x && x !== '0.0.0.0/0' && x !== '::/0')
-    if (!cidrs.length) return ''
     const ips = []
     // Prefer network-aligned tunnel subnet (Android rejects 10.66.66.1/24 in AllowedIPs)
     let tunnel = String(activeConfig.value.internal_subnet || '').trim()
@@ -1039,6 +1048,11 @@ const peerPreview = computed(() => {
       if (!ips.includes(cidr)) ips.push(cidr)
     })
     return ips.join(', ')
+  }
+
+  if (activeConfig.value.type === 'server' && !activeConfig.value.resolver_enabled) {
+    const full = String(activeConfig.value.client_allowed_ips || '').trim()
+    return full || '0.0.0.0/0, ::/0'
   }
 
   if (activeConfig.value.type !== 'virtual_network') return ''
@@ -1506,6 +1520,28 @@ function parseCidr (cidr) {
   return { ip, mask, key: `${network}/${mask}` }
 }
 
+/** True when route CIDR covers all addresses in fw CIDR (e.g. 192.168.1.0/24 contains 192.168.1.13/32). */
+function cidrRouteCoversFirewall (routeCidr, fwCidr) {
+  const route = parseCidr(routeCidr)
+  const fw = parseCidr(fwCidr)
+  if (!route || !fw) return false
+  if (route.key === fw.key) return true
+  if (route.mask > fw.mask) return false
+  const routeMaskBits = route.mask === 0 ? 0 : (~0 << (32 - route.mask)) >>> 0
+  return ((fw.ip & routeMaskBits) >>> 0) === route.ip
+}
+
+function firewallCidrCoveredByRoutes (fwCidr, routeCidrs) {
+  const fw = String(fwCidr || '').trim()
+  if (!fw) return true
+  return routeCidrs.some((route) => {
+    const r = String(route || '').trim()
+    if (!r) return false
+    if (r === fw) return true
+    return cidrRouteCoversFirewall(r, fw)
+  })
+}
+
 function usedSubnetKeys (excludeId = null) {
   const keys = new Set()
   for (const c of configs.value) {
@@ -1847,6 +1883,7 @@ function openAddPeer (config) {
   peerForm.exclusions_mutual = false
   peerForm.forward_policy = 'allow_all'
   peerForm.forward_allowed_cidrs = []
+  peerForm.split_tunnel = false
   peerForm.use_preshared_key = true
   peerFormOpen.value = true
 }
@@ -1893,6 +1930,7 @@ function openEditPeer (config, row) {
   peerForm.exclusions_mutual = !!row.exclusions_mutual
   peerForm.forward_policy = row.forward_policy || 'allow_all'
   peerForm.forward_allowed_cidrs = [...(row.forward_allowed_cidrs || [])]
+  peerForm.split_tunnel = !!row.split_tunnel
   if (!peerForm.forward_allowed_cidrs.length) peerForm.forward_allowed_cidrs.push('')
   peerFormOpen.value = true
 }
@@ -1921,6 +1959,7 @@ async function savePeer () {
       membershipPayload.excluded_client_ids = peerForm.excluded_client_ids || []
       membershipPayload.exclusions_mutual = peerForm.exclusions_mutual
     } else {
+      membershipPayload.split_tunnel = !!peerForm.split_tunnel
       membershipPayload.forward_policy = peerForm.forward_policy || 'allow_all'
       if (peerForm.forward_policy === 'restricted') {
         const fwCidrs = peerForm.forward_allowed_cidrs.filter((x) => String(x).trim())

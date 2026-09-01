@@ -136,6 +136,8 @@
   "peerForwardCidrsRequired": "Specify at least one destination CIDR for the firewall",
   "peerForwardNoClientRoutes": "No client VPN routes — the device will not send matching traffic into the tunnel. Add CIDRs above or use full tunnel.",
   "peerForwardRouteMismatch": "Some firewall destinations are not listed in client VPN routes. The client may not route that traffic; server firewall will still block other destinations.",
+  "peerSplitTunnel": "Split tunnel",
+  "peerSplitTunnelHint": "Only listed routes go through VPN; internet uses the mobile/Wi‑Fi connection. DNS is omitted from the client .conf (recommended for Android). When off — full tunnel from config settings, DNS included.",
   "addCidr": "Add CIDR",
   "clientConfAllowedIps": "Allowed IP addresses (in client .conf)",
   "restartAwgTitle": "Restart AWG",

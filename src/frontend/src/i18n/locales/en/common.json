@@ -33,6 +33,8 @@
   "deleteError": "Failed to delete",
   "loadError": "Failed to load",
   "none": "none",
+  "yes": "yes",
+  "no": "no",
   "seconds": "{n} sec",
   "minutes": "{n} min",
   "minutesShort": "{n} min",

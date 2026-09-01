@@ -10,7 +10,7 @@ import (
 
 const peerCols = `id, awg_config_id, vpn_client_id, enabled, private_key, public_key, preshared_key,
 address, extra_allowed_ips, excluded_client_ids, exclusions_mutual, keepalive,
-forward_policy, forward_allowed_cidrs,
+forward_policy, forward_allowed_cidrs, split_tunnel,
 runtime_endpoint, latest_handshake, transfer_rx, transfer_tx,
 traffic_rx_total, traffic_tx_total, traffic_rx_baseline, traffic_tx_baseline,
 traffic_reset_at, online, stats_synced_at, created_at, updated_at`
@@ -212,12 +212,12 @@ func (s *Peers) Create(ctx context.Context, p *models.AwgConfigPeer) error {
 INSERT INTO awg_config_peers (
   awg_config_id, vpn_client_id, enabled, private_key, public_key, preshared_key,
   address, extra_allowed_ips, excluded_client_ids, exclusions_mutual, keepalive,
-  forward_policy, forward_allowed_cidrs,
+  forward_policy, forward_allowed_cidrs, split_tunnel,
   created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
 		p.AwgConfigID, p.VpnClientID, boolToInt(p.Enabled), p.PrivateKey, p.PublicKey, nullString(p.PresharedKey),
 		p.Address, marshalJSON(p.ExtraAllowedIPs), marshalJSON(p.ExcludedClientIDs), boolToInt(p.ExclusionsMutual), nullInt(p.Keepalive),
-		stringOrDefault(p.ForwardPolicy, "allow_all"), marshalJSON(p.ForwardAllowedCIDRs),
+		stringOrDefault(p.ForwardPolicy, "allow_all"), marshalJSON(p.ForwardAllowedCIDRs), boolToInt(p.SplitTunnel),
 	)
 	if err != nil {
 		return err
@@ -235,14 +235,14 @@ func (s *Peers) Update(ctx context.Context, p *models.AwgConfigPeer) error {
 UPDATE awg_config_peers SET
   enabled=?, private_key=?, public_key=?, preshared_key=?, address=?,
   extra_allowed_ips=?, excluded_client_ids=?, exclusions_mutual=?, keepalive=?,
-  forward_policy=?, forward_allowed_cidrs=?,
+  forward_policy=?, forward_allowed_cidrs=?, split_tunnel=?,
   runtime_endpoint=?, latest_handshake=?, transfer_rx=?, transfer_tx=?,
   traffic_rx_total=?, traffic_tx_total=?, traffic_rx_baseline=?, traffic_tx_baseline=?,
   traffic_reset_at=?, online=?, stats_synced_at=?, updated_at=NOW()
 WHERE id=?`,
 		boolToInt(p.Enabled), p.PrivateKey, p.PublicKey, nullString(p.PresharedKey), p.Address,
 		marshalJSON(p.ExtraAllowedIPs), marshalJSON(p.ExcludedClientIDs), boolToInt(p.ExclusionsMutual), nullInt(p.Keepalive),
-		stringOrDefault(p.ForwardPolicy, "allow_all"), marshalJSON(p.ForwardAllowedCIDRs),
+		stringOrDefault(p.ForwardPolicy, "allow_all"), marshalJSON(p.ForwardAllowedCIDRs), boolToInt(p.SplitTunnel),
 		nullString(p.RuntimeEndpoint), nullInt64(p.LatestHandshake), p.TransferRx, p.TransferTx,
 		p.TrafficRxTotal, p.TrafficTxTotal, p.TrafficRxBaseline, p.TrafficTxBaseline,
 		nullTime(p.TrafficResetAt), nullOnline(p.Online), nullTime(p.StatsSyncedAt),
@@ -279,7 +279,7 @@ func scanPeer(row rowScanner) (models.AwgConfigPeer, error) {
 	err := row.Scan(
 		&p.ID, &p.AwgConfigID, &p.VpnClientID, &p.Enabled, &p.PrivateKey, &p.PublicKey, &psk,
 		&p.Address, &extraRaw, &excludedRaw, &p.ExclusionsMutual, &keepalive,
-		&p.ForwardPolicy, &forwardCIDRsRaw,
+		&p.ForwardPolicy, &forwardCIDRsRaw, &p.SplitTunnel,
 		&endpoint, &handshake, &p.TransferRx, &p.TransferTx,
 		&p.TrafficRxTotal, &p.TrafficTxTotal, &p.TrafficRxBaseline, &p.TrafficTxBaseline,
 		&resetAt, &online, &synced, &p.CreatedAt, &p.UpdatedAt,

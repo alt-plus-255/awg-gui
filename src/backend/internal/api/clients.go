@@ -155,6 +155,7 @@ func (c *ClientController) serialize(r *http.Request, client *models.VpnClient, 
 			"extra_allowed_ips":     nonNil(m.ExtraAllowedIPs),
 			"forward_policy":        awg.NormalizeForwardPolicy(m.ForwardPolicy),
 			"forward_allowed_cidrs": nonNil(m.ForwardAllowedCIDRs),
+			"split_tunnel":          m.SplitTunnel,
 		}
 		if cfg != nil {
 			row["config_name"] = cfg.Name

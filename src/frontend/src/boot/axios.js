@@ -103,9 +103,10 @@ api.interceptors.response.use(
       const debugMsg = getApiDebugMessage(error)
       if (debugMsg) {
         const { Notify } = await import('quasar')
+        const { translate } = await import('@/stores/locale')
         Notify.create({
           type: 'negative',
-          message: `Server Error 500 · ${debugMsg}`,
+          message: `${translate('common.serverError')} · ${debugMsg}`,
           caption: String(error.config?.url || ''),
           timeout: 12000,
           actions: [{ icon: 'close', color: 'white', flat: true }],

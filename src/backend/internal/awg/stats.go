@@ -185,6 +185,7 @@ func (s *Service) SerializePeer(ctx context.Context, cfg *models.AwgConfig, m *m
 		"exclusions_mutual":    m.ExclusionsMutual,
 		"forward_policy":       NormalizeForwardPolicy(m.ForwardPolicy),
 		"forward_allowed_cidrs": nonNilStrings(m.ForwardAllowedCIDRs),
+		"split_tunnel":          m.SplitTunnel,
 		"server_allowed_ips":   s.ServerPeerAllowedIPsString(m),
 		"client_allowed_ips":   s.ClientAllowedIPsString(ctx, cfg, m),
 		"public_key":           m.PublicKey,

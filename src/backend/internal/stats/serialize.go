@@ -107,6 +107,7 @@ func (s *Service) SerializePeer(cfg *models.AwgConfig, m *models.AwgConfigPeer, 
 		"exclusions_mutual":      m.ExclusionsMutual,
 		"forward_policy":         normalizeForwardPolicy(m.ForwardPolicy),
 		"forward_allowed_cidrs":  forwardAllowedCIDRsNonNil(m.ForwardAllowedCIDRs),
+		"split_tunnel":           m.SplitTunnel,
 		"server_allowed_ips":     serverPeerAllowedIpsString(cfg, m),
 		"client_allowed_ips":     clientAllowedIpsString(cfg, m, enabled),
 		"public_key":             m.PublicKey,
@@ -202,7 +203,7 @@ func clientAllowedIps(cfg *models.AwgConfig, m *models.AwgConfigPeer, enabled []
 		split = append(split, canonical)
 	}
 	split = uniqueNonEmpty(split)
-	if len(split) > 0 {
+	if m.SplitTunnel {
 		ips := []string{}
 		tunnel := strings.TrimSpace(cfg.InternalSubnet)
 		if tunnel == "" {

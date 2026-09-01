@@ -707,19 +707,19 @@ func (s *Service) groupOutbounds(ctx context.Context, locale string, configs []m
 		}
 		if len(enabled) == 0 {
 			checks = append(checks, map[string]any{
-				"id": "outbounds_none", "ok": true, "label": "Outbounds",
+				"id": "outbounds_none", "ok": true, "label": i18n.T(locale, "system.outbounds_group"),
 				"detail": i18n.T(locale, "system.no_active_resolver_connections"),
 			})
-			return finalizeGroup("outbounds", "Outbounds", checks, hints)
+			return finalizeGroup("outbounds", i18n.T(locale, "system.outbounds_group"), checks, hints)
 		}
 		conns = enabled
 	}
 	if !s.Stats.IsContainerRunning(ctx, "") {
 		checks = append(checks, map[string]any{
-			"id": "outbounds_no_awg", "ok": false, "label": "Outbounds",
+			"id": "outbounds_no_awg", "ok": false, "label": i18n.T(locale, "system.outbounds_group"),
 			"detail": i18n.T(locale, "system.awg_container_not_running"),
 		})
-		return finalizeGroup("outbounds", "Outbounds", checks, []string{i18n.T(locale, "system.start_awg_for_outbounds")})
+		return finalizeGroup("outbounds", i18n.T(locale, "system.outbounds_group"), checks, []string{i18n.T(locale, "system.start_awg_for_outbounds")})
 	}
 	for _, conn := range conns {
 		tag := "conn_" + strconv.FormatInt(conn.ID, 10)
@@ -759,7 +759,7 @@ func (s *Service) groupOutbounds(ctx context.Context, locale string, configs []m
 			}))
 		}
 	}
-	return finalizeGroup("outbounds", "Outbounds", checks, hints)
+	return finalizeGroup("outbounds", i18n.T(locale, "system.outbounds_group"), checks, hints)
 }
 
 func (s *Service) loadConnections(ctx context.Context, ids map[int64]bool) []resolverConn {

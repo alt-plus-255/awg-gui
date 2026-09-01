@@ -25,10 +25,10 @@
         >
           <q-tab name="general" :label="t('settings.tabGeneral')" />
           <q-tab name="panel" :label="t('settings.tabPanel')" />
-          <q-tab v-if="hasDomain" name="https" label="HTTPS" />
+          <q-tab v-if="hasDomain" name="https" :label="t('settings.tabHttps')" />
           <q-tab name="telegram" :label="t('settings.tabTelegram')" />
           <q-tab name="update" :label="t('settings.tabUpdate')" />
-          <q-tab name="twofa" label="2FA" />
+          <q-tab name="twofa" :label="t('settings.tabTwoFa')" />
         </q-tabs>
 
         <q-separator />
@@ -297,20 +297,20 @@
               <div class="row q-col-gutter-md q-mb-md">
                 <div class="col-12 col-sm-6 col-md-3">
                   <div class="text-caption text-grey-5">{{ t('settings.awgKernelModule') }}</div>
-                  <div class="text-body2">{{ awgKernel.module_loaded ? 'yes' : 'no' }}</div>
+                  <div class="text-body2">{{ awgKernel.module_loaded ? t('common.yes') : t('common.no') }}</div>
                 </div>
                 <div class="col-12 col-sm-6 col-md-3">
                   <div class="text-caption text-grey-5">{{ t('settings.awgKernelPackage') }}</div>
-                  <div class="text-body2">{{ awgKernel.package_installed ? 'yes' : 'no' }}</div>
+                  <div class="text-body2">{{ awgKernel.package_installed ? t('common.yes') : t('common.no') }}</div>
                 </div>
                 <div class="col-12 col-sm-6 col-md-3">
                   <div class="text-caption text-grey-5">{{ t('settings.awgKernelDatapath') }}</div>
-                  <div class="text-body2 mono">{{ awgKernel.awg_datapath }}</div>
+                  <div class="text-body2 mono">{{ awgKernelDatapathLabel }}</div>
                   <div class="text-caption text-grey-6 q-mt-xs">{{ t('settings.awgKernelDatapathHint') }}</div>
                 </div>
                 <div class="col-12 col-sm-6 col-md-3">
                   <div class="text-caption text-grey-5">{{ t('settings.awgKernelOs') }}</div>
-                  <div class="text-body2 mono">{{ awgKernel.os_family }}</div>
+                  <div class="text-body2 mono">{{ awgKernelOsLabel }}</div>
                 </div>
               </div>
               <div v-if="awgKernel.iface_datapaths.length" class="q-mb-md">
@@ -324,7 +324,7 @@
                     color="primary"
                     class="mono"
                   >
-                    {{ item.iface }}: {{ item.mode }}
+                    {{ item.iface }}: {{ awgIfaceModeLabel(item.mode) }}
                   </q-chip>
                 </div>
               </div>
@@ -355,7 +355,7 @@
                   v-if="awgKernelShowRestart"
                   outline
                   color="primary"
-                  :label="t('settings.awgKernelRestartAwg')"
+                  :label="awgKernelRestartLabel"
                   :loading="awgKernel.starting || awgKernel.running"
                   :disable="!awgKernel.script_present || awgKernel.running"
                   @click="onAwgKernelRestartAwg"
@@ -1861,10 +1861,54 @@ const awgKernelShowReinstall = computed(() =>
 )
 
 const awgKernelShowRestart = computed(() =>
-  awgKernel.awg_datapath === 'userspace' &&
-  !!awgKernel.script_present &&
-  (!!awgKernel.module_loaded || !!awgKernel.kernel_path_broken || !!awgKernel.package_installed)
+  !!awgKernel.script_present && (
+    !!awgKernel.module_blacklisted ||
+    !!awgKernel.kernel_path_broken ||
+    (awgKernel.awg_datapath === 'userspace' &&
+      (!!awgKernel.module_loaded || !!awgKernel.kernel_path_broken || !!awgKernel.package_installed))
+  )
 )
+
+const awgKernelNeedsRecoverButton = computed(() =>
+  !!awgKernel.module_blacklisted || !!awgKernel.kernel_path_broken
+)
+
+const awgKernelRestartLabel = computed(() =>
+  awgKernelNeedsRecoverButton.value
+    ? t('settings.awgKernelRecover')
+    : t('settings.awgKernelRestartAwg')
+)
+
+function awgDatapathLabel (value) {
+  const map = {
+    kernel: t('settings.awgDatapathKernel'),
+    userspace: t('settings.awgDatapathUserspace'),
+    unknown: t('settings.awgDatapathUnknown')
+  }
+  return map[value] || value || t('settings.awgDatapathUnknown')
+}
+
+const awgKernelDatapathLabel = computed(() => awgDatapathLabel(awgKernel.awg_datapath))
+
+function awgOsFamilyLabel (value) {
+  const map = {
+    debian: t('settings.awgOsDebian'),
+    rhel: t('settings.awgOsRhel'),
+    unsupported: t('settings.awgOsUnsupported'),
+    unknown: t('settings.awgOsUnknown')
+  }
+  return map[value] || value || t('settings.awgOsUnknown')
+}
+
+const awgKernelOsLabel = computed(() => awgOsFamilyLabel(awgKernel.os_family))
+
+function awgIfaceModeLabel (mode) {
+  const map = {
+    kernel: t('settings.awgIfaceModeKernel'),
+    userspace: t('settings.awgIfaceModeUserspace')
+  }
+  return map[mode] || mode
+}
 
 const awgKernelShowDebugDownload = computed(() =>
   !!awgKernel.module_blacklisted ||
@@ -1925,9 +1969,10 @@ function onAwgKernelReinstall () {
 }
 
 function onAwgKernelRestartAwg () {
+  const recover = awgKernelNeedsRecoverButton.value
   $q.dialog({
-    title: t('settings.awgKernelRestartConfirmTitle'),
-    message: t('settings.awgKernelRestartConfirmText'),
+    title: recover ? t('settings.awgKernelRecoverConfirmTitle') : t('settings.awgKernelRestartConfirmTitle'),
+    message: recover ? t('settings.awgKernelRecoverConfirmText') : t('settings.awgKernelRestartConfirmText'),
     cancel: { label: t('common.cancel'), flat: true },
     ok: { label: t('settings.confirm'), color: 'primary' },
     persistent: true

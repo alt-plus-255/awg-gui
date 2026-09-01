@@ -116,22 +116,11 @@ func (s *Service) BuildOuterFromMembership(ctx context.Context, membership *mode
 		}
 	}
 	dnsRaw := matchConf(conf, "DNS")
-	if dnsRaw == "" {
-		dnsRaw = "1.1.1.1"
-	}
 	var dnsParts []string
 	for _, p := range strings.Split(dnsRaw, ",") {
 		if t := strings.TrimSpace(p); t != "" {
 			dnsParts = append(dnsParts, t)
 		}
-	}
-	dns1 := "1.1.1.1"
-	if len(dnsParts) > 0 {
-		dns1 = dnsParts[0]
-	}
-	dns2 := dns1
-	if len(dnsParts) > 1 {
-		dns2 = dnsParts[1]
 	}
 
 	inner := map[string]any{}
@@ -159,7 +148,7 @@ func (s *Service) BuildOuterFromMembership(ctx context.Context, membership *mode
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{
+	outer := map[string]any{
 		"containers": []any{
 			map[string]any{
 				"awg": map[string]any{
@@ -174,10 +163,17 @@ func (s *Service) BuildOuterFromMembership(ctx context.Context, membership *mode
 		},
 		"defaultContainer": "amnezia-awg",
 		"description":      description,
-		"dns1":             dns1,
-		"dns2":             dns2,
 		"hostName":         hostName,
-	}, nil
+	}
+	if len(dnsParts) > 0 {
+		outer["dns1"] = dnsParts[0]
+		if len(dnsParts) > 1 {
+			outer["dns2"] = dnsParts[1]
+		} else {
+			outer["dns2"] = dnsParts[0]
+		}
+	}
+	return outer, nil
 }
 
 func (s *Service) Decode(vpnURI string) (map[string]any, error) {

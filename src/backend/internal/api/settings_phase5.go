@@ -378,23 +378,26 @@ func (c *SettingsController) RetryStuckProjectUpdate(w http.ResponseWriter, r *h
 }
 
 func (c *SettingsController) AWGKernelStatus(w http.ResponseWriter, r *http.Request) {
+	locale := auth.LocaleFromContext(r.Context())
+	unavailable := map[string]any{
+		"ok": false, "message": i18n.T(locale, "settings.panel_ops_unavailable"), "module_loaded": false, "package_installed": false,
+		"module_blacklisted": false, "kernel_path_broken": false, "awg_datapath": "unknown", "iface_datapaths": []any{}, "os_family": "unknown", "script_present": false,
+		"op": map[string]any{"status": "error", "message": i18n.T(locale, "settings.panel_ops_unavailable"), "running": false},
+	}
 	if c.PanelOps == nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]any{
-			"ok": false, "message": "panel-ops unavailable", "module_loaded": false, "package_installed": false,
-			"module_blacklisted": false, "kernel_path_broken": false, "awg_datapath": "unknown", "iface_datapaths": []any{}, "os_family": "unknown", "script_present": false,
-			"op": map[string]any{"status": "error", "message": "panel-ops unavailable", "running": false},
-		})
+		writeJSON(w, http.StatusServiceUnavailable, unavailable)
 		return
 	}
 	data, err := c.PanelOps.AWGKernelStatus()
 	if err != nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]any{
-			"ok": false, "message": err.Error(), "module_loaded": false, "package_installed": false,
-			"module_blacklisted": false, "kernel_path_broken": false, "awg_datapath": "unknown", "iface_datapaths": []any{}, "os_family": "unknown", "script_present": false,
-			"op": map[string]any{"status": "error", "message": err.Error(), "running": false},
-		})
+		unavailable["message"] = i18n.LocalizeKernelMessage(locale, err.Error())
+		if op, ok := unavailable["op"].(map[string]any); ok {
+			op["message"] = unavailable["message"]
+		}
+		writeJSON(w, http.StatusServiceUnavailable, unavailable)
 		return
 	}
+	i18n.LocalizeAWGKernelPayload(locale, data)
 	writeJSON(w, http.StatusOK, data)
 }
 
@@ -417,7 +420,7 @@ func (c *SettingsController) AWGKernelRestartAWG(w http.ResponseWriter, r *http.
 func (c *SettingsController) startKernelOp(w http.ResponseWriter, r *http.Request, op string) {
 	locale := auth.LocaleFromContext(r.Context())
 	if c.PanelOps == nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"message": "panel-ops unavailable"})
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"message": i18n.T(locale, "settings.panel_ops_unavailable")})
 		return
 	}
 	result, err := c.PanelOps.StartAWGKernelOp(op)
@@ -426,15 +429,18 @@ func (c *SettingsController) startKernelOp(w http.ResponseWriter, r *http.Reques
 			writeJSON(w, http.StatusConflict, map[string]any{"message": i18n.T(locale, "settings.awg_kernel_already_running")})
 			return
 		}
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"message": err.Error()})
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"message": i18n.LocalizeKernelMessage(locale, err.Error())})
 		return
+	}
+	if msg, ok := result["message"].(string); ok && msg != "" {
+		result["message"] = i18n.LocalizeKernelMessage(locale, msg)
 	}
 	writeJSON(w, http.StatusAccepted, result)
 }
 
 func (c *SettingsController) SSLIssueStart(w http.ResponseWriter, r *http.Request) {
 	if c.SSL == nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"message": "ssl unavailable"})
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"message": i18n.T(auth.LocaleFromContext(r.Context()), "settings.ssl_unavailable")})
 		return
 	}
 	locale := auth.LocaleFromContext(r.Context())
@@ -471,7 +477,7 @@ func (c *SettingsController) SSLIssueStart(w http.ResponseWriter, r *http.Reques
 
 func (c *SettingsController) SSLIssueComplete(w http.ResponseWriter, r *http.Request) {
 	if c.SSL == nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"message": "ssl unavailable"})
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"message": i18n.T(auth.LocaleFromContext(r.Context()), "settings.ssl_unavailable")})
 		return
 	}
 	locale := auth.LocaleFromContext(r.Context())
@@ -490,7 +496,7 @@ func (c *SettingsController) SSLIssueComplete(w http.ResponseWriter, r *http.Req
 
 func (c *SettingsController) SSLRecover(w http.ResponseWriter, r *http.Request) {
 	if c.SSL == nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"message": "ssl unavailable"})
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"message": i18n.T(auth.LocaleFromContext(r.Context()), "settings.ssl_unavailable")})
 		return
 	}
 	locale := auth.LocaleFromContext(r.Context())
@@ -513,7 +519,7 @@ func (c *SettingsController) SSLRecover(w http.ResponseWriter, r *http.Request) 
 
 func (c *SettingsController) SSLDisable(w http.ResponseWriter, r *http.Request) {
 	if c.SSL == nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"message": "ssl unavailable"})
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"message": i18n.T(auth.LocaleFromContext(r.Context()), "settings.ssl_unavailable")})
 		return
 	}
 	locale := auth.LocaleFromContext(r.Context())
@@ -531,7 +537,7 @@ func (c *SettingsController) SSLDisable(w http.ResponseWriter, r *http.Request) 
 
 func (c *SettingsController) SSLAbort(w http.ResponseWriter, r *http.Request) {
 	if c.SSL == nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"message": "ssl unavailable"})
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"message": i18n.T(auth.LocaleFromContext(r.Context()), "settings.ssl_unavailable")})
 		return
 	}
 	locale := auth.LocaleFromContext(r.Context())

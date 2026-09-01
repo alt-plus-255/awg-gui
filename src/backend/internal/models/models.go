@@ -191,6 +191,7 @@ type AwgConfigPeer struct {
 	Keepalive            *int
 	ForwardPolicy        string
 	ForwardAllowedCIDRs  []string
+	SplitTunnel          bool
 	RuntimeEndpoint    *string
 	LatestHandshake    *int64
 	TransferRx         int64

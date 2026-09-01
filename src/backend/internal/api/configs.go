@@ -512,6 +512,7 @@ func (c *ConfigController) AttachPeer(w http.ResponseWriter, r *http.Request) {
 		Keepalive:           keepalive,
 		ForwardPolicy:       forwardPolicy,
 		ForwardAllowedCIDRs: forwardCIDRs,
+		SplitTunnel:         peerSplitTunnel(cfg, req),
 	}
 	if err := c.Peers.Create(r.Context(), m); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"message": err.Error()})
@@ -571,6 +572,11 @@ func (c *ConfigController) UpdatePeer(w http.ResponseWriter, r *http.Request) {
 	if v, ok := req["exclusions_mutual"]; ok {
 		if b, ok := asBool(v); ok {
 			m.ExclusionsMutual = b
+		}
+	}
+	if v, ok := req["split_tunnel"]; ok {
+		if b, ok := asBool(v); ok {
+			m.SplitTunnel = b
 		}
 	}
 	if _, hasForward := req["forward_policy"]; hasForward || req["forward_allowed_cidrs"] != nil {
@@ -1104,6 +1110,16 @@ func (c *ConfigController) normalizeExtraIPs(w http.ResponseWriter, r *http.Requ
 		}
 	}
 	return out, true
+}
+
+func peerSplitTunnel(cfg *models.AwgConfig, req map[string]any) bool {
+	if cfg.Type != "server" || cfg.IsResolverEnabled() {
+		return false
+	}
+	if b, ok := asBool(req["split_tunnel"]); ok {
+		return b
+	}
+	return false
 }
 
 func (c *ConfigController) normalizeForwardFirewall(w http.ResponseWriter, r *http.Request, cfg *models.AwgConfig, req map[string]any) (string, []string, bool) {
